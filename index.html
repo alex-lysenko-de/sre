@@ -2,51 +2,75 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
-  <title>Сканер QR-кодов</title>
+  <title>QR-сканер (мобильный)</title>
   <script src="https://unpkg.com/html5-qrcode"></script>
   <style>
     body {
+      margin: 0;
+      padding: 0;
       font-family: sans-serif;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 20px;
+      text-align: center;
+      background: #f0f0f0;
     }
     #reader {
-      width: 300px;
+      width: 100vw;
+      height: auto;
     }
-    #result {
-      margin-top: 10px;
-      font-size: 1.2em;
-      color: green;
+    #results {
+      padding: 10px;
+      background: white;
+      max-height: 200px;
+      overflow-y: auto;
+      font-size: 1.1em;
+      border-top: 2px solid #ccc;
     }
   </style>
 </head>
 <body>
-  <h1>Сканер QR-кодов</h1>
   <div id="reader"></div>
-  <div id="result">Результат: <span id="qr-result">—</span></div>
+  <div id="results"><strong>Результаты:</strong><br></div>
+
+  <audio id="beep" src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg" preload="auto"></audio>
 
   <script>
-    const qrResult = document.getElementById('qr-result');
+    const resultsDiv = document.getElementById("results");
+    const beep = document.getElementById("beep");
 
-    function onScanSuccess(decodedText, decodedResult) {
-      // Показываем результат и останавливаем сканирование
-      qrResult.textContent = decodedText;
-      html5QrcodeScanner.clear();
+    const html5QrCode = new Html5Qrcode("reader");
+
+    const config = {
+      fps: 10,
+      qrbox: { width: 250, height: 250 },
+      facingMode: { exact: "user" } // фронтальная основная камера
+    };
+
+    function startScanning() {
+      html5QrCode.start(
+        config.facingMode,
+        {
+          fps: config.fps,
+          qrbox: config.qrbox
+        },
+        (decodedText, decodedResult) => {
+          // Сигнал
+          beep.play();
+
+          // Добавляем результат в список
+          const time = new Date().toLocaleTimeString();
+          resultsDiv.innerHTML += `${time}: ${decodedText}<br>`;
+        },
+        (errorMessage) => {
+          // Ошибки сканирования можно игнорировать
+        }
+      ).catch(err => {
+        alert("Ошибка доступа к камере: " + err);
+      });
     }
 
-    function onScanError(errorMessage) {
-      // Ошибки сканирования можно игнорировать
-    }
-
-    const html5QrcodeScanner = new Html5QrcodeScanner(
-      "reader",
-      { fps: 10, qrbox: 250 },
-      false
-    );
-
-    html5QrcodeScanner.render(onScanSuccess, onScanError);
+    // Запуск после загрузки
+    window.addEventListener("load", () => {
+      startScanning();
+    });
   </script>
 </body>
 </html>
