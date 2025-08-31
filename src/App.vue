@@ -1,13 +1,9 @@
 <template>
-  <div id="app">
-      <router-view />
-  </div>
+  <router-view />
+
 </template>
 
-<script>
-export default {
-  name: 'App'
-}
+<script setup>
+// Главный компонент приложения
+//import ConfirmLogout from "./components/ConfirmLogout.vue";
 </script>
-
-
