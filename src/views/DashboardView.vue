@@ -254,4 +254,4 @@ async function refreshAuth() {
 
 <style scoped>
 /* Дополнительные стили при необходимости */
-</style> 
+</style>
