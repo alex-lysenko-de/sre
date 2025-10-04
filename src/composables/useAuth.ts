@@ -258,20 +258,27 @@ export function useAuth() {
     error.value = null;
 
     try {
+      console.log('Login prepare: calling', `${API_BASE_URL}/login/prepare`);
+      
       const response = await fetch(`${API_BASE_URL}/login/prepare`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId }),
       });
 
+      console.log('Login prepare response:', response.status, response.statusText);
+
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to prepare login');
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('Login prepare error:', errorData);
+        throw new Error(errorData.error || `Failed to prepare login (${response.status})`);
       }
 
       const data = await response.json();
+      console.log('Login prepare success:', data);
       return data;
     } catch (err: any) {
+      console.error('Login prepare exception:', err);
       error.value = err.message;
       throw err;
     } finally {
