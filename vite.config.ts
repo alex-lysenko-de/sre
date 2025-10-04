@@ -1,11 +1,11 @@
-// vite.config.ts - С HTTPS для development
+// vite.config.ts
 import { defineConfig } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
-import fs from 'fs';
 
 export default defineConfig({
+    base: '/sre/',
   plugins: [
     vue(),
     VitePWA({
@@ -46,7 +46,21 @@ export default defineConfig({
               cacheName: 'google-fonts-cache',
               expiration: {
                 maxEntries: 10,
-                maxAgeSeconds: 60 * 60 * 24 * 365
+                maxAgeSeconds: 60 * 60 * 24 * 365 // 1 год
+              },
+              cacheableResponse: {
+                statuses: [0, 200]
+              }
+            }
+          },
+          {
+            urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'gstatic-fonts-cache',
+              expiration: {
+                maxEntries: 10,
+                maxAgeSeconds: 60 * 60 * 24 * 365 // 1 год
               },
               cacheableResponse: {
                 statuses: [0, 200]
@@ -60,7 +74,7 @@ export default defineConfig({
               cacheName: 'images-cache',
               expiration: {
                 maxEntries: 50,
-                maxAgeSeconds: 60 * 60 * 24 * 30
+                maxAgeSeconds: 60 * 60 * 24 * 30 // 30 дней
               }
             }
           }
@@ -82,15 +96,8 @@ export default defineConfig({
   server: {
     port: 3000,
     host: 'localhost',
-    // Включаем HTTPS для dev
-    https: {
-      key: fs.existsSync('./cert/localhost-key.pem') 
-        ? fs.readFileSync('./cert/localhost-key.pem')
-        : undefined,
-      cert: fs.existsSync('./cert/localhost.pem')
-        ? fs.readFileSync('./cert/localhost.pem')
-        : undefined,
-    }
+    https: false, // Отключено - localhost работает с WebAuthn и без HTTPS
+    open: true // Автоматически откроет браузер
   },
   build: {
     target: 'esnext',
