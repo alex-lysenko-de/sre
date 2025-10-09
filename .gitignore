@@ -28,3 +28,4 @@ coverage
 *.sw?
 
 *.tsbuildinfo
+/all_project_files.md
