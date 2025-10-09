@@ -1,0 +1,8 @@
+npx supabase functions deploy invite-generate --project-ref prlivcmqjqjypclkcovl
+npx supabase functions deploy invite-accept --project-ref prlivcmqjqjypclkcovl
+
+npx supabase functions deploy --project-ref prlivcmqjqjypclkcovl
+
+npx supabase secrets set \
+  SUPABASE_URL="https://prlivcmqjqjypclkcovl.supabase.co" \
+  SUPABASE_SERVICE_ROLE_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBybGl2Y21xanFqeXBjbGtjb3ZsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NDE0NzAxMiwiZXhwIjoyMDY5NzIzMDEyfQ.b3xnNfoIOc288HuuxNQzDXivNfiEDgFxq8XIylwYeQk"
