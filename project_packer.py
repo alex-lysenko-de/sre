@@ -12,7 +12,7 @@ ALLOWED_ROOT_FILES = {
     "index.html",
     ".env",
 }
-ALLOWED_DIRS = {"src", "supabase"}
+ALLOWED_DIRS = {"src", "supabase", ".github"}
 
 # ---------- 1. Сборка проекта в один MD ----------
 def pack_project_to_md(root_dir=PROJECT_ROOT, output_file=OUTPUT_FILE):

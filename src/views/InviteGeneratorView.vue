@@ -149,7 +149,12 @@ const expiresAt = ref('')
 const qrcodeContainer = ref(null)
 
 const currentUrl = computed(() => {
-  return `${window.location.protocol}//${window.location.host}`
+  // Get the base path from Vite env. e.g., '/sre/'
+  const basePath = import.meta.env.BASE_URL;
+  // Get the origin: e.g., 'https://username.github.io'
+  const origin = `${window.location.protocol}//${window.location.host}`;
+  // Construct the full base URL: e.g., 'https://username.github.io/sre' (remove trailing slash for clean path joining)
+  return basePath.endsWith('/') ? origin + basePath.slice(0, -1) : origin + basePath;
 })
 
 const whatsappUrl = computed(() => {
