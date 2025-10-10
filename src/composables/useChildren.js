@@ -97,9 +97,77 @@ export function useChildren() {
     };
 
 
+    /**
+     * Получает список всех детей с возможностью поиска по имени или ID браслета.
+     * @param {string} searchTerm - Строка для поиска
+     */
+    const fetchChildrenList = async (searchTerm = '') => {
+        let query = supabase
+            .from('children')
+            .select('id, name, age, group_id, schwimmer, band_id')
+            .order('name', { ascending: true });
+
+        if (searchTerm) {
+            // Поиск по имени (регистронезависимо) ИЛИ по band_id
+            query = query.or(`name.ilike.%${searchTerm}%,band_id.eq.${searchTerm}`);
+        }
+
+        const { data, error } = await query;
+
+        if (error) {
+            console.error('Ошибка получения списка детей:', error);
+            throw new Error(error.message);
+        }
+        return data;
+    };
+
+
+    /**
+     * Получает детали ребенка по ID и его историю сканирования.
+     * @param {number} childId - ID ребенка
+     */
+    const fetchChildDetailsAndScans = async (childId) => {
+        // 1. Получаем детали ребенка
+        const { data: child, error: childError } = await supabase
+            .from('children')
+            .select('*')
+            .eq('id', childId)
+            .single();
+
+        if (childError) {
+            throw new Error(`Ошибка получения данных ребенка: ${childError.message}`);
+        }
+
+        // 2. Получаем историю сканов
+        const { data: scans, error: scansError } = await supabase
+            // Запрашиваем все поля, включая user_id и type
+            .from('scans')
+            .select('*')
+            .eq('child_id', childId)
+            .order('created_at', { ascending: false })
+            .limit(50); // Ограничим 50 последними сканами
+
+        if (scansError) {
+            console.error('Ошибка получения истории сканов:', scansError);
+        }
+
+        // Для удобства отображения, добавим map для типа скана
+        // (Соответствует логике из Тикета 2, т.к. scan_type не используется)
+        const scanTypeMap = { 1: 'Присутствие', 2: 'Автобус (Вход)', 3: 'Автобус (Выход)' };
+        const formattedScans = (scans || []).map(scan => ({
+            ...scan,
+            type_name: scanTypeMap[scan.type] || 'Неизвестно'
+        }));
+
+
+        return { child, scans: formattedScans };
+    };
+
     return {
         createChildAndBind,
         bindBraceletToExistingChild,
         fetchAllChildren,
+        fetchChildrenList,
+        fetchChildDetailsAndScans
     };
 }
