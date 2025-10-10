@@ -4,13 +4,11 @@ import { VitePWA } from 'vite-plugin-pwa'
 import path from 'path'
 
 // IMPORTANT: Replace 'your-repo-name' with your actual GitHub repository name
-// Example: if your repo URL is https://github.com/username/stadtranderholung
-// then use: base: '/stadtranderholung/'
+// Example: if your repo URL is https://github.com/alex-lysenko-de/sre
+// then use: base: '/sre/'
 export default defineConfig({
-    // Set base path for GitHub Pages
-    // For custom domain: base: '/'
-    // For GitHub Pages: base: '/your-repo-name/'
-    base: process.env.NODE_ENV === 'production' ? '/sre/' : '/',
+
+    base: process.env.NODE_ENV === 'production' ? '/' : '/',
     
     plugins: [
         vue(),
@@ -44,8 +42,8 @@ export default defineConfig({
                 background_color: '#ffffff',
                 display: 'standalone',
                 orientation: 'portrait',
-                scope: '/sre/',
-                start_url: '/sre/',
+                scope: '/',
+                start_url: '/',
                 icons: [
                     {
                         src: 'icon-192x192.png',
