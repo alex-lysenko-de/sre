@@ -1,7 +1,10 @@
 <script setup>
 import { onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { supabase } from '@/plugins/supabase';
+import { supabase } from '@/supabase';
+
+const route = useRoute();
+const router = useRouter();
 // Используем заглушки, пока useAuth не реализован
 const useAuthStub = () => ({ currentUserId: ref(1), currentUserRole: ref('user') });
 const { currentUserId, currentUserRole } = useAuthStub();
@@ -74,7 +77,15 @@ const processScan = async (n) => {
   }
 };
 
-// ... (onMounted и остальная часть <template> без изменений)
+
+onMounted(() => {
+  const n = route.query.n;
+  if (n) {
+    processScan(n);
+  } else {
+    scanStatus.value = 'Готов к сканированию. Отсканируйте QR-код.';
+  }
+});
 </script>
 
 <template>

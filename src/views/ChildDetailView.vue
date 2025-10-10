@@ -2,7 +2,7 @@
 import { onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useChildren } from '@/composables/useChildren';
-import { supabase } from '@/plugins/supabase'; // Импорт supabase для unbindBracelet
+import { supabase } from '@/supabase'; // Импорт supabase для unbindBracelet
 
 const route = useRoute();
 const router = useRouter();

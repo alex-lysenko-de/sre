@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <title>Gruppenheft Generator</title>
+
+  <!-- jsPDF und qrcode.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+  <style>
+    body {
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      background: #eef1f7;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+    }
+    .container {
+      background: #fff;
+      padding: 24px;
+      border-radius: 10px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+      width: 420px;
+      text-align: left;
+    }
+    h1 {
+      margin: 0 0 12px 0;
+      font-size: 18px;
+      text-align: center;
+    }
+    label {
+      display: block;
+      margin-top: 10px;
+      font-weight: 600;
+    }
+    input[type="url"],
+    input[type="number"] {
+      width: 100%;
+      padding: 8px 10px;
+      margin-top: 6px;
+      box-sizing: border-box;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+    }
+    button {
+      width: 100%;
+      margin-top: 16px;
+      padding: 10px;
+      background: linear-gradient(135deg, #4f6ef7, #7b5df0);
+      color: #fff;
+      border: 0;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 700;
+    }
+    #status {
+      margin-top: 10px;
+      font-weight: 600;
+      color: #333;
+      min-height: 20px;
+    }
+    #saveBtn {
+      display: none;
+      background: linear-gradient(135deg, #28a745, #20964f);
+    }
+    .small {
+      font-size: 12px;
+      color: #666;
+      margin-top: 6px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>📘 Gruppenheft Generator</h1>
+
+    <label for="baseUrl">Basis-URL</label>
+    <input id="baseUrl" type="url" value="https://sre-nrw.de/group-edit">
+
+    <label for="groupCount">Anzahl der Gruppen</label>
+    <input id="groupCount" type="number" value="15" min="1">
+
+    <button id="generateBtn">QR-Codes und PDF generieren</button>
+    <div id="status">Bereit.</div>
+    <button id="saveBtn">💾 PDF speichern</button>
+    <div class="small">Verwendet: jsPDF + qrcode.js</div>
+  </div>
+
+  <script>
+    const { jsPDF } = window.jspdf;
+    let pdfDoc = null;
+
+    // --- Safely add QR image to jsPDF
+    const addQRImage = (doc, dataUrl, x, y, w, h) =>
+      new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          try {
+            doc.addImage(img, "PNG", x, y, w, h);
+          } catch (e) {
+            console.error("addImage error:", e);
+          }
+          resolve();
+        };
+        img.onerror = () => resolve();
+        img.src = dataUrl;
+      });
+
+    // --- Create QR using temporary hidden container in DOM
+    const makeQR = (text, options = {}) =>
+      new Promise((resolve) => {
+        const size = options.pixelSize || 240;
+        const correctLevel = options.correctLevel || QRCode.CorrectLevel.M;
+        const container = document.createElement("div");
+        container.style.position = "absolute";
+        container.style.left = "-9999px";
+        container.style.top = "-9999px";
+        document.body.appendChild(container);
+
+        new QRCode(container, {
+          text: String(text),
+          width: size,
+          height: size,
+          correctLevel,
+        });
+
+        const start = Date.now();
+        const TIMEOUT = 6000;
+        const POLL = 60;
+
+        const check = () => {
+          const img = container.querySelector("img");
+          const canvas = container.querySelector("canvas");
+          if (img && img.src.startsWith("data:")) {
+            cleanup(img.src);
+            return;
+          }
+          if (canvas) {
+            try {
+              const data = canvas.toDataURL("image/png");
+              if (data.length > 1000) {
+                cleanup(data);
+                return;
+              }
+            } catch {}
+          }
+          if (Date.now() - start > TIMEOUT) {
+            console.warn("QR timeout for", text);
+            cleanup(null);
+            return;
+          }
+          setTimeout(check, POLL);
+        };
+        const cleanup = (data) => {
+          try {
+            document.body.removeChild(container);
+          } catch {}
+          resolve(data);
+        };
+        setTimeout(check, POLL);
+      });
+
+    // --- Draw large group number (two per page)
+    const drawGroupNumber = (doc, n, yOffset, pageWidth, halfHeight) => {
+      const str = String(n);
+      const fontSize = Math.max(300, 220 - (str.length - 1) * 40);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(fontSize);
+      const centerY = yOffset + halfHeight / 2 + fontSize * 0.06;
+      doc.text(str, pageWidth / 2, centerY, { align: "center" });
+    };
+
+    // --- Draw table and smaller QR (QR at top right)
+    const drawGroupTable = async (doc, baseUrl, n, yOffset, pageWidth) => {
+      const startY = yOffset + 12;
+      const leftX = 18;
+      const qrSize = 20; // smaller QR in mm
+      const qrX = pageWidth - qrSize - 18; // top right corner
+      const qrY = yOffset + 5;
+      const qrUrl = `${baseUrl}?gr=${n}`;
+      const qrData = await makeQR(qrUrl, { pixelSize: 200 });
+
+      // Add QR in the top right corner
+      if (qrData) await addQRImage(doc, qrData, qrX, qrY, qrSize, qrSize);
+
+      // Title below QR
+      const titleY = qrY + qrSize;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(16);
+      doc.text(`Gruppe ${n}`, leftX, titleY);
+
+      // Table headers
+      const headers = ["Nr", "Name", "Alter", "Schwimmer", "Notizen"];
+      const colWidths = [10, 45, 25, 35, 68];
+      let x = leftX;
+      let y = titleY + 8;
+
+      doc.setFontSize(11);
+      headers.forEach((h, i) => {
+        doc.text(h, x + 2, y);
+        x += colWidths[i];
+      });
+
+      y += 3;
+      doc.setLineWidth(0.2);
+      doc.line(leftX, y, leftX + colWidths.reduce((a, b) => a + b, 0), y);
+
+      // 10 empty rows
+      for (let row = 1; row <= 10; row++) {
+        y += 9;
+        x = leftX;
+        doc.text(String(row), x + 2, y - 2);
+        x += colWidths[0];
+        for (let c = 1; c < headers.length; c++) {
+          doc.rect(x, y - 7, colWidths[c], 8);
+          x += colWidths[c];
+        }
+      }
+    };
+
+    // --- Main generator
+    document.getElementById("generateBtn").addEventListener("click", async () => {
+      const baseUrl =
+        (document.getElementById("baseUrl").value || "").trim() ||
+        "https://sre-nrw.de/group-edit";
+      const count = Math.max(
+        1,
+        parseInt(document.getElementById("groupCount").value || "15")
+      );
+      const status = document.getElementById("status");
+      const saveBtn = document.getElementById("saveBtn");
+
+      status.textContent = "⏳ PDF wird generiert, bitte warten...";
+      saveBtn.style.display = "none";
+      pdfDoc = null;
+
+      const doc = new jsPDF({
+        orientation: "portrait",
+        format: "a4",
+        unit: "mm",
+      });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const halfHeight = pageHeight / 2;
+
+      let pairIndex = 0;
+	  const my = 5;
+      for (let i = 1; i <= count; i += 2) {
+        pairIndex++;
+        // odd page: large numbers
+        if (i > 1) doc.addPage();
+        drawGroupNumber(doc, i, 0, pageWidth, halfHeight);
+        if (i + 1 <= count)
+          drawGroupNumber(doc, i + 1, halfHeight+my, pageWidth, halfHeight);
+
+        // even page: tables
+        doc.addPage();
+        status.textContent = `Erstelle Tabellen und QR-Codes für Gruppen ${i}${
+          i + 1 <= count ? " und " + (i + 1) : ""
+        }...`;
+        await drawGroupTable(doc, baseUrl, i, 0, pageWidth);
+        if (i + 1 <= count)
+          await drawGroupTable(doc, baseUrl, i + 1, halfHeight+my, pageWidth);
+      }
+
+      pdfDoc = doc;
+      status.textContent = `✅ Fertig! ${count} Gruppen erstellt.`;
+      saveBtn.style.display = "inline-block";
+    });
+
+    // --- Save PDF
+    document.getElementById("saveBtn").addEventListener("click", () => {
+      if (pdfDoc) pdfDoc.save("Gruppenheft.pdf");
+    });
+  </script>
+</body>
+</html>

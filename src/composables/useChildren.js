@@ -1,5 +1,5 @@
 // src/composables/useChildren.js
-import { supabase } from '@/plugins/supabase'; // Предполагаем, что supabase импортирован
+import { supabase } from '@/supabase'; // Предполагаем, что supabase импортирован
 
 export function useChildren() {
 
@@ -174,7 +174,7 @@ export function useChildren() {
         // band_id: Преобразуем в строку BigInt или устанавливаем null, если поле пустое
         const finalPayload = {
             ...payload,
-            band_id: band_id ? BigInt(band_id).toString() : null,
+            band_id: band_id ? parseInt(band_id).toString() : null,
         };
 
         let query;
