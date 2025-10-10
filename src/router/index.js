@@ -4,6 +4,8 @@ import ConfigView from '@/views/ConfigView.vue'
 import LoginView from '@/views/LoginView.vue'
 import InviteGeneratorView from '@/views/InviteGeneratorView.vue'
 import WelcomeView from '@/views/WelcomeView.vue'
+import MainView from '@/views/MainView.vue'
+import ScanView from '@/views/ScanView.vue'
 import { supabase } from '@/supabase'
 
 const routes = [
@@ -21,7 +23,7 @@ const routes = [
     },
     {
         path: '/',
-        redirect: '/info'
+        redirect: '/main'
     },
     {
         path: '/info',
@@ -40,6 +42,48 @@ const routes = [
         name: 'InviteGenerator',
         component: InviteGeneratorView,
         meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    // Main application layout with nested routes
+    {
+        path: '/main',
+        component: MainView,
+        meta: { requiresAuth: true },
+        children: [
+            {
+                path: '',
+                redirect: '/main/scan'
+            },
+            {
+                path: 'scan',
+                name: 'Scan',
+                component: ScanView,
+                meta: { requiresAuth: true }
+            },
+            {
+                path: 'children',
+                name: 'Children',
+                component: () => import('@/views/ChildrenView.vue'),
+                meta: { requiresAuth: true }
+            },
+            {
+                path: 'child/:id',
+                name: 'ChildDetail',
+                component: () => import('@/views/ChildDetailView.vue'),
+                meta: { requiresAuth: true }
+            },
+            {
+                path: 'bind',
+                name: 'BindBracelet',
+                component: () => import('@/views/BindBraceletView.vue'),
+                meta: { requiresAuth: true }
+            },
+            {
+                path: 'users',
+                name: 'Users',
+                component: () => import('@/views/UsersView.vue'),
+                meta: { requiresAuth: true, requiresAdmin: true }
+            }
+        ]
     }
 ]
 
@@ -48,14 +92,14 @@ const router = createRouter({
     routes,
 })
 
-// Globaler Guard zur Überprüfung der Authentifizierung
+// Global navigation guard
 router.beforeEach(async (to, from, next) => {
-    // Öffentliche Seiten
+    // Public pages
     if (to.meta.public) {
         return next()
     }
 
-    // Authentifizierung überprüfen
+    // Check authentication
     if (to.meta.requiresAuth) {
         try {
             const { data: { session } } = await supabase.auth.getSession()
@@ -65,7 +109,7 @@ router.beforeEach(async (to, from, next) => {
                 return next('/login')
             }
 
-            // Benutzerdaten aus der 'users'-Tabelle abrufen
+            // Get user data from 'users' table
             const { data: userData, error } = await supabase
                 .from('users')
                 .select('role, active')
@@ -78,7 +122,7 @@ router.beforeEach(async (to, from, next) => {
                 return next('/login')
             }
 
-            // Aktivität überprüfen
+            // Check if user is active
             if (!userData.active) {
                 console.log('⛔ Konto ist deaktiviert')
                 await supabase.auth.signOut()
@@ -86,14 +130,14 @@ router.beforeEach(async (to, from, next) => {
                 return next('/login')
             }
 
-            // Rechte für Admin-Seiten überprüfen
+            // Check admin rights for admin pages
             if (to.meta.requiresAdmin && userData.role !== 'admin') {
                 console.log('⛔ Zugriff verweigert: Rolle \'admin\' erforderlich')
                 alert('⛔ Zugriff verweigert: Nur für Administratoren!')
                 return next('/info')
             }
 
-            // 'last_seen_date' aktualisieren
+            // Update 'last_seen_date'
             supabase
                 .from('users')
                 .update({ last_seen_date: new Date().toISOString() })
