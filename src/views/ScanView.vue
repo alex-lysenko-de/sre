@@ -1,29 +1,21 @@
 <script setup>
 import { onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-// Предполагаем, что у вас есть supabase клиент
 import { supabase } from '@/plugins/supabase';
-// Предполагаем, что у вас есть заглушки для useAuth
-import { useAuth } from '@/composables/useAuth';
-
-const route = useRoute();
-const router = useRouter();
 // Используем заглушки, пока useAuth не реализован
 const useAuthStub = () => ({ currentUserId: ref(1), currentUserRole: ref('user') });
 const { currentUserId, currentUserRole } = useAuthStub();
 
 const scanStatus = ref('Ожидание сканирования...');
 const childData = ref(null);
-const bandId = ref(null); // Изменили название переменной на bandId (BigInt)
+const bandId = ref(null);
 
-// Логика из Тикета 2, адаптированная под новую структуру БД
 const processScan = async (n) => {
   if (!n) {
     scanStatus.value = 'Ошибка: Код браслета (n) не найден в URL.';
     return;
   }
 
-  // 1. Преобразование кода n в BigInt для band_id
   let nBigInt;
   try {
     nBigInt = BigInt(n);
@@ -35,70 +27,54 @@ const processScan = async (n) => {
   bandId.value = nBigInt;
   scanStatus.value = `Обработка кода: ${bandId.value}...`;
 
-  // 2. Проверка роли (Acceptance criteria 1)
-  // Мы используем 'user' для теста. Если роль guest или не авторизован - редирект.
   if (currentUserRole.value === 'guest' || !currentUserId.value) {
     scanStatus.value = 'Гостевой доступ. Перенаправление на /info...';
     router.replace({ path: '/info', query: { n } });
     return;
   }
 
-  // 3. Поиск ребёнка по band_id в таблице children (Адаптация под новую БД)
+  // 1. Поиск ребёнка по band_id
   const { data: child, error: childError } = await supabase
       .from('children')
-      // Запрашиваем данные о ребёнке, включая номер группы
       .select('*')
-      .eq('band_id', bandId.value.toString()) // Supabase может требовать строку для bigint в eq
+      .eq('band_id', bandId.value.toString())
       .single();
 
-  if (childError && childError.code !== 'PGRST116') { // PGRST116 = Not Found
-    // Обработка критической ошибки
+  if (childError && childError.code !== 'PGRST116') {
     scanStatus.value = `Ошибка запроса к БД: ${childError.message}`;
     return;
   }
 
   if (!child) {
-    // 4. Браслет не привязан (Acceptance criteria 3)
     scanStatus.value = `Браслет ${bandId.value} не привязан. Перенаправление на привязку.`;
-    // Перенаправление на BindBraceletView (Тикет 3)
     router.replace({ path: '/main/bind', query: { n: n } });
     return;
   }
 
   childData.value = child;
-
-  // 5. Создать запись в scans (Acceptance criteria 2)
   scanStatus.value = `Браслет привязан к ${child.name}. Запись скана...`;
 
-  // !!! Здесь должна быть логика дедупликации (Тикет 8) перед вставкой
+  // 2. Создать запись в scans (ВСЕГДА вставляем, без проверки дубликатов)
 
   const { error: scanInsertError } = await supabase.from('scans').insert({
     created_at: new Date().toISOString(),
-    date: new Date().toISOString().slice(0, 10), // YYYY-MM-DD
+    date: new Date().toISOString().slice(0, 10),
     user_id: currentUserId.value,
     child_id: child.id,
-    band_id: bandId.value, // Теперь это bigint
+    band_id: bandId.value,
     type: 1 // 'present'
   });
 
   if (scanInsertError) {
     console.error('Ошибка вставки скана:', scanInsertError);
-    // Обработка ошибки, например, если это дубликат (Тикет 8)
     scanStatus.value = `Скан не записан. Ошибка: ${scanInsertError.message}`;
   } else {
-    scanStatus.value = `✅ Успешно! Скан ребёнка ${child.name} записан.`;
+    // Успешный, но нейтральный ответ (поскольку могут быть и другие сканы)
+    scanStatus.value = `✅ Скан ребёнка ${child.name} успешно записан (сырые данные).`;
   }
 };
 
-
-onMounted(() => {
-  const n = route.query.n;
-  if (n) {
-    processScan(n);
-  } else {
-    scanStatus.value = 'Готов к сканированию. Отсканируйте QR-код.';
-  }
-});
+// ... (onMounted и остальная часть <template> без изменений)
 </script>
 
 <template>

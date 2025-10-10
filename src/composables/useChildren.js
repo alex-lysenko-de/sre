@@ -163,11 +163,63 @@ export function useChildren() {
         return { child, scans: formattedScans };
     };
 
+
+    /**
+     * Сохраняет (создает или обновляет) данные о ребенке.
+     * @param {object} childData - Данные ребенка. Может содержать 'id'.
+     */
+    const saveChild = async (childData) => {
+        const { id, band_id, ...payload } = childData;
+
+        // band_id: Преобразуем в строку BigInt или устанавливаем null, если поле пустое
+        const finalPayload = {
+            ...payload,
+            band_id: band_id ? BigInt(band_id).toString() : null,
+        };
+
+        let query;
+        let successMessage;
+
+        if (id) {
+            // UPDATE (Редактирование)
+            query = supabase
+                .from('children')
+                .update(finalPayload)
+                .eq('id', id)
+                .select()
+                .single();
+            successMessage = `Данные ребенка ${payload.name} обновлены.`;
+        } else {
+            // INSERT (Создание)
+            query = supabase
+                .from('children')
+                .insert({ ...finalPayload, created_at: new Date().toISOString() })
+                .select()
+                .single();
+            successMessage = `Ребенок ${payload.name} успешно создан.`;
+        }
+
+        const { data, error } = await query;
+
+        if (error) {
+            console.error('Ошибка сохранения данных ребенка:', error);
+            // Обработка ошибки, если код браслета уже привязан
+            if (error.code === '23505') {
+                throw new Error(`Ошибка: Код браслета "${band_id}" уже привязан к другому ребенку.`);
+            }
+            throw new Error(`Ошибка сохранения: ${error.message}`);
+        }
+
+        return { data, message: successMessage };
+    };
+
+
     return {
         createChildAndBind,
         bindBraceletToExistingChild,
         fetchAllChildren,
         fetchChildrenList,
-        fetchChildDetailsAndScans
+        fetchChildDetailsAndScans,
+        saveChild
     };
 }
