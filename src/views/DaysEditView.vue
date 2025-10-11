@@ -3,52 +3,50 @@
     <div class="card">
       <div class="card-header">
         <h3 class="mb-0">
-          <font-awesome-icon :icon="['fas', 'child']" />
-          Kinderliste für Gruppe {{ groupNumber }}
+          <font-awesome-icon :icon="['fas', 'calendar-alt']" />
+          Список дней
         </h3>
         <p class="mb-0 mt-2">{{ formattedCurrentDate }}</p>
       </div>
       <div class="card-body">
         <div id="alertContainer"></div>
 
-        <div v-if="loadingInitialData" class="text-center py-5">
+        <div v-if="loadingInitialData || configLoading" class="text-center py-5">
           <div class="spinner-border mb-3" role="status">
-            <span class="visually-hidden">Wird geladen...</span>
+            <span class="visually-hidden">Загрузка...</span>
           </div>
-          <p class="text-muted">Lade Kinderdaten...</p>
+          <p class="text-muted">Загрузка {{ configLoading ? 'конфигурации' : 'данных о днях' }}...</p>
         </div>
 
-        <div v-else-if="!isConfigLoaded" class="text-center py-5">
+        <div v-else-if="configError" class="text-center py-5">
           <font-awesome-icon :icon="['fas', 'exclamation-triangle']" />
-          <h5 class="text-muted">Konfiguration konnte nicht geladen werden.</h5>
-          <p class="text-muted">Bitte gehen Sie zur Anmeldeseite zurück, um die Konfiguration zu laden.</p>
+          <h5 class="text-muted">Не удалось загрузить конфигурацию.</h5>
+          <p class="text-muted">Ошибка: {{ configError.message }}. Используются значения по умолчанию.</p>
         </div>
 
         <div v-else>
           <ul class="list-group list-group-flush children-list">
-            <li v-if="children.length === 0" class="list-group-item text-center text-muted">
-              Keine Kinder in dieser Gruppe.
+            <li v-if="days.length === 0" class="list-group-item text-center text-muted">
+              Нет сохраненных дней.
             </li>
 
-            <li v-for="child in children" :key="child.id" class="list-group-item d-flex justify-content-between align-items-center">
+            <li v-for="day in days" :key="day.id" class="list-group-item d-flex justify-content-between align-items-center">
               <div>
-                <strong>{{ child.name }}</strong> ({{ child.age }} J.) -
-                <span class="badge" :class="getSwimBadgeClass(child.schwimmer)">
-                  {{ getSwimLevel(child.schwimmer) }}
-                </span>
-                <p v-if="child.notes && child.notes.trim() !== '\u0022\u0022' && child.notes.trim().length > 0" class="text-muted mb-0 mt-1" style="font-size: 0.9em;">
-                  Notizen: {{ child.notes }}
+                <strong>{{ day.date }}</strong> - {{ day.name || 'Без названия' }}
+                <span class="badge bg-primary ms-2">{{ day.abfahrt }} - {{ day.ankommen }}</span>
+                <p v-if="day.description" class="text-muted mb-0 mt-1" style="font-size: 0.9em;">
+                  Описание: {{ day.description.substring(0, 50) + (day.description.length > 50 ? '...' : '') }}
                 </p>
                 <p v-else class="text-muted mb-0 mt-1" style="font-size: 0.9em;">
-                  Keine Notizen
+                  Нет описания
                 </p>
               </div>
 
               <div class="d-flex">
-                <button class="btn btn-outline-primary btn-sm me-2" @click="editChild(child.id)" title="Kind bearbeiten">
+                <button class="btn btn-outline-primary btn-sm me-2" @click="editDay(day.id)" title="Редактировать день">
                   <font-awesome-icon :icon="['fas', 'edit']" />
                 </button>
-                <button class="btn btn-outline-danger btn-sm" @click="removeChild(child.id, child.name)" title="Kind entfernen">
+                <button class="btn btn-outline-danger btn-sm" @click="removeDay(day.id, day.date)" title="Удалить день">
                   <font-awesome-icon :icon="['fas', 'trash-alt']" />
                 </button>
               </div>
@@ -56,9 +54,9 @@
           </ul>
 
           <div class="d-grid gap-2 mt-4">
-            <button class="btn btn-secondary btn-lg" @click="goBack">
+            <button class="btn btn-secondary btn-lg" @click="goBack" disabled>
               <font-awesome-icon :icon="['fas', 'arrow-left']" />
-              Zurück zur Auswahl
+              Назад (Неактивно)
             </button>
           </div>
         </div>
@@ -68,88 +66,82 @@
     <div class="card mt-4">
       <div class="card-header">
         <h3 class="mb-0">
-          <font-awesome-icon :icon="['fas', 'child']" />
-          {{ editingChildId !== null ? 'Kind bearbeiten:' : 'Neues Kind hinzufügen:' }}
+          <font-awesome-icon :icon="['fas', 'calendar-plus']" />
+          {{ editingDayId !== null ? 'Редактировать день:' : 'Добавить / Редактировать день' }}
         </h3>
       </div>
       <div class="card-body">
         <div id="formAlertContainer"></div>
 
-        <form @submit.prevent="saveChild">
+        <form @submit.prevent="saveDay">
+
           <div class="mb-3">
-            <label for="newChildName" class="form-label">Name <span class="text-danger">*</span></label>
+            <label for="newDayDate" class="form-label">Дата (public.days.date) <span class="text-danger">*</span></label>
             <input
-                type="text"
-                id="newChildName"
+                type="date"
+                id="newDayDate"
                 class="form-control"
-                v-model="newChildName"
-                placeholder="Name des Kindes"
+                v-model="newDayDate"
                 required
             >
           </div>
 
+          <div class="mb-3">
+            <label for="newDayName" class="form-label">Название (public.days.name)</label>
+            <input
+                type="text"
+                id="newDayName"
+                class="form-control"
+                v-model="newDayName"
+                placeholder="Например, 'Поездка в зоопарк'"
+            >
+          </div>
+
           <div class="row">
-            <div class="col-md-4 mb-3">
-              <label for="newChildAge" class="form-label">Alter <span class="text-danger">*</span></label>
+            <div class="col-md-6 mb-3">
+              <label for="newDayAbfahrt" class="form-label">Время отправления (public.days.abfahrt) <span class="text-danger">*</span></label>
               <input
-                  type="number"
-                  id="newChildAge"
+                  type="time"
+                  id="newDayAbfahrt"
                   class="form-control"
-                  v-model.number="newChildAge"
-                  placeholder="Alter"
-                  min="0"
+                  v-model="newDayAbfahrt"
                   required
               >
             </div>
-            <div class="col-md-4 mb-3">
-              <label for="newChildSchwimm" class="form-label">Schwimmer (Level 0-4) <span class="text-danger">*</span></label>
-              <select
-                  id="newChildSchwimm"
-                  class="form-select"
-                  v-model.number="newChildSchwimm"
-                  required
-              >
-                <option :value="0">0 - Nichtschwimmer</option>
-                <option :value="1">1 - Seepferdchen</option>
-                <option :value="2">2 - Bronze</option>
-                <option :value="3">3 - Silber</option>
-                <option :value="4">4 - Gold</option>
-              </select>
-            </div>
-            <div class="col-md-4 mb-3">
-              <label for="newChildBandId" class="form-label">Armband Code (optional)</label>
+            <div class="col-md-6 mb-3">
+              <label for="newDayAnkommen" class="form-label">Время прибытия (public.days.ankommen) <span class="text-danger">*</span></label>
               <input
-                  type="text"
-                  id="newChildBandId"
+                  type="time"
+                  id="newDayAnkommen"
                   class="form-control"
-                  v-model="newChildBandId"
-                  placeholder="z.B. 123456789"
+                  v-model="newDayAnkommen"
+                  required
               >
             </div>
           </div>
 
           <div class="mb-4">
-            <label for="newChildNotes" class="form-label">Notizen</label>
-            <input
-                type="text"
-                id="newChildNotes"
+            <label for="newDayDescription" class="form-label">Описание (public.days.description)</label>
+            <textarea
+                id="newDayDescription"
                 class="form-control"
-                v-model="newChildNotes"
-                placeholder="Besondere Hinweise (Allergien, Medikamente etc.)"
-            >
+                v-model="newDayDescription"
+                rows="3"
+                placeholder="Подробности о мероприятиях дня"
+            ></textarea>
           </div>
 
           <div class="d-flex justify-content-between">
-            <button type="submit" class="btn btn-primary btn-lg flex-grow-1 me-2">
-              <font-awesome-icon :icon="['fas', editingChildId !== null ? 'save' : 'add']" />
-              {{ editingChildId !== null ? 'Speichern' : 'Kind hinzufügen' }}
+            <button type="submit" class="btn btn-primary btn-lg flex-grow-1 me-2" :disabled="configLoading">
+              <font-awesome-icon :icon="['fas', editingDayId !== null ? 'save' : 'plus']" />
+              {{ editingDayId !== null ? 'Сохранить' : 'Добавить' }}
             </button>
-            <button v-if="editingChildId !== null" type="button" class="btn btn-outline-secondary btn-lg" @click="cancelEdit">
-              Abbrechen
+            <button v-if="editingDayId !== null" type="button" class="btn btn-outline-secondary btn-lg" @click="cancelEdit">
+              Отменить
             </button>
             <button v-else type="button" class="btn btn-outline-secondary btn-lg" @click="resetForm">
               <font-awesome-icon :icon="['fas', 'eraser']" />
-              Formular leeren
+              Очистить
             </button>
           </div>
         </form>
@@ -159,41 +151,15 @@
 </template>
 
 <script>
-// Import des Composables für die Datenbankverbindung
-import { useChildren } from '@/composables/useChildren';
+// --- ИСПОЛЬЗУЕМ ВАШ config.js ---
+import { useConfig } from '@/modules/config'; // Предполагаем путь '@/config'
+// ---------------------------------
 
-// --- Statische Daten für die Anzeige ---
-const SWIM_LEVELS = {
-  0: 'Nichtschwimmer',
-  1: 'Seepferdchen',
-  2: 'Bronze',
-  3: 'Silber',
-  4: 'Gold',
-};
-const SWIM_BADGE_CLASSES = {
-  0: 'bg-danger text-white',
-  1: 'bg-warning text-dark',
-  2: 'bg-info text-white',
-  3: 'bg-secondary text-white',
-  4: 'bg-success text-white',
-};
+import { useDays } from '@/composables/useDays';
 
+
+// --- Утилиты для стилей и уведомлений (взяты из GroupEditView.vue) ---
 const Utils = {
-  getSwimLevel(level) {
-    return SWIM_LEVELS[level] || 'Unbekannt';
-  },
-  getSwimBadgeClass(level) {
-    // FIX: Accessor direkt auf statisches Objekt gerichtet (aus früherem Fehler)
-    return SWIM_BADGE_CLASSES[level] || 'bg-light text-dark';
-  },
-
-  getCurrentDateString() {
-    return new Date().toISOString().split('T')[0];
-  },
-  formatDateForDisplay(dateString) {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('de-DE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-  },
   showAlert(message, type = 'info', containerId = 'alertContainer') {
     const alertContainer = document.getElementById(containerId);
     if (!alertContainer) return;
@@ -213,200 +179,226 @@ const Utils = {
       alertDiv.remove();
     }, 5000);
   },
+  getCurrentDateString() {
+    // Формат 'yyyy-mm-dd', как требуется для public.days.date по умолчанию
+    return new Date().toISOString().split('T')[0];
+  },
+  formatDateForDisplay(dateString) {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('ru-RU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  },
 };
 
 export default {
-  name: 'GroupEditView',
+  name: 'DaysEditView',
+
   setup() {
-    // Verwendung der Datenbank-Funktionen
-    const { fetchChildrenList, saveChild, deleteChild } = useChildren();
-    return { fetchChildrenList, saveChild, deleteChild };
+    // Использование созданных нами composables
+    const { fetchDaysList, saveDay, deleteDay } = useDays();
+    // Получение реактивного состояния конфига и функции загрузки
+    const { config, loadConfig, loading: configLoading, error: configError } = useConfig();
+
+    return {
+      fetchDaysList, saveDay, deleteDay,
+      // Добавляем функции и состояние конфига в контекст компонента
+      config, loadConfig, configLoading, configError
+    };
   },
 
   data() {
     return {
+      // isConfigLoaded теперь можно заменить на !this.configLoading && !this.configError,
+      // но для соответствия GroupEditView.vue оставим флаг, который мы будем устанавливать
       isConfigLoaded: true,
       loadingInitialData: true,
 
-      groupNumber: this.$route.query ? this.$route.query.gr || '1' : '1',
+      // Данные для полей формы Days
+      newDayDate: Utils.getCurrentDateString(), // По умолчанию текущая дата
+      newDayName: '',
+      newDayAbfahrt: '', // По умолчанию из config.value("abfahrt_time")
+      newDayAnkommen: '', // По умолчанию из config.value("ankommen_time")
+      newDayDescription: '',
 
-      // Daten für die Formularfelder
-      newChildName: '',
-      newChildAge: '',
-      newChildSchwimm: 0,
-      newChildNotes: '',
-      newChildBandId: '',
-
-      // Zustand für Bearbeitung
-      editingChildId: null,
+      // Состояние для редактирования
+      editingDayId: null,
 
       formattedCurrentDate: '',
-      allChildrenData: [],
+      days: [], // Список дней
     };
   },
-  computed: {
-    children() {
-      // Kinder der aktuellen Gruppe filtern
-      const groupID = parseInt(this.groupNumber);
-      return (this.allChildrenData || []).filter(child => child.group_id === groupID);
-    }
-  },
+
   async created() {
     this.formattedCurrentDate = Utils.formatDateForDisplay(Utils.getCurrentDateString());
-    this.groupNumber = String(this.groupNumber);
+
+    // 1. Сначала загружаем конфигурацию
+    await this.loadConfig(); // loadConfig из useConfig
+
+    // 2. Устанавливаем дефолты и загружаем данные о днях
+    this.setDefaultsFromConfig();
     await this.loadInitialData();
   },
+
   methods: {
-    getSwimLevel: Utils.getSwimLevel,
-    getSwimBadgeClass: Utils.getSwimBadgeClass,
     showAlert: Utils.showAlert,
 
-    // --- CRUD / Daten-Methoden ---
+    /**
+     * Устанавливает значения abfahrt и ankommen по умолчанию из реактивного объекта config.
+     */
+    setDefaultsFromConfig() {
+      // config — это реактивный объект (Proxy), который содержит данные из configData
+      const abfahrtTime = this.config.abfahrt_time;
+      const ankommenTime = this.config.ankommen_time;
+
+      // Применяем их только если нет активного редактирования,
+      // чтобы не перезатереть значения при редактировании.
+      if (this.editingDayId === null) {
+        this.newDayAbfahrt = abfahrtTime || '08:00';
+        this.newDayAnkommen = ankommenTime || '17:00';
+      }
+
+      // Установка isConfigLoaded для отображения UI
+      this.isConfigLoaded = !this.configError;
+
+      if (this.configError) {
+        this.showAlert(`Ошибка при загрузке конфигурации: ${this.configError.message}. Использованы значения по умолчанию (08:00/17:00).`, 'warning');
+      } else if (!abfahrtTime || !ankommenTime) {
+        // Показываем предупреждение, если в конфиге нет нужных ключей, но ошибка загрузки не произошла
+        this.showAlert(`Ключи abfahrt_time или ankommen_time не найдены в конфигурации Supabase. Использованы значения по умолчанию (08:00/17:00).`, 'warning');
+      }
+    },
 
     async loadInitialData() {
       this.loadingInitialData = true;
+
       try {
-        const data = await this.fetchChildrenList();
-        this.allChildrenData = data;
-        this.showAlert(`Daten für Gruppe ${this.groupNumber} von Supabase geladen.`, 'info');
+        const data = await this.fetchDaysList(); // fetchDaysList из useDays.js
+        this.days = data;
+        this.showAlert(`Данные о днях загружены из Supabase.`, 'info');
       } catch (error) {
-        this.showAlert(`Fehler beim Laden der Kinderdaten: ${error.message}`, 'danger');
-        this.isConfigLoaded = false;
+        this.showAlert(`Ошибка при загрузке данных о днях: ${error.message}`, 'danger');
       } finally {
         this.loadingInitialData = false;
       }
     },
 
     resetForm() {
-      this.newChildName = '';
-      this.newChildAge = '';
-      this.newChildSchwimm = 0;
-      this.newChildNotes = '';
-      this.newChildBandId = '';
-      this.editingChildId = null;
+      this.editingDayId = null;
+      this.newDayDate = Utils.getCurrentDateString();
+      this.newDayName = '';
+      this.newDayDescription = '';
+      // Сбрасываем время на дефолтное из конфига
+      this.setDefaultsFromConfig();
     },
 
     cancelEdit() {
       this.resetForm();
-      this.showAlert('Bearbeitung abgebrochen.', 'info', 'formAlertContainer');
+      this.showAlert('Редактирование отменено.', 'info', 'formAlertContainer');
     },
 
-    validateChildData() {
-      const name = this.newChildName.trim();
-      const age = this.newChildAge;
-      const schwimmer = this.newChildSchwimm;
-      const bandId = this.newChildBandId;
+    validateDayData() {
+      const date = this.newDayDate;
+      const abfahrt = this.newDayAbfahrt;
+      const ankommen = this.newDayAnkommen;
 
-      if (!name) {
-        this.showAlert('Bitte geben Sie einen Namen für das Kind ein.', 'warning', 'formAlertContainer');
+      if (!date) {
+        this.showAlert('Пожалуйста, выберите дату.', 'warning', 'formAlertContainer');
         return false;
       }
-      if (!Number.isInteger(Number(age)) || Number(age) <= 0 || Number(age) > 99) {
-        this.showAlert('Bitte geben Sie ein gültiges Alter (positive Zahl bis 99) ein.', 'warning', 'formAlertContainer');
-        return false;
-      }
-      if (!Number.isInteger(Number(schwimmer)) || Number(schwimmer) < 0 || Number(schwimmer) > 4) {
-        this.showAlert('Bitte wählen Sie ein gültiges Schwimmer-Level (0 bis 4).', 'warning', 'formAlertContainer');
-        return false;
-      }
-      if (bandId && (isNaN(Number(bandId)) || !Number.isInteger(Number(bandId)) || Number(bandId) <= 0)) {
-        this.showAlert('Armband Code muss eine positive Ganzzahl sein.', 'warning', 'formAlertContainer');
+      if (!abfahrt || !ankommen) {
+        this.showAlert('Пожалуйста, укажите время отправления и прибытия.', 'warning', 'formAlertContainer');
         return false;
       }
 
       return true;
     },
 
-    async saveChild() {
-      if (!this.validateChildData()) {
+    async saveDay() {
+      if (!this.validateDayData()) {
         return;
       }
 
-      const childData = {
-        name: this.newChildName.trim(),
-        age: parseInt(this.newChildAge),
-        schwimmer: parseInt(this.newChildSchwimm),
-        notes: this.newChildNotes.trim(),
-        group_id: parseInt(this.groupNumber),
-        band_id: this.newChildBandId ? String(this.newChildBandId) : null,
+      const dayData = {
+        date: this.newDayDate,
+        name: this.newDayName.trim(),
+        abfahrt: this.newDayAbfahrt,
+        ankommen: this.newDayAnkommen,
+        description: this.newDayDescription.trim(),
       };
 
-      if (this.editingChildId !== null) {
-        childData.id = this.editingChildId;
+      if (this.editingDayId !== null) {
+        dayData.id = this.editingDayId;
       }
 
       try {
-        // Ruft die saveChild-Funktion aus dem useChildren-Composable auf
-        const { data, message } = await this.saveChild(childData);
+        const { data, message } = await this.saveDay(dayData);
 
-        // Daten im lokalen Array aktualisieren (lokaler Cache)
-        if (this.editingChildId !== null) {
-          const index = this.allChildrenData.findIndex(c => c.id === this.editingChildId);
+        // Обновление данных в локальном массиве
+        if (this.editingDayId !== null) {
+          const index = this.days.findIndex(d => d.id === this.editingDayId);
           if (index !== -1) {
-            // Vue 2/3 kompatibel: Ersetzen des Elements im Array
-            this.allChildrenData.splice(index, 1, data);
+            this.days.splice(index, 1, data);
           }
         } else {
-          this.allChildrenData.push(data);
+          this.days.push(data);
         }
+
+        // Сортировка по дате для корректного отображения
+        this.days.sort((a, b) => new Date(a.date) - new Date(b.date));
 
         this.showAlert(message, 'success');
         this.resetForm();
       } catch (error) {
-        this.showAlert(`Fehler beim Speichern: ${error.message}`, 'danger', 'formAlertContainer');
+        this.showAlert(`Ошибка при сохранении: ${error.message}`, 'danger', 'formAlertContainer');
       }
     },
 
-    editChild(childId) {
-      this.editingChildId = childId;
-      const childToEdit = this.allChildrenData.find(c => c.id === childId);
+    editDay(dayId) {
+      this.editingDayId = dayId;
+      const dayToEdit = this.days.find(d => d.id === dayId);
 
-      if (childToEdit) {
-        // Formular füllen
-        this.newChildName = childToEdit.name;
-        this.newChildAge = childToEdit.age;
-        this.newChildSchwimm = childToEdit.schwimmer;
-        // Spezielle Behandlung des Standardplatzhalters '""' aus der Datenbank
-        this.newChildNotes = (childToEdit.notes && childToEdit.notes.trim() !== '""') ? childToEdit.notes : '';
-        this.newChildBandId = childToEdit.band_id || '';
+      if (dayToEdit) {
+        // Заполнение формы
+        this.newDayDate = dayToEdit.date;
+        this.newDayName = dayToEdit.name || '';
+        this.newDayAbfahrt = dayToEdit.abfahrt;
+        this.newDayAnkommen = dayToEdit.ankommen;
+        this.newDayDescription = dayToEdit.description || '';
 
-        document.getElementById('newChildName').focus();
-        this.showAlert(`Kind "${childToEdit.name}" zum Bearbeiten geladen.`, 'info', 'formAlertContainer');
+        document.getElementById('newDayDate').focus();
+        this.showAlert(`День "${dayToEdit.date}" загружен для редактирования.`, 'info', 'formAlertContainer');
       }
     },
 
-    async removeChild(childId, childName) {
-      if (confirm(`Möchten Sie das Kind "${childName}" (ID: ${childId}) wirklich entfernen?`)) {
+    async removeDay(dayId, dayDate) {
+      if (confirm(`Вы действительно хотите удалить день "${dayDate}"?`)) {
         try {
-          // Ruft die deleteChild-Funktion aus dem useChildren-Composable auf
-          await this.deleteChild(childId);
+          await this.deleteDay(dayId);
 
-          // Lokales Entfernen aus dem Cache
-          const index = this.allChildrenData.findIndex(c => c.id === childId);
+          // Локальное удаление
+          const index = this.days.findIndex(d => d.id === dayId);
           if (index !== -1) {
-            this.allChildrenData.splice(index, 1);
+            this.days.splice(index, 1);
           }
 
-          if (this.editingChildId === childId) {
+          if (this.editingDayId === dayId) {
             this.resetForm();
           }
 
-          this.showAlert(`Kind "${childName}" erfolgreich entfernt.`, 'success');
+          this.showAlert(`День "${dayDate}" успешно удален.`, 'success');
         } catch (error) {
-          this.showAlert(`Fehler beim Entfernen des Kindes: ${error.message}`, 'danger');
+          this.showAlert(`Ошибка при удалении дня: ${error.message}`, 'danger');
         }
       }
     },
 
     goBack() {
-      alert('Zurück-Navigation (Emulation): Rückkehr zur Gruppenauswahl.');
+      alert('Назад-Навигация (Эмуляция): Возврат к предыдущему представлению.');
     }
   }
 };
 </script>
 
 <style>
-/* ... (Der Stilblock bleibt unverändert) ... */
 .main-container {
   display: flex;
   flex-direction: column;
