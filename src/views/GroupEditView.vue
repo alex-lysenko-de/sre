@@ -20,7 +20,7 @@
 
         <div v-else-if="!isConfigLoaded" class="text-center py-5">
           <font-awesome-icon :icon="['fas', 'exclamation-triangle']" />
-          <h5 class="text-muted">Konfiguration konnte nicht geladen werden. (Синтетическая Fehler)</h5>
+          <h5 class="text-muted">Konfiguration konnte nicht geladen werden.</h5>
           <p class="text-muted">Bitte gehen Sie zur Anmeldeseite zurück, um die Konfiguration zu laden.</p>
         </div>
 
@@ -30,14 +30,14 @@
               Keine Kinder in dieser Gruppe.
             </li>
 
-            <li v-for="(child, index) in children" :key="index" class="list-group-item d-flex justify-content-between align-items-center">
+            <li v-for="child in children" :key="child.id" class="list-group-item d-flex justify-content-between align-items-center">
               <div>
                 <strong>{{ child.name }}</strong> ({{ child.age }} J.) -
                 <span class="badge" :class="getSwimBadgeClass(child.schwimmer)">
                   {{ getSwimLevel(child.schwimmer) }}
                 </span>
-                <p v-if="child.notes" class="text-muted mb-0 mt-1" style="font-size: 0.9em;">
-                  Notizen: {{ child.notes }}
+                <p v-if="child.notes && child.notes.trim() !== ''" class="text-muted mb-0 mt-1" style="font-size: 0.9em;">
+                Notizen: {{ child.notes }}
                 </p>
                 <p v-else class="text-muted mb-0 mt-1" style="font-size: 0.9em;">
                   Keine Notizen
@@ -45,10 +45,10 @@
               </div>
 
               <div class="d-flex">
-                <button class="btn btn-outline-primary btn-sm me-2" @click="editChild(index)" title="Kind bearbeiten">
+                <button class="btn btn-outline-primary btn-sm me-2" @click="editChild(child.id)" title="Kind bearbeiten">
                   <font-awesome-icon :icon="['fas', 'edit']" />
                 </button>
-                <button class="btn btn-outline-danger btn-sm" @click="removeChild(index)" title="Kind entfernen">
+                <button class="btn btn-outline-danger btn-sm" @click="removeChild(child.id, child.name)" title="Kind entfernen">
                   <font-awesome-icon :icon="['fas', 'trash-alt']" />
                 </button>
               </div>
@@ -69,7 +69,7 @@
       <div class="card-header">
         <h3 class="mb-0">
           <font-awesome-icon :icon="['fas', 'child']" />
-          {{ editingChildIndex !== null ? 'Kind bearbeiten:' : 'Neues Kind hinzufügen:' }}
+          {{ editingChildId !== null ? 'Kind bearbeiten:' : 'Neues Kind hinzufügen:' }}
         </h3>
       </div>
       <div class="card-body">
@@ -89,19 +89,19 @@
           </div>
 
           <div class="row">
-            <div class="col-md-6 mb-3">
+            <div class="col-md-4 mb-3">
               <label for="newChildAge" class="form-label">Alter <span class="text-danger">*</span></label>
               <input
                   type="number"
                   id="newChildAge"
                   class="form-control"
                   v-model.number="newChildAge"
-                  placeholder="Alter des Kindes"
+                  placeholder="Alter"
                   min="0"
                   required
               >
             </div>
-            <div class="col-md-6 mb-3">
+            <div class="col-md-4 mb-3">
               <label for="newChildSchwimm" class="form-label">Schwimmer (Level 0-4) <span class="text-danger">*</span></label>
               <select
                   id="newChildSchwimm"
@@ -115,7 +115,16 @@
                 <option :value="3">3 - Silber</option>
                 <option :value="4">4 - Gold</option>
               </select>
-              <div class="form-text">0=Nichtschwimmer, 1=Seepferdchen, 4=Gold</div>
+            </div>
+            <div class="col-md-4 mb-3">
+              <label for="newChildBandId" class="form-label">Armband Code (optional)</label>
+              <input
+                  type="text"
+                  id="newChildBandId"
+                  class="form-control"
+                  v-model="newChildBandId"
+                  placeholder="z.B. 123456789"
+              >
             </div>
           </div>
 
@@ -132,10 +141,10 @@
 
           <div class="d-flex justify-content-between">
             <button type="submit" class="btn btn-primary btn-lg flex-grow-1 me-2">
-              <font-awesome-icon :icon="['fas', editingChildIndex !== null ? 'save' : 'add']" />
-              {{ editingChildIndex !== null ? 'Speichern' : 'Kind hinzufügen' }}
+              <font-awesome-icon :icon="['fas', editingChildId !== null ? 'save' : 'add']" />
+              {{ editingChildId !== null ? 'Speichern' : 'Kind hinzufügen' }}
             </button>
-            <button v-if="editingChildIndex !== null" type="button" class="btn btn-outline-secondary btn-lg" @click="cancelEdit">
+            <button v-if="editingChildId !== null" type="button" class="btn btn-outline-secondary btn-lg" @click="cancelEdit">
               Abbrechen
             </button>
             <button v-else type="button" class="btn btn-outline-secondary btn-lg" @click="resetForm">
@@ -150,61 +159,32 @@
 </template>
 
 <script>
-// --- Синтетические данные для эмуляции API ---
-const SYNTHETIC_GROUP_DATA = {
-  // Имитация данных, которые будут получены из 'groupBin'
-  Kinder: [
-    // Gruppe 1
-    { name: "Max Mühler", age: 12, schwimmer: 1, notes: "hat eine Allergie auf Dust", group_id: 1, band_id: null },
-    { name: "Emily Schulz", age: 10, schwimmer: 2, notes: "", group_id: 1, band_id: null },
-    { name: "Sofia Wagner", age: 8, schwimmer: 0, notes: "Braucht Schwimmweste", group_id: 1, band_id: null },
-    { name: "Lukas Becker", age: 13, schwimmer: 4, notes: "", group_id: 1, band_id: null },
-    { name: "Mia Schmidt", age: 9, schwimmer: 3, notes: "Vegetarisch", group_id: 1, band_id: null },
+// Import des Composables für die Datenbankverbindung
+import { useChildren } from '@/composables/useChildren';
 
-    // Gruppe 2
-    { name: "Jonas Richter", age: 11, schwimmer: 3, notes: "", group_id: 2, band_id: null },
-    { name: "Anna Klein", age: 14, schwimmer: 4, notes: "Asthma-Spray dabei", group_id: 2, band_id: null },
-    { name: "Ben Weber", age: 7, schwimmer: 0, notes: "", group_id: 2, band_id: null },
-    { name: "Lena Huber", age: 10, schwimmer: 1, notes: "Laktoseintoleranz", group_id: 2, band_id: null },
-    { name: "Felix König", age: 12, schwimmer: 2, notes: "", group_id: 2, band_id: null },
-
-    // Gruppe 3
-    { name: "Sarah Graf", age: 9, schwimmer: 2, notes: "", group_id: 3, band_id: null },
-    { name: "Tim Müller", age: 15, schwimmer: 4, notes: "", group_id: 3, band_id: null },
-    { name: "Elena Wolf", age: 8, schwimmer: 0, notes: "Ängstlich im Wasser", group_id: 3, band_id: null },
-    { name: "Moritz Koch", age: 11, schwimmer: 3, notes: "Muss täglich Medikamente nehmen", group_id: 3, band_id: null },
-    { name: "Hannah Bauer", age: 13, schwimmer: 1, notes: "", group_id: 3, band_id: null },
-  ]
+// --- Statische Daten für die Anzeige ---
+const SWIM_LEVELS = {
+  0: 'Nichtschwimmer',
+  1: 'Seepferdchen',
+  2: 'Bronze',
+  3: 'Silber',
+  4: 'Gold',
+};
+const SWIM_BADGE_CLASSES = {
+  0: 'bg-danger text-white',
+  1: 'bg-warning text-dark',
+  2: 'bg-info text-white',
+  3: 'bg-secondary text-white',
+  4: 'bg-success text-white',
 };
 
-
-
 const Utils = {
-  // Mapping für Schwimmabzeichen
-  SWIM_LEVELS: {
-    0: 'Nichtschwimmer',
-    1: 'Seepferdchen',
-    2: 'Bronze',
-    3: 'Silber',
-    4: 'Gold',
-  },
-  SWIM_BADGE_CLASSES: {
-    0: 'bg-danger text-white',
-    1: 'bg-warning text-dark',
-    2: 'bg-info text-white',
-    3: 'bg-secondary text-white',
-    4: 'bg-success text-white',
-  },
-
+  // Helferfunktionen für Schwimmabzeichen (jetzt ohne 'this' in der Definition)
   getSwimLevel(level) {
-    // Greift direkt auf Utils.SWIM_LEVELS zu
-    return Utils.SWIM_LEVELS[level] || 'Unbekannt';
+    return SWIM_LEVELS[level] || 'Unbekannt';
   },
   getSwimBadgeClass(level) {
-    // ! DIES IST DIE FEHLERHAFTE STELLE !
-    // Zuvor: return this.SWIM_BADGE_CLASSES[level] || 'bg-light text-dark';
-    // Korrekt: Greift direkt auf Utils.SWIM_BADGE_CLASSES zu
-    return Utils.SWIM_BADGE_CLASSES[level] || 'bg-light text-dark';
+    return SWIM_BADGE_CLASSES[level] || 'bg-light text-dark';
   },
 
   // Vorgegebene Hilfsfunktionen
@@ -220,7 +200,6 @@ const Utils = {
     const alertContainer = document.getElementById(containerId);
     if (!alertContainer) return;
 
-    // В реальном Vue приложении лучше использовать компонент для Alert
     // Zuerst alle Alerts im Container entfernen
     alertContainer.innerHTML = '';
 
@@ -234,8 +213,6 @@ const Utils = {
     alertContainer.appendChild(alertDiv);
 
     setTimeout(() => {
-      // Требуется импорт Bootstrap JS для работы .close()
-      // Для этой демонстрации просто удалим
       alertDiv.remove();
     }, 5000);
   },
@@ -243,117 +220,107 @@ const Utils = {
 
 export default {
   name: 'GroupEditView',
+  // Initialisierung des Composables
+  setup() {
+    const { fetchChildrenList, saveChild, deleteChild } = useChildren();
+    return { fetchChildrenList, saveChild, deleteChild };
+  },
+
   data() {
     return {
-      // Имитация данных о состоянии
-      isConfigLoaded: true, // Имитация успешной загрузки конфигурации
+      // Zustand der Anwendung
+      isConfigLoaded: true,
       loadingInitialData: true,
-      // get group_number from URL: this.$route.query.gr || '1'
-      groupNumber: this.$route.query ? this.$route.query.gr || '1' : '1', // Gruppe von URL oder Standard '1'
 
-      // Данные компонента для формы
+      // Aus der URL
+      groupNumber: this.$route.query ? this.$route.query.gr || '1' : '1',
+
+      // Daten für die Formularfelder
       newChildName: '',
       newChildAge: '',
-      newChildSchwimm: 0, // Standardwert auf Nichtschwimmer setzen
+      newChildSchwimm: 0,
       newChildNotes: '',
-      editingChildIndex: null, // Index des zu bearbeitenden Kindes. null für Hinzufügen.
+      newChildBandId: '',
+
+      // Zustand für Bearbeitung
+      editingChildId: null, // ID des zu bearbeitenden Kindes. null für Hinzufügen.
 
       formattedCurrentDate: '',
-      currentGroupData: {}, // Hier werden die gefilterten Kinderdaten der aktuellen Gruppe gespeichert
-
-      // Эмулируемый API
-      syntheticApiDelay: 500, // Задержка для эмуляции сетевого запроса
+      allChildrenData: [], // Hier werden ALLE Kinder von Supabase gespeichert
     };
   },
   computed: {
     children() {
-      // Die Kinder der aktuellen Gruppe filtern
+      // Kinder der aktuellen Gruppe filtern
       const groupID = parseInt(this.groupNumber);
-      return (this.currentGroupData.Kinder || []).filter(child => child.group_id === groupID);
+      return (this.allChildrenData || []).filter(child => child.group_id === groupID);
     }
   },
   async created() {
     this.formattedCurrentDate = Utils.formatDateForDisplay(Utils.getCurrentDateString());
-
-    // Sicherstellen, dass groupNumber eine Zeichenkette ist (von URL-Query) und gefiltert wird.
     this.groupNumber = String(this.groupNumber);
-
-    // Эмуляция загрузки данных
     await this.loadInitialData();
   },
   methods: {
     getSwimLevel: Utils.getSwimLevel,
     getSwimBadgeClass: Utils.getSwimBadgeClass,
+    showAlert: Utils.showAlert,
 
-    // --- Эмуляция API-методов ---
+    // --- CRUD / Daten-Methoden ---
+
     async loadInitialData() {
       this.loadingInitialData = true;
-      // Эмуляция задержки сети
-      await new Promise(resolve => setTimeout(resolve, this.syntheticApiDelay));
-
       try {
-        // 1. Имитация получения всех данных
-        // Wir klonen die gesamten synthetischen Daten
-        this.currentGroupData = { Kinder: [...SYNTHETIC_GROUP_DATA.Kinder] };
-
-        // 2. Имитация проверки массива Kinder
-        if (!this.currentGroupData.Kinder) {
-          this.currentGroupData.Kinder = [];
-        }
-
-        Utils.showAlert(`Synthetische Daten für Gruppe ${this.groupNumber} geladen.`, 'info');
-
+        // Ruft alle Kinder aus der Datenbank ab
+        const data = await this.fetchChildrenList();
+        this.allChildrenData = data;
+        this.showAlert(`Daten für Gruppe ${this.groupNumber} von Supabase geladen.`, 'info');
       } catch (error) {
-        // В случае реальной ошибки API
-        Utils.showAlert('Synthetischer Fehler beim Laden der Daten.', 'danger');
+        this.showAlert(`Fehler beim Laden der Kinderdaten: ${error.message}`, 'danger');
         this.isConfigLoaded = false;
       } finally {
         this.loadingInitialData = false;
       }
     },
 
-    async updateDataInDatabase(data) {
-      // Эмуляция обновления данных в базе (API PUT)
-      await new Promise(resolve => setTimeout(resolve, this.syntheticApiDelay));
-      console.log("SYNTHETIC API: Daten gespeichert:", data);
-      // Immer erfolgreich im synthetischen Modus
-      return true;
-    },
-
-    // --- Методы UI / CRUD-Funktionen ---
-
     resetForm() {
       this.newChildName = '';
       this.newChildAge = '';
       this.newChildSchwimm = 0;
       this.newChildNotes = '';
-      this.editingChildIndex = null;
+      this.newChildBandId = '';
+      this.editingChildId = null;
     },
 
     cancelEdit() {
       this.resetForm();
-      Utils.showAlert('Bearbeitung abgebrochen.', 'info', 'formAlertContainer');
+      this.showAlert('Bearbeitung abgebrochen.', 'info', 'formAlertContainer');
     },
 
     validateChildData() {
       const name = this.newChildName.trim();
       const age = this.newChildAge;
       const schwimmer = this.newChildSchwimm;
+      const bandId = this.newChildBandId;
 
       if (!name) {
-        Utils.showAlert('Bitte geben Sie einen Namen für das Kind ein.', 'warning', 'formAlertContainer');
+        this.showAlert('Bitte geben Sie einen Namen für das Kind ein.', 'warning', 'formAlertContainer');
         return false;
       }
-      // Prüfen, ob Alter numerisch und ein positives Ganzzahl-ähnlicher Wert ist
-      if (!Number.isInteger(Number(age)) || Number(age) <= 0) {
-        Utils.showAlert('Bitte geben Sie ein gültiges Alter (positive Zahl) ein.', 'warning', 'formAlertContainer');
+      if (!Number.isInteger(Number(age)) || Number(age) <= 0 || Number(age) > 99) {
+        this.showAlert('Bitte geben Sie ein gültiges Alter (positive Zahl bis 99) ein.', 'warning', 'formAlertContainer');
         return false;
       }
-      // Prüfen, ob Schwimmer-Level im gültigen Bereich (0-4) liegt
       if (!Number.isInteger(Number(schwimmer)) || Number(schwimmer) < 0 || Number(schwimmer) > 4) {
-        Utils.showAlert('Bitte wählen Sie ein gültiges Schwimmer-Level (0 bis 4).', 'warning', 'formAlertContainer');
+        this.showAlert('Bitte wählen Sie ein gültiges Schwimmer-Level (0 bis 4).', 'warning', 'formAlertContainer');
         return false;
       }
+      // Validiere Band-ID, falls angegeben
+      if (bandId && (isNaN(Number(bandId)) || !Number.isInteger(Number(bandId)) || Number(bandId) <= 0)) {
+        this.showAlert('Armband Code muss eine positive Ganzzahl sein.', 'warning', 'formAlertContainer');
+        return false;
+      }
+
       return true;
     },
 
@@ -362,163 +329,111 @@ export default {
         return;
       }
 
-      const newChildData = {
+      const childData = {
         name: this.newChildName.trim(),
         age: parseInt(this.newChildAge),
         schwimmer: parseInt(this.newChildSchwimm),
         notes: this.newChildNotes.trim(),
         group_id: parseInt(this.groupNumber),
-        band_id: null // Wird von der Datenbank gesetzt
+        band_id: this.newChildBandId ? String(this.newChildBandId) : null,
       };
 
-      const groupID = parseInt(this.groupNumber);
-      // Finde den globalen Index des Kindes in currentGroupData.Kinder
+      if (this.editingChildId !== null) {
+        childData.id = this.editingChildId;
+      }
 
-      if (this.editingChildIndex !== null) {
-        // BEARBEITEN
-        const globalIndex = this.currentGroupData.Kinder.findIndex(
-            (child, idx) => child.group_id === groupID && idx === this.editingChildIndex
-        );
+      try {
+        const { data, message } = await this.saveChild(childData);
 
-        if (globalIndex !== -1) {
-          // Temporäres Backup
-          const oldChildData = { ...this.currentGroupData.Kinder[globalIndex] };
-
-          // Lokales Update
-          this.currentGroupData.Kinder[globalIndex] = newChildData;
-
-          try {
-            const success = await this.updateDataInDatabase(this.currentGroupData);
-
-            if (success) {
-              Utils.showAlert(`Kind "${newChildData.name}" erfolgreich bearbeitet! (Synthetisches Speichern)`, 'success');
-              this.resetForm();
-            } else {
-              // Rollback
-              this.currentGroupData.Kinder[globalIndex] = oldChildData;
-              Utils.showAlert('Fehler beim Speichern der Kindesdaten.', 'danger');
-            }
-          } catch (error) {
-            this.currentGroupData.Kinder[globalIndex] = oldChildData; // Rollback
-            Utils.showAlert(`Fehler beim Speichern des Kindes: ${error.message}`, 'danger');
+        // Daten im lokalen Array aktualisieren
+        if (this.editingChildId !== null) {
+          const index = this.allChildrenData.findIndex(c => c.id === this.editingChildId);
+          if (index !== -1) {
+            this.allChildrenData.splice(index, 1, data); // Ersetzen
           }
+        } else {
+          this.allChildrenData.push(data); // Hinzufügen
         }
-      } else {
-        // HINZUFÜGEN
-        try {
-          // Lokales Update (Fügen Sie es zur gesamten Liste hinzu, da es synthetisch ist)
-          this.currentGroupData.Kinder.push(newChildData);
 
-          // Echte Logik: Wir suchen den Index des neuen Kindes
-          // In diesem synthetischen Setup wird das Kind automatisch gefiltert und in der computed children Property angezeigt
-
-          const success = await this.updateDataInDatabase(this.currentGroupData);
-
-          if (success) {
-            Utils.showAlert(`Kind "${newChildData.name}" erfolgreich hinzugefügt! (Synthetisches Speichern)`, 'success');
-            this.resetForm();
-          } else {
-            // Rollback, wenn Speichern fehlschlägt
-            this.currentGroupData.Kinder.pop();
-            Utils.showAlert('Fehler beim Hinzufügen des Kindes.', 'danger');
-          }
-        } catch (error) {
-          Utils.showAlert(`Fehler beim Speichern des Kindes: ${error.message}`, 'danger');
-        }
+        this.showAlert(message, 'success');
+        this.resetForm();
+      } catch (error) {
+        this.showAlert(`Fehler beim Speichern: ${error.message}`, 'danger', 'formAlertContainer');
       }
     },
 
-    async editChild(localIndex) {
-      // localIndex ist der Index in der gefilterten 'children' Liste
-      this.editingChildIndex = localIndex;
-      const childToEdit = this.children[localIndex];
+    editChild(childId) {
+      this.editingChildId = childId;
+      const childToEdit = this.allChildrenData.find(c => c.id === childId);
 
-      // Formular füllen
-      this.newChildName = childToEdit.name;
-      this.newChildAge = childToEdit.age;
-      this.newChildSchwimm = childToEdit.schwimmer;
-      this.newChildNotes = childToEdit.notes;
+      if (childToEdit) {
+        // Formular füllen
+        this.newChildName = childToEdit.name;
+        this.newChildAge = childToEdit.age;
+        this.newChildSchwimm = childToEdit.schwimmer;
+        this.newChildNotes = childToEdit.notes && childToEdit.notes.trim() !== '""' ? childToEdit.notes : '';
+        this.newChildBandId = childToEdit.band_id || '';
 
-      // Fokus auf das Formular
-      document.getElementById('newChildName').focus();
-      Utils.showAlert(`Kind "${childToEdit.name}" zum Bearbeiten geladen.`, 'info', 'formAlertContainer');
+        document.getElementById('newChildName').focus();
+        this.showAlert(`Kind "${childToEdit.name}" zum Bearbeiten geladen.`, 'info', 'formAlertContainer');
+      }
     },
 
-    async removeChild(localIndex) {
-      const childToRemove = this.children[localIndex];
-
-      if (confirm(`Möchten Sie das Kind "${childToRemove.name}" wirklich entfernen?`)) {
-        // Finde den globalen Index in currentGroupData.Kinder
-        const groupID = parseInt(this.groupNumber);
-        const globalIndex = this.currentGroupData.Kinder.findIndex(
-            (child, idx) => child.group_id === groupID && idx === localIndex
-        );
-
-        if (globalIndex === -1) {
-          Utils.showAlert('Fehler: Kind wurde in den globalen Daten nicht gefunden.', 'danger');
-          return;
-        }
-
+    async removeChild(childId, childName) {
+      if (confirm(`Möchten Sie das Kind "${childName}" (ID: ${childId}) wirklich entfernen?`)) {
         try {
-          // Lokales Entfernen und Speichern des entfernten Elements für den Rollback
-          const removedChild = this.currentGroupData.Kinder.splice(globalIndex, 1)[0];
+          await this.deleteChild(childId);
+
+          // Lokales Entfernen
+          const index = this.allChildrenData.findIndex(c => c.id === childId);
+          if (index !== -1) {
+            this.allChildrenData.splice(index, 1);
+          }
 
           // Wenn das entfernte Kind dasjenige war, das gerade bearbeitet wird, den Bearbeitungsmodus beenden
-          if (this.editingChildIndex === localIndex) {
+          if (this.editingChildId === childId) {
             this.resetForm();
           }
 
-          // Эмуляция сохранения
-          const success = await this.updateDataInDatabase(this.currentGroupData);
-
-          if (success) {
-            Utils.showAlert(`Kind "${removedChild.name}" erfolgreich entfernt. (Synthetisches Speichern)`, 'success');
-          } else {
-            // Rollback, wenn Speichern fehlschlägt
-            this.currentGroupData.Kinder.splice(globalIndex, 0, removedChild);
-            Utils.showAlert('Fehler beim Entfernen des Kindes.', 'danger');
-          }
+          this.showAlert(`Kind "${childName}" erfolgreich entfernt.`, 'success');
         } catch (error) {
-          Utils.showAlert(`Fehler beim Entfernen des Kindes: ${error.message}`, 'danger');
+          this.showAlert(`Fehler beim Entfernen des Kindes: ${error.message}`, 'danger');
         }
       }
     },
 
     goBack() {
-      // В реальном приложении Vue: this.$router.push({ name: 'GroupSelection' });
       alert('Zurück-Navigation (Emulation): Rückkehr zur Gruppenauswahl.');
-      // window.history.back();
     }
   }
 };
 </script>
 
 <style>
-/* ... (Der Stilblock bleibt unverändert, um die visuelle Konsistenz zu gewährleisten) ... */
-/* --- Стили для центрирования и общего вида --- */
+/* ... (Der Stilblock bleibt unverändert) ... */
 .main-container {
   display: flex;
-  flex-direction: column; /* Vertikale Anordnung der Karten */
+  flex-direction: column;
   justify-content: center;
   align-items: center;
   min-height: 100vh;
   padding: 20px;
-  background-color: #f8f9fa; /* Светлый фон */
+  background-color: #f8f9fa;
 }
 
 .card {
   width: 100%;
-  max-width: 650px; /* Ограничение ширины для лучшей читаемости */
+  max-width: 650px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   border-radius: 12px;
 }
 
 .card + .card {
-  margin-top: 20px; /* Abstand zwischen den Karten */
+  margin-top: 20px;
 }
 
 .card-header {
-  background-color: #007bff; /* Основной цвет Bootstrap - синий */
+  background-color: #007bff;
   color: white;
   padding: 1.5rem;
   border-top-left-radius: 12px;
@@ -529,7 +444,6 @@ export default {
   font-weight: 600;
 }
 
-/* --- Стили для списка детей --- */
 .children-list {
   border: 1px solid #dee2e6;
   border-radius: 0.25rem;
@@ -546,15 +460,12 @@ export default {
   background-color: #f1f1f1;
 }
 
-/* Anpassung der Buttons im list-group-item */
 .list-group-item .btn {
-  /* Stil für alle Buttons in der Liste */
   margin-left: 10px;
   padding: 0.25rem 0.5rem;
   font-size: 0.875rem;
 }
 
-/* Spezifische Anpassung für Edit/Delete Buttons, falls notwendig */
 .list-group-item .btn-outline-primary {
   color: #007bff;
   border-color: #007bff;
@@ -565,8 +476,6 @@ export default {
   border-color: #dc3545;
 }
 
-
-/* --- Кнопка "Zurück" --- */
 .btn-secondary {
   background-color: #6c757d;
   border-color: #6c757d;
@@ -575,15 +484,5 @@ export default {
 .btn-secondary:hover {
   background-color: #5a6268;
   border-color: #545b62;
-}
-
-/* --- Input Group --- */
-.input-group .form-control {
-  border-top-right-radius: 0;
-  border-bottom-right-radius: 0;
-}
-.input-group .btn {
-  border-top-left-radius: 0;
-  border-bottom-left-radius: 0;
 }
 </style>

@@ -163,6 +163,23 @@ export function useChildren() {
         return { child, scans: formattedScans };
     };
 
+    /**
+     * Удаляет ребенка по ID.
+     * @param {number} childId - ID ребенка
+     */
+    const deleteChild = async (childId) => {
+        const { error } = await supabase
+            .from('children')
+            .delete()
+            .eq('id', childId);
+
+        if (error) {
+            console.error('Ошибка удаления ребенка:', error);
+            throw new Error(error.message);
+        }
+        return true;
+    };
+
 
     /**
      * Сохраняет (создает или обновляет) данные о ребенке.
@@ -172,9 +189,10 @@ export function useChildren() {
         const { id, band_id, ...payload } = childData;
 
         // band_id: Преобразуем в строку BigInt или устанавливаем null, если поле пустое
+        // Также проверяем, что band_id является числом, прежде чем вызывать toString()
         const finalPayload = {
             ...payload,
-            band_id: band_id ? parseInt(band_id).toString() : null,
+            band_id: band_id && !isNaN(parseInt(band_id)) ? parseInt(band_id).toString() : null,
         };
 
         let query;
@@ -214,12 +232,16 @@ export function useChildren() {
     };
 
 
+
     return {
         createChildAndBind,
         bindBraceletToExistingChild,
         fetchAllChildren,
         fetchChildrenList,
         fetchChildDetailsAndScans,
-        saveChild
+        saveChild,
+        deleteChild,
+        unbindBracelet,
+
     };
 }
