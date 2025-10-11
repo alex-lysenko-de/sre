@@ -1,17 +1,17 @@
 // src/composables/useChildren.js
-import { supabase } from '@/supabase'; // Предполагаем, что supabase импортирован
+import { supabase } from '@/supabase';
 
 export function useChildren() {
 
     /**
-     * Создает нового ребенка и привязывает к нему код браслета.
+     * Erstellt ein neues Kind und bindet einen Armbandcode.
      * @param {object} childData - { name, age, schwimmer, group_id }
-     * @param {bigint} bandId - Код браслета (n)
+     * @param {bigint} bandId - Armbandcode (n)
      */
     const createChildAndBind = async (childData, bandId) => {
         const payload = {
             ...childData,
-            band_id: bandId, // Привязываем браслет
+            band_id: bandId,
             created_at: new Date().toISOString(),
         };
 
@@ -22,19 +22,18 @@ export function useChildren() {
             .single();
 
         if (error) {
-            console.error('Ошибка создания ребенка и привязки:', error);
+            console.error('Fehler beim Erstellen und Binden des Kindes:', error);
             throw new Error(error.message);
         }
-        return data; // Возвращаем созданного ребенка
+        return data;
     };
 
     /**
-     * Привязывает код браслета к существующему ребенку.
-     * @param {number} childId - ID существующего ребенка
-     * @param {bigint} bandId - Код браслета (n)
+     * Bindet einen Armbandcode an ein bestehendes Kind.
+     * @param {number} childId - ID des bestehenden Kindes
+     * @param {bigint} bandId - Armbandcode (n)
      */
     const bindBraceletToExistingChild = async (childId, bandId) => {
-        // Проверяем, не занят ли уже этот band_id
         const { data: existingChild, error: checkError } = await supabase
             .from('children')
             .select('id, name')
@@ -44,27 +43,26 @@ export function useChildren() {
         if (checkError) throw new Error(checkError.message);
 
         if (existingChild) {
-            // Если браслет уже привязан к кому-то, необходимо его отвязать
+            // Wenn das Armband bereits gebunden ist, muss es zuerst entbunden werden
             await unbindBracelet(bandId);
         }
 
         const { data, error } = await supabase
             .from('children')
-            .update({ band_id: bandId }) // Привязываем
+            .update({ band_id: bandId })
             .eq('id', childId)
             .select()
             .single();
 
         if (error) {
-            console.error('Ошибка привязки браслета:', error);
+            console.error('Fehler beim Binden des Armbands:', error);
             throw new Error(error.message);
         }
-        return data; // Возвращаем обновленного ребенка
+        return data;
     };
 
     /**
-     * Отвязывает браслет от ребенка, который его использовал ранее.
-     * (Просто устанавливает band_id = NULL для ребенка с этим браслетом)
+     * Entbindet das Armband von dem Kind, das es zuvor benutzt hat.
      */
     const unbindBracelet = async (bandId) => {
         const { error } = await supabase
@@ -73,15 +71,15 @@ export function useChildren() {
             .eq('band_id', bandId);
 
         if (error) {
-            console.error('Ошибка отвязки старого браслета:', error);
-            throw new Error(`Ошибка отвязки старого браслета: ${error.message}`);
+            console.error('Fehler beim Entbinden des alten Armbands:', error);
+            throw new Error(`Fehler beim Entbinden des alten Armbands: ${error.message}`);
         }
         return true;
     }
 
 
     /**
-     * Получает список всех детей (для селектора).
+     * Ruft eine Liste aller Kinder ab (für einen Selektor).
      */
     const fetchAllChildren = async () => {
         const { data, error } = await supabase
@@ -90,7 +88,7 @@ export function useChildren() {
             .order('name', { ascending: true });
 
         if (error) {
-            console.error('Ошибка получения списка детей:', error);
+            console.error('Fehler beim Abrufen der Kinderliste:', error);
             return [];
         }
         return data;
@@ -98,24 +96,24 @@ export function useChildren() {
 
 
     /**
-     * Получает список всех детей с возможностью поиска по имени или ID браслета.
-     * @param {string} searchTerm - Строка для поиска
+     * Ruft eine Liste aller Kinder ab, optional mit Suchbegriff.
+     * @param {string} searchTerm - Suchbegriff (Name oder Armband-ID)
      */
     const fetchChildrenList = async (searchTerm = '') => {
         let query = supabase
             .from('children')
-            .select('id, name, age, group_id, schwimmer, band_id')
+            .select('id, name, age, group_id, schwimmer, band_id, notes')
             .order('name', { ascending: true });
 
         if (searchTerm) {
-            // Поиск по имени (регистронезависимо) ИЛИ по band_id
+            // Suche nach Name (case-insensitive) ODER nach band_id
             query = query.or(`name.ilike.%${searchTerm}%,band_id.eq.${searchTerm}`);
         }
 
         const { data, error } = await query;
 
         if (error) {
-            console.error('Ошибка получения списка детей:', error);
+            console.error('Fehler beim Abrufen der Kinderliste:', error);
             throw new Error(error.message);
         }
         return data;
@@ -123,11 +121,10 @@ export function useChildren() {
 
 
     /**
-     * Получает детали ребенка по ID и его историю сканирования.
-     * @param {number} childId - ID ребенка
+     * Ruft Details des Kindes und die Scan-Historie ab.
+     * @param {number} childId - ID des Kindes
      */
     const fetchChildDetailsAndScans = async (childId) => {
-        // 1. Получаем детали ребенка
         const { data: child, error: childError } = await supabase
             .from('children')
             .select('*')
@@ -135,28 +132,24 @@ export function useChildren() {
             .single();
 
         if (childError) {
-            throw new Error(`Ошибка получения данных ребенка: ${childError.message}`);
+            throw new Error(`Fehler beim Abrufen der Kinderdaten: ${childError.message}`);
         }
 
-        // 2. Получаем историю сканов
         const { data: scans, error: scansError } = await supabase
-            // Запрашиваем все поля, включая user_id и type
             .from('scans')
             .select('*')
             .eq('child_id', childId)
             .order('created_at', { ascending: false })
-            .limit(50); // Ограничим 50 последними сканами
+            .limit(50);
 
         if (scansError) {
-            console.error('Ошибка получения истории сканов:', scansError);
+            console.error('Fehler beim Abrufen der Scan-Historie:', scansError);
         }
 
-        // Для удобства отображения, добавим map для типа скана
-        // (Соответствует логике из Тикета 2, т.к. scan_type не используется)
-        const scanTypeMap = { 1: 'Присутствие', 2: 'Автобус (Вход)', 3: 'Автобус (Выход)' };
+        const scanTypeMap = { 1: 'Präsenz', 2: 'Bus (Einstieg)', 3: 'Bus (Ausstieg)' };
         const formattedScans = (scans || []).map(scan => ({
             ...scan,
-            type_name: scanTypeMap[scan.type] || 'Неизвестно'
+            type_name: scanTypeMap[scan.type] || 'Unbekannt'
         }));
 
 
@@ -164,8 +157,8 @@ export function useChildren() {
     };
 
     /**
-     * Удаляет ребенка по ID.
-     * @param {number} childId - ID ребенка
+     * Löscht ein Kind anhand der ID.
+     * @param {number} childId - ID des Kindes
      */
     const deleteChild = async (childId) => {
         const { error } = await supabase
@@ -174,7 +167,7 @@ export function useChildren() {
             .eq('id', childId);
 
         if (error) {
-            console.error('Ошибка удаления ребенка:', error);
+            console.error('Fehler beim Löschen des Kindes:', error);
             throw new Error(error.message);
         }
         return true;
@@ -182,14 +175,13 @@ export function useChildren() {
 
 
     /**
-     * Сохраняет (создает или обновляет) данные о ребенке.
-     * @param {object} childData - Данные ребенка. Может содержать 'id'.
+     * Speichert (erstellt oder aktualisiert) die Daten des Kindes.
+     * @param {object} childData - Daten des Kindes. Kann 'id' enthalten.
      */
     const saveChild = async (childData) => {
         const { id, band_id, ...payload } = childData;
 
-        // band_id: Преобразуем в строку BigInt или устанавливаем null, если поле пустое
-        // Также проверяем, что band_id является числом, прежде чем вызывать toString()
+        // band_id: Konvertiert in BigInt-String oder setzt auf null, falls leer
         const finalPayload = {
             ...payload,
             band_id: band_id && !isNaN(parseInt(band_id)) ? parseInt(band_id).toString() : null,
@@ -199,38 +191,37 @@ export function useChildren() {
         let successMessage;
 
         if (id) {
-            // UPDATE (Редактирование)
+            // UPDATE (Bearbeiten)
             query = supabase
                 .from('children')
                 .update(finalPayload)
                 .eq('id', id)
                 .select()
                 .single();
-            successMessage = `Данные ребенка ${payload.name} обновлены.`;
+            successMessage = `Daten des Kindes ${payload.name} wurden aktualisiert.`;
         } else {
-            // INSERT (Создание)
+            // INSERT (Erstellen)
             query = supabase
                 .from('children')
                 .insert({ ...finalPayload, created_at: new Date().toISOString() })
                 .select()
                 .single();
-            successMessage = `Ребенок ${payload.name} успешно создан.`;
+            successMessage = `Kind ${payload.name} wurde erfolgreich erstellt.`;
         }
 
         const { data, error } = await query;
 
         if (error) {
-            console.error('Ошибка сохранения данных ребенка:', error);
-            // Обработка ошибки, если код браслета уже привязан
+            console.error('Fehler beim Speichern der Kinderdaten:', error);
+            // Behandlung des Fehlers, wenn der Armbandcode bereits gebunden ist
             if (error.code === '23505') {
-                throw new Error(`Ошибка: Код браслета "${band_id}" уже привязан к другому ребенку.`);
+                throw new Error(`Fehler: Der Armbandcode "${band_id}" ist bereits einem anderen Kind zugeordnet.`);
             }
-            throw new Error(`Ошибка сохранения: ${error.message}`);
+            throw new Error(`Speicherfehler: ${error.message}`);
         }
 
         return { data, message: successMessage };
     };
-
 
 
     return {

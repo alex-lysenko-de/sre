@@ -238,10 +238,10 @@ export default {
       newChildBandId: '',
 
       // Zustand für Bearbeitung
-      editingChildId: null, // ID des zu bearbeitenden Kindes. null für Hinzufügen.
+      editingChildId: null,
 
       formattedCurrentDate: '',
-      allChildrenData: [], // Hier werden ALLE Kinder von Supabase gespeichert
+      allChildrenData: [],
     };
   },
   computed: {
@@ -309,7 +309,6 @@ export default {
         this.showAlert('Bitte wählen Sie ein gültiges Schwimmer-Level (0 bis 4).', 'warning', 'formAlertContainer');
         return false;
       }
-      // Validiere Band-ID, falls angegeben
       if (bandId && (isNaN(Number(bandId)) || !Number.isInteger(Number(bandId)) || Number(bandId) <= 0)) {
         this.showAlert('Armband Code muss eine positive Ganzzahl sein.', 'warning', 'formAlertContainer');
         return false;
