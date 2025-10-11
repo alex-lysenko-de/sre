@@ -1,5 +1,5 @@
 // src/composables/useChildren.js
-import { supabase } from '@/supabase';
+import {supabase} from '@/supabase';
 
 export function useChildren() {
 
@@ -11,8 +11,8 @@ export function useChildren() {
     const createChildAndBind = async (childData, bandId) => {
         const payload = {
             ...childData,
-            band_id: bandId,
-            created_at: new Date().toISOString(),
+            band_id : bandId,
+            created_at : new Date().toISOString(),
         };
 
         const { data, error } = await supabase
@@ -34,7 +34,7 @@ export function useChildren() {
      * @param {bigint} bandId - Armbandcode (n)
      */
     const bindBraceletToExistingChild = async (childId, bandId) => {
-        const { data: existingChild, error: checkError } = await supabase
+        const { data : existingChild, error : checkError } = await supabase
             .from('children')
             .select('id, name')
             .eq('band_id', bandId)
@@ -49,7 +49,7 @@ export function useChildren() {
 
         const { data, error } = await supabase
             .from('children')
-            .update({ band_id: bandId })
+            .update({ band_id : bandId })
             .eq('id', childId)
             .select()
             .single();
@@ -67,7 +67,7 @@ export function useChildren() {
     const unbindBracelet = async (bandId) => {
         const { error } = await supabase
             .from('children')
-            .update({ band_id: null })
+            .update({ band_id : null })
             .eq('band_id', bandId);
 
         if (error) {
@@ -85,7 +85,7 @@ export function useChildren() {
         const { data, error } = await supabase
             .from('children')
             .select('id, name, group_id')
-            .order('name', { ascending: true });
+            .order('name', { ascending : true });
 
         if (error) {
             console.error('Fehler beim Abrufen der Kinderliste:', error);
@@ -103,7 +103,7 @@ export function useChildren() {
         let query = supabase
             .from('children')
             .select('id, name, age, group_id, schwimmer, band_id, notes')
-            .order('name', { ascending: true });
+            .order('name', { ascending : true });
 
         if (searchTerm) {
             // Suche nach Name (case-insensitive) ODER nach band_id
@@ -125,7 +125,7 @@ export function useChildren() {
      * @param {number} childId - ID des Kindes
      */
     const fetchChildDetailsAndScans = async (childId) => {
-        const { data: child, error: childError } = await supabase
+        const { data : child, error : childError } = await supabase
             .from('children')
             .select('*')
             .eq('id', childId)
@@ -135,25 +135,25 @@ export function useChildren() {
             throw new Error(`Fehler beim Abrufen der Kinderdaten: ${childError.message}`);
         }
 
-        const { data: scans, error: scansError } = await supabase
+        const { data : scans, error : scansError } = await supabase
             .from('scans')
             .select('*')
             .eq('child_id', childId)
-            .order('created_at', { ascending: false })
+            .order('created_at', { ascending : false })
             .limit(50);
 
         if (scansError) {
             console.error('Fehler beim Abrufen der Scan-Historie:', scansError);
         }
 
-        const scanTypeMap = { 1: 'Präsenz', 2: 'Bus (Einstieg)', 3: 'Bus (Ausstieg)' };
+        const scanTypeMap = { 1 : 'Präsenz', 2 : 'Bus (Einstieg)', 3 : 'Bus (Ausstieg)' };
         const formattedScans = (scans || []).map(scan => ({
             ...scan,
-            type_name: scanTypeMap[scan.type] || 'Unbekannt'
+            type_name : scanTypeMap[ scan.type ] || 'Unbekannt'
         }));
 
 
-        return { child, scans: formattedScans };
+        return { child, scans : formattedScans };
     };
 
     /**
@@ -179,12 +179,14 @@ export function useChildren() {
      * @param {object} childData - Daten des Kindes. Kann 'id' enthalten.
      */
     const saveChild = async (childData) => {
-        const { id, band_id, ...payload } = childData;
+        const { id, band_id, notes, ...payload } = childData; // Извлекаем notes
 
-        // band_id: Konvertiert in BigInt-String oder setzt auf null, falls leer
+        const cleanedNotes = notes && notes.trim() !== '' && notes.trim() !== '""' ? notes.trim() : '';
+
         const finalPayload = {
             ...payload,
-            band_id: band_id && !isNaN(parseInt(band_id)) ? parseInt(band_id).toString() : null,
+            notes : cleanedNotes, // Используем очищенные заметки
+            band_id : band_id && !isNaN(parseInt(band_id)) ? parseInt(band_id).toString() : null,
         };
 
         let query;
@@ -203,7 +205,7 @@ export function useChildren() {
             // INSERT (Erstellen)
             query = supabase
                 .from('children')
-                .insert({ ...finalPayload, created_at: new Date().toISOString() })
+                .insert({ ...finalPayload, created_at : new Date().toISOString() })
                 .select()
                 .single();
             successMessage = `Kind ${payload.name} wurde erfolgreich erstellt.`;
@@ -220,7 +222,7 @@ export function useChildren() {
             throw new Error(`Speicherfehler: ${error.message}`);
         }
 
-        return { data, message: successMessage };
+        return { data, message : successMessage };
     };
 
 
