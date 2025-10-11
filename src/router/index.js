@@ -12,6 +12,7 @@ import ChildDetailView from '@/views/ChildDetailView.vue';
 import BindBraceletView from '@/views/BindBraceletView.vue';
 import UsersView from '@/views/UsersView.vue';
 import GroupEditView from "@/views/GroupEditView.vue";
+import DaysEditView from "@/views/DaysEditView.vue";
 
 const routes = [
     {
@@ -42,7 +43,12 @@ const routes = [
         component: GroupEditView,
         meta: { requiresAuth: true, requiresAdmin: false }
     },
-
+    {
+        path: '/days-edit',
+        name: 'DaysEdit',
+        component: DaysEditView,
+        meta: { requiresAuth: true, requiresAdmin: true }
+    },
     {
         path: '/config',
         name: 'Config',
