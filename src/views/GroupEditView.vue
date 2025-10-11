@@ -36,8 +36,8 @@
                 <span class="badge" :class="getSwimBadgeClass(child.schwimmer)">
                   {{ getSwimLevel(child.schwimmer) }}
                 </span>
-                <p v-if="child.notes && child.notes.trim() !== ''" class="text-muted mb-0 mt-1" style="font-size: 0.9em;">
-                Notizen: {{ child.notes }}
+                <p v-if="child.notes && child.notes.trim() !== '\u0022\u0022' && child.notes.trim().length > 0" class="text-muted mb-0 mt-1" style="font-size: 0.9em;">
+                  Notizen: {{ child.notes }}
                 </p>
                 <p v-else class="text-muted mb-0 mt-1" style="font-size: 0.9em;">
                   Keine Notizen
@@ -179,15 +179,14 @@ const SWIM_BADGE_CLASSES = {
 };
 
 const Utils = {
-  // Helferfunktionen für Schwimmabzeichen (jetzt ohne 'this' in der Definition)
   getSwimLevel(level) {
     return SWIM_LEVELS[level] || 'Unbekannt';
   },
   getSwimBadgeClass(level) {
+    // FIX: Accessor direkt auf statisches Objekt gerichtet (aus früherem Fehler)
     return SWIM_BADGE_CLASSES[level] || 'bg-light text-dark';
   },
 
-  // Vorgegebene Hilfsfunktionen
   getCurrentDateString() {
     return new Date().toISOString().split('T')[0];
   },
@@ -195,12 +194,10 @@ const Utils = {
     const date = new Date(dateString);
     return date.toLocaleDateString('de-DE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   },
-  // Vcплывающее сообщение (упрощенная версия для Vue компонента)
   showAlert(message, type = 'info', containerId = 'alertContainer') {
     const alertContainer = document.getElementById(containerId);
     if (!alertContainer) return;
 
-    // Zuerst alle Alerts im Container entfernen
     alertContainer.innerHTML = '';
 
     const alertDiv = document.createElement('div');
@@ -220,19 +217,17 @@ const Utils = {
 
 export default {
   name: 'GroupEditView',
-  // Initialisierung des Composables
   setup() {
+    // Verwendung der Datenbank-Funktionen
     const { fetchChildrenList, saveChild, deleteChild } = useChildren();
     return { fetchChildrenList, saveChild, deleteChild };
   },
 
   data() {
     return {
-      // Zustand der Anwendung
       isConfigLoaded: true,
       loadingInitialData: true,
 
-      // Aus der URL
       groupNumber: this.$route.query ? this.$route.query.gr || '1' : '1',
 
       // Daten für die Formularfelder
@@ -271,7 +266,6 @@ export default {
     async loadInitialData() {
       this.loadingInitialData = true;
       try {
-        // Ruft alle Kinder aus der Datenbank ab
         const data = await this.fetchChildrenList();
         this.allChildrenData = data;
         this.showAlert(`Daten für Gruppe ${this.groupNumber} von Supabase geladen.`, 'info');
@@ -343,16 +337,18 @@ export default {
       }
 
       try {
+        // Ruft die saveChild-Funktion aus dem useChildren-Composable auf
         const { data, message } = await this.saveChild(childData);
 
-        // Daten im lokalen Array aktualisieren
+        // Daten im lokalen Array aktualisieren (lokaler Cache)
         if (this.editingChildId !== null) {
           const index = this.allChildrenData.findIndex(c => c.id === this.editingChildId);
           if (index !== -1) {
-            this.allChildrenData.splice(index, 1, data); // Ersetzen
+            // Vue 2/3 kompatibel: Ersetzen des Elements im Array
+            this.allChildrenData.splice(index, 1, data);
           }
         } else {
-          this.allChildrenData.push(data); // Hinzufügen
+          this.allChildrenData.push(data);
         }
 
         this.showAlert(message, 'success');
@@ -371,7 +367,8 @@ export default {
         this.newChildName = childToEdit.name;
         this.newChildAge = childToEdit.age;
         this.newChildSchwimm = childToEdit.schwimmer;
-        this.newChildNotes = childToEdit.notes && childToEdit.notes.trim() !== '""' ? childToEdit.notes : '';
+        // Spezielle Behandlung des Standardplatzhalters '""' aus der Datenbank
+        this.newChildNotes = (childToEdit.notes && childToEdit.notes.trim() !== '""') ? childToEdit.notes : '';
         this.newChildBandId = childToEdit.band_id || '';
 
         document.getElementById('newChildName').focus();
@@ -382,15 +379,15 @@ export default {
     async removeChild(childId, childName) {
       if (confirm(`Möchten Sie das Kind "${childName}" (ID: ${childId}) wirklich entfernen?`)) {
         try {
+          // Ruft die deleteChild-Funktion aus dem useChildren-Composable auf
           await this.deleteChild(childId);
 
-          // Lokales Entfernen
+          // Lokales Entfernen aus dem Cache
           const index = this.allChildrenData.findIndex(c => c.id === childId);
           if (index !== -1) {
             this.allChildrenData.splice(index, 1);
           }
 
-          // Wenn das entfernte Kind dasjenige war, das gerade bearbeitet wird, den Bearbeitungsmodus beenden
           if (this.editingChildId === childId) {
             this.resetForm();
           }
