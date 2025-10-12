@@ -1,10 +1,10 @@
 // src/composables/useDays.js
-import { supabase } from '@/supabase'; // Импорт клиента Supabase
+import { supabase } from '@/supabase'; // Import Supabase client
 
 export function useDays() {
 
     /**
-     * Получает список всех дней, отсортированный по дате.
+     * Retrieves a list of all days, sorted by date.
      */
     const fetchDaysList = async () => {
         const { data, error } = await supabase
@@ -13,7 +13,7 @@ export function useDays() {
             .order('date', { ascending : true });
 
         if (error) {
-            console.error('Ошибка при получении списка дней:', error);
+            console.error('Error fetching days list:', error); // Comment translated
             throw new Error(error.message);
         }
         return data;
@@ -21,8 +21,8 @@ export function useDays() {
 
 
     /**
-     * Удаляет день по ID.
-     * @param {number} dayId - ID дня
+     * Deletes a day by ID.
+     * @param {number} dayId - The ID of the day
      */
     const deleteDay = async (dayId) => {
         const { error } = await supabase
@@ -31,26 +31,26 @@ export function useDays() {
             .eq('id', dayId);
 
         if (error) {
-            console.error('Ошибка при удалении дня:', error);
+            console.error('Error deleting day:', error); // Comment translated
             throw new Error(error.message);
         }
         return true;
     };
 
     /**
-     * Сохраняет (создает или обновляет) данные дня.
-     * @param {object} dayData - Данные дня. Может содержать 'id'.
+     * Saves (creates or updates) the day data.
+     * @param {object} dayData - The day data. May contain 'id'.
      */
     const saveDay = async (dayData) => {
         const { id, ...payload } = dayData;
 
-        // Проверка авторизации:
+        // Authorization check:
         const { data: { user }, error: authError } = await supabase.auth.getUser();
         if (authError || !user) {
-            throw new Error("Ошибка авторизации: Вы должны войти в систему. Политика RLS требует статуса 'authenticated'.");
+            throw new Error("Authorization error: You must be logged in. The RLS policy requires 'authenticated' status."); // Message translated
         }
 
-        // Нормализация данных
+        // Data normalization
         const finalPayload = {
             ...payload,
             abfahrt: payload.abfahrt || null,
@@ -62,41 +62,41 @@ export function useDays() {
         let successMessage;
 
         if (id) {
-            // UPDATE (Редактирование)
+            // UPDATE (Editing)
             query = supabase
                 .from('days')
                 .update(finalPayload)
                 .eq('id', id)
-                .select(); // <--- УДАЛЕНО .single()
-                           // чтобы избежать PGRST116, если RLS блокирует обновление
-            successMessage = `День "${payload.date}" обновлен.`;
+                .select(); // <--- REMOVED .single()
+                           // to avoid PGRST116 if RLS blocks the update
+            successMessage = `Day "${payload.date}" updated.`; // Message translated
         } else {
-            // INSERT (Создание)
+            // INSERT (Creation)
             query = supabase
                 .from('days')
                 .insert({ ...finalPayload, created_at : new Date().toISOString() })
                 .select()
-                .single(); // <--- .single() остается для INSERT, так как мы ожидаем одну вставленную строку
-            successMessage = `День "${payload.date}" успешно создан.`;
+                .single(); // <--- .single() remains for INSERT, as we expect one inserted row
+            successMessage = `Day "${payload.date}" successfully created.`; // Message translated
         }
 
         const { data, error } = await query;
 
         if (error) {
-            console.error('Ошибка при сохранении данных дня:', error);
+            console.error('Error saving day data:', error); // Comment translated
             if (error.message.includes('violates row-level security policy')) {
-                throw new Error(`Ошибка RLS: Доступ запрещен. Убедитесь, что политика RLS для INSERT/UPDATE на таблице 'days' установлена на 'WITH CHECK (true)' для 'authenticated' пользователей.`);
+                throw new Error(`RLS error: Access denied. Ensure the RLS policy for INSERT/UPDATE on table 'days' is set to 'WITH CHECK (true)' for 'authenticated' users.`); // Message translated
             }
-            throw new Error(`Ошибка сохранения: ${error.message}`);
+            throw new Error(`Save error: ${error.message}`); // Message translated
         }
 
-        // ДОПОЛНИТЕЛЬНАЯ ПРОВЕРКА ДЛЯ UPDATE:
-        // Если это был UPDATE, и данных нет (data.length === 0), то RLS заблокировала его.
+        // ADDITIONAL CHECK FOR UPDATE:
+        // If it was an UPDATE, and there is no data (data.length === 0), then RLS blocked it.
         if (id && (!data || data.length === 0)) {
-            throw new Error(`Ошибка RLS: Обновление не выполнено. Политика безопасности не разрешает вам изменять запись с ID ${id}.`);
+            throw new Error(`RLS error: Update not performed. The security policy does not allow you to modify record with ID ${id}.`); // Message translated
         }
 
-        // Возвращаем первый элемент (для INSERT это всегда data[0], для UPDATE - data[0])
+        // Return the first element (for INSERT it is always data[0], for UPDATE - data[0])
         return { data: Array.isArray(data) ? data[0] : data, message : successMessage };
     };
 

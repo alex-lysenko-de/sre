@@ -4,8 +4,7 @@
       <div class="card-header">
         <h3 class="mb-0">
           <font-awesome-icon :icon="['fas', 'calendar-alt']" />
-          Список дней
-        </h3>
+          Liste der Tage </h3>
         <p class="mb-0 mt-2">{{ formattedCurrentDate }}</p>
       </div>
       <div class="card-body">
@@ -13,41 +12,32 @@
 
         <div v-if="loadingInitialData || configLoading" class="text-center py-5">
           <div class="spinner-border mb-3" role="status">
-            <span class="visually-hidden">Загрузка...</span>
-          </div>
-          <p class="text-muted">Загрузка {{ configLoading ? 'конфигурации' : 'данных о днях' }}...</p>
-        </div>
+            <span class="visually-hidden">Wird geladen...</span> </div>
+          <p class="text-muted">Lade {{ configLoading ? 'Konfiguration' : 'Tagesdaten' }}...</p> </div>
 
         <div v-else-if="configError" class="text-center py-5">
           <font-awesome-icon :icon="['fas', 'exclamation-triangle']" />
-          <h5 class="text-muted">Не удалось загрузить конфигурацию.</h5>
-          <p class="text-muted">Ошибка: {{ configError.message }}. Используются значения по умолчанию.</p>
-        </div>
+          <h5 class="text-muted">Konfiguration konnte nicht geladen werden.</h5> <p class="text-muted">Fehler: {{ configError.message }}. Standardwerte werden verwendet.</p> </div>
 
         <div v-else>
           <ul class="list-group list-group-flush children-list">
             <li v-if="days.length === 0" class="list-group-item text-center text-muted">
-              Нет сохраненных дней.
-            </li>
+              Keine Tage gespeichert. </li>
 
             <li v-for="day in days" :key="day.id" class="list-group-item d-flex justify-content-between align-items-center">
               <div>
-                <strong>{{ day.date }}</strong> - {{ day.name || 'Без названия' }}
-                <span class="badge bg-primary ms-2">{{ day.abfahrt }} - {{ day.ankommen }}</span>
+                <strong>{{ day.date }}</strong> - {{ day.name || 'Ohne Namen' }}
+                <span class="badge bg-primary ms-2">{{ day.abfahrt.substring(0, 5) }} - {{ day.ankommen.substring(0, 5) }}</span>
                 <p v-if="day.description" class="text-muted mb-0 mt-1" style="font-size: 0.9em;">
-                  Описание: {{ day.description.substring(0, 50) + (day.description.length > 50 ? '...' : '') }}
-                </p>
+                  Beschreibung: {{ day.description.substring(0, 50) + (day.description.length > 50 ? '...' : '') }} </p>
                 <p v-else class="text-muted mb-0 mt-1" style="font-size: 0.9em;">
-                  Нет описания
-                </p>
+                  Keine Beschreibung </p>
               </div>
 
               <div class="d-flex">
-                <button class="btn btn-outline-primary btn-sm me-2" @click="editDay(day.id)" title="Редактировать день">
-                  <font-awesome-icon :icon="['fas', 'edit']" />
+                <button class="btn btn-outline-primary btn-sm me-2" @click="editDay(day.id)" title="Tag bearbeiten"> <font-awesome-icon :icon="['fas', 'edit']" />
                 </button>
-                <button class="btn btn-outline-danger btn-sm" @click="removeDay(day.id, day.date)" title="Удалить день">
-                  <font-awesome-icon :icon="['fas', 'trash-alt']" />
+                <button class="btn btn-outline-danger btn-sm" @click="removeDay(day.id, day.date)" title="Tag löschen"> <font-awesome-icon :icon="['fas', 'trash-alt']" />
                 </button>
               </div>
             </li>
@@ -56,8 +46,7 @@
           <div class="d-grid gap-2 mt-4">
             <button class="btn btn-secondary btn-lg" @click="goBack" disabled>
               <font-awesome-icon :icon="['fas', 'arrow-left']" />
-              Назад (Неактивно)
-            </button>
+              Zurück (Inaktiv) </button>
           </div>
         </div>
       </div>
@@ -67,8 +56,7 @@
       <div class="card-header">
         <h3 class="mb-0">
           <font-awesome-icon :icon="['fas', 'calendar-plus']" />
-          {{ editingDayId !== null ? 'Редактировать день:' : 'Добавить / Редактировать день' }}
-        </h3>
+          {{ editingDayId !== null ? 'Tag bearbeiten:' : 'Tag hinzufügen / bearbeiten' }} </h3>
       </div>
       <div class="card-body">
         <div id="formAlertContainer"></div>
@@ -76,7 +64,7 @@
         <form @submit.prevent="saveDay">
 
           <div class="mb-3">
-            <label for="newDayDate" class="form-label">Дата (public.days.date) <span class="text-danger">*</span></label>
+            <label for="newDayDate" class="form-label">Datum <span class="text-danger">*</span></label>
             <input
                 type="date"
                 id="newDayDate"
@@ -87,62 +75,53 @@
           </div>
 
           <div class="mb-3">
-            <label for="newDayName" class="form-label">Название (public.days.name)</label>
-            <input
-                type="text"
-                id="newDayName"
-                class="form-control"
-                v-model="newDayName"
-                placeholder="Например, 'Поездка в зоопарк'"
-            >
+            <label for="newDayName" class="form-label">Reiseziel</label> <input
+              type="text"
+              id="newDayName"
+              class="form-control"
+              v-model="newDayName"
+              placeholder="Moviepark, Dortmund Zoo, Schwimmbad in Hamm..." >
           </div>
 
           <div class="row">
             <div class="col-md-6 mb-3">
-              <label for="newDayAbfahrt" class="form-label">Время отправления (public.days.abfahrt) <span class="text-danger">*</span></label>
-              <input
-                  type="time"
-                  id="newDayAbfahrt"
-                  class="form-control"
-                  v-model="newDayAbfahrt"
-                  required
-              >
+              <label for="newDayAbfahrt" class="form-label">Abfahrtszeit <span class="text-danger">*</span></label> <input
+                type="time"
+                id="newDayAbfahrt"
+                class="form-control"
+                v-model="newDayAbfahrt"
+                required
+            >
             </div>
             <div class="col-md-6 mb-3">
-              <label for="newDayAnkommen" class="form-label">Время прибытия (public.days.ankommen) <span class="text-danger">*</span></label>
-              <input
-                  type="time"
-                  id="newDayAnkommen"
-                  class="form-control"
-                  v-model="newDayAnkommen"
-                  required
-              >
+              <label for="newDayAnkommen" class="form-label">Ankunftszeit  <span class="text-danger">*</span></label> <input
+                type="time"
+                id="newDayAnkommen"
+                class="form-control"
+                v-model="newDayAnkommen"
+                required
+            >
             </div>
           </div>
 
           <div class="mb-4">
-            <label for="newDayDescription" class="form-label">Описание (public.days.description)</label>
-            <textarea
-                id="newDayDescription"
-                class="form-control"
-                v-model="newDayDescription"
-                rows="3"
-                placeholder="Подробности о мероприятиях дня"
-            ></textarea>
+            <label for="newDayDescription" class="form-label">Beschreibung</label> <textarea
+              id="newDayDescription"
+              class="form-control"
+              v-model="newDayDescription"
+              rows="3"
+              placeholder="Details zu den Aktivitäten des Tages" ></textarea>
           </div>
 
           <div class="d-flex justify-content-between">
             <button type="submit" class="btn btn-primary btn-lg flex-grow-1 me-2" :disabled="configLoading">
               <font-awesome-icon :icon="['fas', editingDayId !== null ? 'save' : 'plus']" />
-              {{ editingDayId !== null ? 'Сохранить' : 'Добавить' }}
-            </button>
+              {{ editingDayId !== null ? 'Speichern' : 'Hinzufügen' }} </button>
             <button v-if="editingDayId !== null" type="button" class="btn btn-outline-secondary btn-lg" @click="cancelEdit">
-              Отменить
-            </button>
+              Abbrechen </button>
             <button v-else type="button" class="btn btn-outline-secondary btn-lg" @click="resetForm">
               <font-awesome-icon :icon="['fas', 'eraser']" />
-              Очистить
-            </button>
+              Löschen </button>
           </div>
         </form>
       </div>
@@ -151,14 +130,14 @@
 </template>
 
 <script>
-// --- ИСПОЛЬЗУЕМ ВАШ config.js ---
-import { useConfig } from '@/modules/config'; // Предполагаем путь '@/config'
+// --- USE YOUR config.js ---
+import { useConfig } from '@/modules/config'; // Assuming path '@/config'
 // ---------------------------------
 
 import { useDays } from '@/composables/useDays';
 
 
-// --- Утилиты для стилей и уведомлений (взяты из GroupEditView.vue) ---
+// --- Utilities for styles and notifications (taken from GroupEditView.vue) ---
 const Utils = {
   showAlert(message, type = 'info', containerId = 'alertContainer') {
     const alertContainer = document.getElementById(containerId);
@@ -180,12 +159,13 @@ const Utils = {
     }, 5000);
   },
   getCurrentDateString() {
-    // Формат 'yyyy-mm-dd', как требуется для public.days.date по умолчанию
+    // Format 'yyyy-mm-dd', as required for public.days.date by default
     return new Date().toISOString().split('T')[0];
   },
   formatDateForDisplay(dateString) {
     const date = new Date(dateString);
-    return date.toLocaleDateString('ru-RU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    // Use German locale for display
+    return date.toLocaleDateString('de-DE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   },
 };
 
@@ -193,47 +173,47 @@ export default {
   name: 'DaysEditView',
 
   setup() {
-    // Использование созданных нами composables
+    // Use the composables we created
     const { fetchDaysList, saveDay, deleteDay } = useDays();
-    // Получение реактивного состояния конфига и функции загрузки
+    // Get reactive config state and load function
     const { config, loadConfig, loading: configLoading, error: configError } = useConfig();
 
     return {
       fetchDaysList, saveDay, deleteDay,
-      // Добавляем функции и состояние конфига в контекст компонента
+      // Add config functions and state to component context
       config, loadConfig, configLoading, configError
     };
   },
 
   data() {
     return {
-      // isConfigLoaded теперь можно заменить на !this.configLoading && !this.configError,
-      // но для соответствия GroupEditView.vue оставим флаг, который мы будем устанавливать
+      // isConfigLoaded can now be replaced by !this.configLoading && !this.configError,
+      // but to match GroupEditView.vue we will keep the flag that we will set
       isConfigLoaded: true,
       loadingInitialData: true,
 
-      // Данные для полей формы Days
-      newDayDate: Utils.getCurrentDateString(), // По умолчанию текущая дата
+      // Data for Days form fields
+      newDayDate: Utils.getCurrentDateString(), // Current date by default
       newDayName: '',
-      newDayAbfahrt: '', // По умолчанию из config.value("abfahrtszeit")
-      newDayAnkommen: '', // По умолчанию из config.value("ankunftszeit")
+      newDayAbfahrt: '', // Default from config.value("abfahrtszeit")
+      newDayAnkommen: '', // Default from config.value("ankunftszeit")
       newDayDescription: '',
 
-      // Состояние для редактирования
+      // State for editing
       editingDayId: null,
 
       formattedCurrentDate: '',
-      days: [], // Список дней
+      days: [], // List of days
     };
   },
 
   async created() {
     this.formattedCurrentDate = Utils.formatDateForDisplay(Utils.getCurrentDateString());
 
-    // 1. Сначала загружаем конфигурацию
-    await this.loadConfig(); // loadConfig из useConfig
+    // 1. First load configuration
+    await this.loadConfig(); // loadConfig from useConfig
 
-    // 2. Устанавливаем дефолты и загружаем данные о днях
+    // 2. Set defaults and load days data
     this.setDefaultsFromConfig();
     await this.loadInitialData();
   },
@@ -242,28 +222,28 @@ export default {
     showAlert: Utils.showAlert,
 
     /**
-     * Устанавливает значения abfahrt и ankommen по умолчанию из реактивного объекта config.
+     * Sets default abfahrt and ankommen values from the reactive config object.
      */
     setDefaultsFromConfig() {
-      // config — это реактивный объект (Proxy), который содержит данные из configData
+      // config is a reactive object (Proxy) that contains data from configData
       const abfahrtTime = this.config.abfahrtszeit;
       const ankommenTime = this.config.ankunftszeit;
 
-      // Применяем их только если нет активного редактирования,
-      // чтобы не перезатереть значения при редактировании.
+      // Apply them only if there is no active editing,
+      // so as not to overwrite values when editing.
       if (this.editingDayId === null) {
         this.newDayAbfahrt = abfahrtTime || '08:00';
         this.newDayAnkommen = ankommenTime || '17:00';
       }
 
-      // Установка isConfigLoaded для отображения UI
+      // Set isConfigLoaded for UI display
       this.isConfigLoaded = !this.configError;
 
       if (this.configError) {
-        this.showAlert(`Ошибка при загрузке конфигурации: ${this.configError.message}. Использованы значения по умолчанию (08:00/17:00).`, 'warning');
+        this.showAlert(`Fehler beim Laden der Konfiguration: ${this.configError.message}. Standardwerte (08:00/17:00) wurden verwendet.`, 'warning'); // Error message translated
       } else if (!abfahrtTime || !ankommenTime) {
-        // Показываем предупреждение, если в конфиге нет нужных ключей, но ошибка загрузки не произошла
-        this.showAlert(`Ключи abfahrtszeit или ankunftszeit не найдены в конфигурации Supabase. Использованы значения по умолчанию (08:00/17:00).`, 'warning');
+        // Show warning if config does not contain required keys, but loading error did not occur
+        this.showAlert(`Die Schlüssel 'abfahrtszeit' oder 'ankunftszeit' wurden in der Supabase-Konfiguration nicht gefunden. Standardwerte (08:00/17:00) wurden verwendet.`, 'warning'); // Warning message translated
       }
     },
 
@@ -271,11 +251,11 @@ export default {
       this.loadingInitialData = true;
 
       try {
-        const data = await this.fetchDaysList(); // fetchDaysList из useDays.js
+        const data = await this.fetchDaysList(); // fetchDaysList from useDays.js
         this.days = data;
-        this.showAlert(`Данные о днях загружены из Supabase.`, 'info');
+        this.showAlert(`Tagesdaten wurden von Supabase geladen.`, 'info'); // Success message translated
       } catch (error) {
-        this.showAlert(`Ошибка при загрузке данных о днях: ${error.message}`, 'danger');
+        this.showAlert(`Fehler beim Laden der Tagesdaten: ${error.message}`, 'danger'); // Error message translated
       } finally {
         this.loadingInitialData = false;
       }
@@ -286,13 +266,13 @@ export default {
       this.newDayDate = Utils.getCurrentDateString();
       this.newDayName = '';
       this.newDayDescription = '';
-      // Сбрасываем время на дефолтное из конфига
+      // Reset time to config default
       this.setDefaultsFromConfig();
     },
 
     cancelEdit() {
       this.resetForm();
-      this.showAlert('Редактирование отменено.', 'info', 'formAlertContainer');
+      this.showAlert('Bearbeitung abgebrochen.', 'info', 'formAlertContainer'); // Message translated
     },
 
     validateDayData() {
@@ -301,11 +281,11 @@ export default {
       const ankommen = this.newDayAnkommen;
 
       if (!date) {
-        this.showAlert('Пожалуйста, выберите дату.', 'warning', 'formAlertContainer');
+        this.showAlert('Bitte wählen Sie ein Datum aus.', 'warning', 'formAlertContainer'); // Message translated
         return false;
       }
       if (!abfahrt || !ankommen) {
-        this.showAlert('Пожалуйста, укажите время отправления и прибытия.', 'warning', 'formAlertContainer');
+        this.showAlert('Bitte geben Sie die Abfahrts- und Ankunftszeit an.', 'warning', 'formAlertContainer'); // Message translated
         return false;
       }
 
@@ -332,7 +312,7 @@ export default {
       try {
         const { data, message } = await this.saveDay(dayData);
 
-        // Обновление данных в локальном массиве
+        // Update data in local array
         if (this.editingDayId !== null) {
           const index = this.days.findIndex(d => d.id === this.editingDayId);
           if (index !== -1) {
@@ -342,13 +322,13 @@ export default {
           this.days.push(data);
         }
 
-        // Сортировка по дате для корректного отображения
+        // Sort by date for correct display
         this.days.sort((a, b) => new Date(a.date) - new Date(b.date));
 
         this.showAlert(message, 'success');
         this.resetForm();
       } catch (error) {
-        this.showAlert(`Ошибка при сохранении: ${error.message}`, 'danger', 'formAlertContainer');
+        this.showAlert(`Fehler beim Speichern: ${error.message}`, 'danger', 'formAlertContainer'); // Error message translated
       }
     },
 
@@ -357,7 +337,7 @@ export default {
       const dayToEdit = this.days.find(d => d.id === dayId);
 
       if (dayToEdit) {
-        // Заполнение формы
+        // Fill form
         this.newDayDate = dayToEdit.date;
         this.newDayName = dayToEdit.name || '';
         this.newDayAbfahrt = dayToEdit.abfahrt;
@@ -365,16 +345,16 @@ export default {
         this.newDayDescription = dayToEdit.description || '';
 
         document.getElementById('newDayDate').focus();
-        this.showAlert(`День "${dayToEdit.date}" загружен для редактирования.`, 'info', 'formAlertContainer');
+        this.showAlert(`Der Tag "${dayToEdit.date}" wurde zum Bearbeiten geladen.`, 'info', 'formAlertContainer'); // Message translated
       }
     },
 
     async removeDay(dayId, dayDate) {
-      if (confirm(`Вы действительно хотите удалить день "${dayDate}"?`)) {
+      if (confirm(`Möchten Sie den Tag "${dayDate}" wirklich löschen?`)) { // Confirmation message translated
         try {
           await this.deleteDay(dayId);
 
-          // Локальное удаление
+          // Local deletion
           const index = this.days.findIndex(d => d.id === dayId);
           if (index !== -1) {
             this.days.splice(index, 1);
@@ -384,21 +364,22 @@ export default {
             this.resetForm();
           }
 
-          this.showAlert(`День "${dayDate}" успешно удален.`, 'success');
+          this.showAlert(`Der Tag "${dayDate}" wurde erfolgreich gelöscht.`, 'success'); // Success message translated
         } catch (error) {
-          this.showAlert(`Ошибка при удалении дня: ${error.message}`, 'danger');
+          this.showAlert(`Fehler beim Löschen des Tages: ${error.message}`, 'danger'); // Error message translated
         }
       }
     },
 
     goBack() {
-      alert('Назад-Навигация (Эмуляция): Возврат к предыдущему представлению.');
+      alert('Zurück-Navigation (Emulation): Zurück zur vorherigen Ansicht.'); // Alert message translated
     }
   }
 };
 </script>
 
 <style>
+/* Styles remain unchanged as they do not contain user-facing text */
 .main-container {
   display: flex;
   flex-direction: column;

@@ -34,6 +34,19 @@
                 🎟️ Einladungen
               </router-link>
             </li>
+            <li v-if="isAdmin" class="nav-item">
+              <router-link to="/days-edit" class="nav-link text-white">
+                🗓️ Tage bearbeiten
+              </router-link>
+            </li>
+
+            <li class="nav-item">
+              <router-link to="/main/scan" class="nav-link text-white">
+                📷 Scannen
+              </router-link>
+
+            </li>
+
           </ul>
 
           <div class="d-flex flex-column flex-lg-row align-items-lg-center gap-2">
