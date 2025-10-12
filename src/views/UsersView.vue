@@ -66,9 +66,9 @@
                     <button
                         class="btn btn-outline-primary btn-sm me-2"
                         title="WhatsApp-Chat mit Benutzer öffnen"
-                        @click="window.open(`https://wa.me/${user.phone.replace(/\D/g, '')}`, '_blank')"
+                        @click="openWhatsAppChat(user.phone)"
                     >
-                      <font-awesome-icon :icon="['fab', 'whatsapp']" style="color:#25D366; font-size:2rem" />
+                      <font-awesome-icon :icon="['fab', 'whatsapp']" style="color:#25D366; font-size:1.5rem" />
 
                     </button>
 
@@ -304,6 +304,22 @@ export default {
       } else {
         this.showAlert('Fehler: Bearbeitungsformular konnte nicht geöffnet werden.', 'danger');
       }
+    },
+
+    /**
+     * English: Opens a new window for a WhatsApp chat link.
+     * German: Öffnet ein neues Fenster für den WhatsApp-Chat-Link.
+     * @param {string} phone - The user's phone number.
+     * @returns {void}
+     */
+    openWhatsAppChat(phone) {
+      if (!phone) {
+        this.showAlert('Fehler: Keine Telefonnummer für diesen Benutzer verfügbar.', 'warning');
+        return;
+      }
+      // English: Clean the phone number (remove non-digits) and open the link
+      const cleanPhone = phone.replace(/\D/g, '');
+      window.open(`https://wa.me/${cleanPhone}`, '_blank');
     },
 
     /**
