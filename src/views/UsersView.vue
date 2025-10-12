@@ -57,9 +57,22 @@
                       {{ user.role === 'admin' ? 'Administrator' : 'Benutzer' }}
                     </span>
                 </td>
-                <td>{{ user.phone || 'N/A' }}</td>
+                <td>
+                  <a v-if="user.phone" :href="`tel:${user.phone}`">{{ user.phone }}</a>
+                  <span v-else>N/A</span>
+                </td>
                 <td class="text-center">
                   <div class="d-flex justify-content-center">
+                    <button
+                        class="btn btn-outline-primary btn-sm me-2"
+                        title="WhatsApp-Chat mit Benutzer öffnen"
+                        @click="window.open(`https://wa.me/${user.phone.replace(/\D/g, '')}`, '_blank')"
+                    >
+                      <font-awesome-icon :icon="['fab', 'whatsapp']" style="color:#25D366; font-size:2rem" />
+
+                    </button>
+
+
                     <button
                         class="btn btn-outline-primary btn-sm me-2"
                         @click="openEditModal(user)"

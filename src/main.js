@@ -10,7 +10,7 @@ import 'bootstrap'
 // Font Awesome setup
 import { library } from '@fortawesome/fontawesome-svg-core'
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
-
+import { faWhatsapp } from '@fortawesome/free-brands-svg-icons'
 // Импортируешь все реально используемые иконки (в алфавитном порядке для удобства)
 import {
     faArrowLeft,
@@ -39,7 +39,7 @@ import {
     faTree, // Замена для 🌳
     faUser, // Замена для 👤
     faUserPlus,
-    faUsers // Замена для 👥
+    faUsers,
 } from '@fortawesome/free-solid-svg-icons'
 
 // Добавляешь только их
@@ -70,7 +70,8 @@ library.add(
     faTree,
     faUser,
     faUserPlus,
-    faUsers
+    faUsers,
+    faWhatsapp
 )
 
 const app = createApp(App)
