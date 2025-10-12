@@ -467,16 +467,30 @@ export default {
       this.loadingInitialData = true; // English: Show loading state
 
       try {
-        // English: Deleting from public.users with user_id foreign key automatically triggers auth.users deletion (CASCADE)
-        const { error } = await supabase
-            .from('users')
-            .delete()
-            .eq('id', user.id); // English: Deletes based on public.users.id
 
-        if (error) {
-          this.showAlert(`Fehler beim Löschen des Benutzers: ${error.message}`, 'danger');
-          this.loadingInitialData = false;
-          return;
+        // Получить текущую сессию для авторизации
+        const { data: { session } } = await supabase.auth.getSession()
+
+        if (!session) {
+          throw new Error('Fehler: Keine aktive Sitzung gefunden. Bitte melden Sie sich erneut an.');
+        }
+        // call the delete Edge function
+        const response = await fetch(
+            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/delete-user`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.access_token}`
+              },
+              body: JSON.stringify({
+                userIdToDelete: user.user_id
+              })
+            }
+        )
+        const result = await response.json()
+        if (!response.ok) {
+          throw new Error(result.error || 'Fehler beim Löschen des Benutzers.');
         }
 
         // English: Update local array
