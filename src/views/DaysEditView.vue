@@ -215,8 +215,8 @@ export default {
       // Данные для полей формы Days
       newDayDate: Utils.getCurrentDateString(), // По умолчанию текущая дата
       newDayName: '',
-      newDayAbfahrt: '', // По умолчанию из config.value("abfahrt_time")
-      newDayAnkommen: '', // По умолчанию из config.value("ankommen_time")
+      newDayAbfahrt: '', // По умолчанию из config.value("abfahrtszeit")
+      newDayAnkommen: '', // По умолчанию из config.value("ankunftszeit")
       newDayDescription: '',
 
       // Состояние для редактирования
@@ -246,8 +246,8 @@ export default {
      */
     setDefaultsFromConfig() {
       // config — это реактивный объект (Proxy), который содержит данные из configData
-      const abfahrtTime = this.config.abfahrt_time;
-      const ankommenTime = this.config.ankommen_time;
+      const abfahrtTime = this.config.abfahrtszeit;
+      const ankommenTime = this.config.ankunftszeit;
 
       // Применяем их только если нет активного редактирования,
       // чтобы не перезатереть значения при редактировании.
@@ -263,7 +263,7 @@ export default {
         this.showAlert(`Ошибка при загрузке конфигурации: ${this.configError.message}. Использованы значения по умолчанию (08:00/17:00).`, 'warning');
       } else if (!abfahrtTime || !ankommenTime) {
         // Показываем предупреждение, если в конфиге нет нужных ключей, но ошибка загрузки не произошла
-        this.showAlert(`Ключи abfahrt_time или ankommen_time не найдены в конфигурации Supabase. Использованы значения по умолчанию (08:00/17:00).`, 'warning');
+        this.showAlert(`Ключи abfahrtszeit или ankunftszeit не найдены в конфигурации Supabase. Использованы значения по умолчанию (08:00/17:00).`, 'warning');
       }
     },
 
