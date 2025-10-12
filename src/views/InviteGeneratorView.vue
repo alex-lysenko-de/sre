@@ -1,51 +1,46 @@
 <template>
-  <div class="min-h-screen bg-gradient-to-br from-purple-50 to-indigo-100 py-8 px-4">
-    <div class="max-w-2xl mx-auto">
-      <div class="bg-white rounded-2xl shadow-2xl p-8">
-        <h1 class="text-3xl font-bold text-gray-800 mb-2 text-center">
-          🎟️ Einladungsgenerator
-        </h1>
-        <p class="text-gray-600 text-center mb-8">
-          Erstellung von Links zur Registrierung neuer Benutzer
-        </p>
+  <div class="main-container">
+    <div class="card">
+      <div class="card-header">
+        <h3 class="mb-0">
+          <font-awesome-icon :icon="['fas', 'ticket-alt']" />
+          Einladungsgenerator
+        </h3>
+        <p class="mb-0 mt-2">Erstellung von Links zur Registrierung neuer Benutzer</p>
+      </div>
+      <div class="card-body">
 
-        <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
-          <div class="flex">
-            <div class="flex-shrink-0">
-              <span class="text-yellow-400 text-xl">⚠️</span>
-            </div>
-            <div class="ml-3">
-              <p class="text-sm text-yellow-700">
-                <strong>Achtung!</strong> Einladungen gewähren Zugang zum System.
-                Senden Sie diese nur an vertrauenswürdige Personen.
-              </p>
-            </div>
+        <div class="alert alert-warning border-start border-4 border-warning p-3 mb-4 d-flex align-items-start" role="alert">
+          <div class="flex-shrink-0 me-3">
+            <font-awesome-icon :icon="['fas', 'exclamation-triangle']" class="text-warning fs-4" />
+          </div>
+          <div>
+            <strong>Achtung!</strong> Einladungen gewähren Zugang zum System.
+            Senden Sie diese nur an vertrauenswürdige Personen.
           </div>
         </div>
 
-        <form @submit.prevent="generateInvite" class="space-y-6">
-          <div>
-            <label class="block text-sm font-semibold text-gray-700 mb-2">
-              Benutzerrolle
-            </label>
+        <form @submit.prevent="generateInvite" class="space-y-4">
+          <div class="mb-3">
+            <label for="roleSelect" class="form-label">Benutzerrolle</label>
             <select
+                id="roleSelect"
                 v-model="role"
                 required
-                class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                class="form-select"
             >
               <option value="user">Betreuer (user)</option>
               <option value="admin">HauptBetreuer (admin)</option>
             </select>
           </div>
 
-          <div>
-            <label class="block text-sm font-semibold text-gray-700 mb-2">
-              Gültigkeitsdauer
-            </label>
+          <div class="mb-4">
+            <label for="expirySelect" class="form-label">Gültigkeitsdauer</label>
             <select
+                id="expirySelect"
                 v-model="expiresInHours"
                 required
-                class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                class="form-select"
             >
               <option :value="1">1 Stunde</option>
               <option :value="24">24 Stunden (1 Tag)</option>
@@ -57,75 +52,89 @@
           <button
               type="submit"
               :disabled="loading"
-              class="w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white py-3 rounded-lg font-semibold hover:from-purple-700 hover:to-indigo-700 transition-all transform hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+              class="btn btn-primary btn-lg w-100"
           >
-            <span v-if="loading">⏳ Generierung...</span>
-            <span v-else>✨ QR-Code generieren</span>
+            <span v-if="loading">
+              <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+              Generierung...
+            </span>
+            <span v-else>
+              <font-awesome-icon :icon="['fas', 'qrcode']" />
+              QR-Code generieren
+            </span>
           </button>
         </form>
 
-        <div v-if="error" class="mt-6 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
-          ❌ {{ error }}
+        <div v-if="error" class="mt-4 alert alert-danger" role="alert">
+          <font-awesome-icon :icon="['fas', 'times-circle']" class="me-2" />
+          {{ error }}
         </div>
 
-        <div v-if="inviteUrl" class="mt-8 p-6 bg-gray-50 rounded-xl">
-          <div class="inline-block bg-green-500 text-white px-4 py-1 rounded-full text-sm font-semibold mb-4">
-            ✓ Erfolgreich erstellt
+        <div v-if="inviteUrl" class="mt-4 p-4 border rounded bg-light">
+          <div class="text-center mb-3">
+            <span class="badge bg-success mb-3">
+              <font-awesome-icon :icon="['fas', 'check']" class="me-1" />
+              Erfolgreich erstellt
+            </span>
+            <h4 class="font-weight-bold text-dark mb-0">
+              QR-Code zur Registrierung
+            </h4>
           </div>
 
-          <h3 class="text-xl font-semibold text-gray-800 mb-4 text-center">
-            QR-Code zur Registrierung
-          </h3>
-
-          <div class="flex justify-center mb-6 p-6 bg-white rounded-lg shadow-md">
+          <div class="d-flex justify-content-center mb-4 p-3 bg-white rounded shadow-sm">
             <div ref="qrcodeContainer"></div>
           </div>
 
-          <div class="mb-4">
-            <div class="text-xs font-semibold text-gray-600 mb-2 uppercase tracking-wide">
+          <div class="mb-3">
+            <label class="form-label text-muted small fw-semibold">
               Registrierungslink
-            </div>
-            <div class="flex gap-2">
+            </label>
+            <div class="input-group">
               <input
                   :value="inviteUrl"
                   readonly
-                  class="flex-1 px-3 py-2 bg-white border-2 border-gray-200 rounded-lg text-sm font-mono text-gray-700"
+                  class="form-control"
               />
               <button
                   @click="copyToClipboard"
-                  class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors font-semibold text-sm"
+                  class="btn btn-success"
+                  type="button"
               >
-                📋 Kopieren
+                <font-awesome-icon :icon="['fas', 'clipboard']" /> Kopieren
               </button>
             </div>
           </div>
 
-          <div class="mb-6">
+          <div class="mb-4">
             <a
                 :href="whatsappUrl"
                 target="_blank"
-                class="flex items-center justify-center gap-2 w-full px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-semibold"
+                class="btn btn-success w-100 d-flex align-items-center justify-content-center"
             >
-              <span class="text-xl">📱</span>
+              <font-awesome-icon :icon="['fab', 'whatsapp']" class="me-2 fs-5" />
               Über WhatsApp senden
             </a>
           </div>
 
-          <div class="grid grid-cols-2 gap-3">
-            <div class="bg-white p-3 rounded-lg border border-gray-200">
-              <div class="text-xs font-semibold text-gray-500 uppercase mb-1">
-                Rolle
-              </div>
-              <div class="text-sm font-bold text-gray-800">
-                {{ role === 'admin' ? 'Administrator' : 'Benutzer' }}
+          <div class="row g-2">
+            <div class="col-6">
+              <div class="p-3 bg-white rounded border">
+                <div class="text-muted small text-uppercase mb-1">
+                  Rolle
+                </div>
+                <div class="fw-bold text-dark">
+                  {{ role === 'admin' ? 'Hauptbetreuer' : 'Betreuer' }}
+                </div>
               </div>
             </div>
-            <div class="bg-white p-3 rounded-lg border border-gray-200">
-              <div class="text-xs font-semibold text-gray-500 uppercase mb-1">
-                Läuft ab
-              </div>
-              <div class="text-sm font-bold text-gray-800">
-                {{ formatExpiryDate(expiresAt) }}
+            <div class="col-6">
+              <div class="p-3 bg-white rounded border">
+                <div class="text-muted small text-uppercase mb-1">
+                  Läuft ab
+                </div>
+                <div class="fw-bold text-dark">
+                  {{ formatExpiryDate(expiresAt) }}
+                </div>
               </div>
             </div>
           </div>
@@ -139,7 +148,9 @@
 import { ref, computed, nextTick } from 'vue'
 import { supabase } from '@/supabase'
 import QRCode from 'qrcode'
+import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome' // Import icon component
 
+// Reactive state variables
 const role = ref('user')
 const expiresInHours = ref(24)
 const loading = ref(false)
@@ -148,6 +159,7 @@ const inviteUrl = ref('')
 const expiresAt = ref('')
 const qrcodeContainer = ref(null)
 
+// Computed property to construct the base URL for the invitation link
 const currentUrl = computed(() => {
   // Get the base path from Vite env. e.g., '/sre/'
   const basePath = import.meta.env.BASE_URL;
@@ -157,12 +169,16 @@ const currentUrl = computed(() => {
   return basePath.endsWith('/') ? origin + basePath.slice(0, -1) : origin + basePath;
 })
 
+// Computed property for the WhatsApp share link
 const whatsappUrl = computed(() => {
   if (!inviteUrl.value) return ''
   const message = `Einladung zur Registrierung bei Stadtranderholung:\n${inviteUrl.value}`
   return `https://wa.me/?text=${encodeURIComponent(message)}`
 })
 
+/**
+ * Generates an invitation token via a Supabase Edge Function.
+ */
 async function generateInvite() {
   loading.value = true
   error.value = ''
@@ -170,8 +186,9 @@ async function generateInvite() {
 
   try {
     const { data: { session } } = await supabase.auth.getSession()
-    if (!session) throw new Error('Nicht autorisiert')
+    if (!session) throw new Error('Nicht autorisiert. Bitte melden Sie sich an.') // Message translated
 
+    // Supabase Edge Function URL structure
     const API_URL = import.meta.env.VITE_SUPABASE_URL.replace('.co', '.co/functions/v1')
 
     const response = await fetch(`${API_URL}/invite-generate`, {
@@ -189,57 +206,70 @@ async function generateInvite() {
 
     if (!response.ok) {
       const errorData = await response.json()
-      throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
+      throw new Error(errorData.error || `HTTP Fehler! Status: ${response.status}`) // Message translated
     }
 
     const data = await response.json()
+    // Construct the full registration URL
     inviteUrl.value = `${currentUrl.value}/welcome?invite=${data.inviteToken}`
     expiresAt.value = data.expiresAt
 
-    // QR-Code generieren
-    await nextTick(async () => { // <-- WRAP IN NEXT TICK
+    // Generate QR code after Vue has updated the DOM
+    await nextTick(async () => {
       await generateQRCode()
     })
 
   } catch (err) {
-    console.error('Generierungsfehler:', err)
+    console.error('Generierungsfehler:', err) // Console message remains English/German mix for development purposes
     error.value = err.message
   } finally {
     loading.value = false
   }
 }
 
+/**
+ * Generates the QR code and appends it to the container.
+ */
 async function generateQRCode() {
   if (!qrcodeContainer.value) return
 
+  // Clear previous content
   qrcodeContainer.value.innerHTML = ''
 
   try {
     const canvas = document.createElement('canvas')
     await QRCode.toCanvas(canvas, inviteUrl.value, {
-      width: 256,
+      width: 200, // Slightly smaller for better fit in the card
       margin: 2,
       color: {
-        dark: '#4F46E5',
+        dark: '#007bff', // Bootstrap primary blue
         light: '#FFFFFF'
       }
     })
     qrcodeContainer.value.appendChild(canvas)
   } catch (err) {
-    console.error('Fehler beim Erstellen des QR-Codes:', err)
+    console.error('Fehler beim Erstellen des QR-Codes:', err) // Console message remains English/German mix for development purposes
   }
 }
 
+/**
+ * Copies the invitation URL to the clipboard.
+ */
 async function copyToClipboard() {
   try {
     await navigator.clipboard.writeText(inviteUrl.value)
-    alert('✓ Link wurde in die Zwischenablage kopiert!')
+    alert('✓ Link wurde in die Zwischenablage kopiert!') // Message translated
   } catch (err) {
-    console.error('Kopieren fehlgeschlagen:', err)
-    alert('Kopieren fehlgeschlagen. Bitte manuell kopieren.')
+    console.error('Kopieren fehlgeschlagen:', err) // Console message remains English/German mix for development purposes
+    alert('Kopieren fehlgeschlagen. Bitte manuell kopieren.') // Message translated
   }
 }
 
+/**
+ * Formats the expiry date for display in German locale.
+ * @param {string} dateStr - The date string from the API.
+ * @returns {string} The formatted date/time string.
+ */
 function formatExpiryDate(dateStr) {
   if (!dateStr) return ''
   const date = new Date(dateStr)
@@ -252,3 +282,50 @@ function formatExpiryDate(dateStr) {
   })
 }
 </script>
+
+<style>
+/* Styles copied from DaysEditView.vue */
+.main-container {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  padding: 20px;
+  background-color: #f8f9fa;
+}
+
+.card {
+  width: 100%;
+  max-width: 650px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  border-radius: 12px;
+}
+
+.card + .card {
+  margin-top: 20px;
+}
+
+.card-header {
+  background-color: #007bff;
+  color: white;
+  padding: 1.5rem;
+  border-top-left-radius: 12px;
+  border-top-right-radius: 12px;
+}
+
+.card-header h3 {
+  font-weight: 600;
+}
+/* End of copied styles */
+
+/* Specific adjustment for the form */
+.w-100 {
+  width: 100% !important;
+}
+.btn-lg {
+  padding: 0.5rem 1rem;
+  font-size: 1.25rem;
+  border-radius: 0.3rem;
+}
+</style>

@@ -30,6 +30,11 @@
               </router-link>
             </li>
             <li v-if="isAdmin" class="nav-item">
+              <router-link to="/users-edit" class="nav-link text-white">
+                👥 Benutzer
+              </router-link>
+            </li>
+            <li v-if="isAdmin" class="nav-item">
               <router-link to="/invite" class="nav-link text-white">
                 🎟️ Einladungen
               </router-link>

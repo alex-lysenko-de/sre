@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import {createRouter, createWebHistory} from 'vue-router'
 import InfoView from '@/views/InfoView.vue'
 import ConfigView from '@/views/ConfigView.vue'
 import LoginView from '@/views/LoginView.vue'
@@ -6,108 +6,121 @@ import InviteGeneratorView from '@/views/InviteGeneratorView.vue'
 import WelcomeView from '@/views/WelcomeView.vue'
 import MainView from '@/views/MainView.vue'
 import ScanView from '@/views/ScanView.vue'
-import { supabase } from '@/supabase'
+import {supabase} from '@/supabase'
 import ChildrenView from '@/views/ChildrenView.vue';
 import ChildDetailView from '@/views/ChildDetailView.vue';
 import BindBraceletView from '@/views/BindBraceletView.vue';
 import UsersView from '@/views/UsersView.vue';
 import GroupEditView from "@/views/GroupEditView.vue";
 import DaysEditView from "@/views/DaysEditView.vue";
+import ResetPasswordView from '@/views/ResetPasswordView.vue';
 
 const routes = [
     {
-        path: '/login',
-        name: 'Login',
-        component: LoginView,
-        meta: { public: true }
+        path : '/login',
+        name : 'Login',
+        component : LoginView,
+        meta : { public : true }
     },
     {
-        path: '/welcome',
-        name: 'Welcome',
-        component: WelcomeView,
-        meta: { public: true }
+        path : '/welcome',
+        name : 'Welcome',
+        component : WelcomeView,
+        meta : { public : true }
     },
     {
-        path: '/',
-        redirect: '/main/scan' // Делаем рабочую область точкой входа
+        path : '/',
+        redirect : '/main/scan' // Делаем рабочую область точкой входа
     },
     {
-        path: '/info',
-        name: 'Info',
-        component: InfoView,
-        meta: { requiresAuth: false }
+        path : '/info',
+        name : 'Info',
+        component : InfoView,
+        meta : { requiresAuth : false }
     },
     {
-        path: '/group-edit',
-        name: 'GroupEdit',
-        component: GroupEditView,
-        meta: { requiresAuth: true, requiresAdmin: false }
+        path : '/group-edit',
+        name : 'GroupEdit',
+        component : GroupEditView,
+        meta : { requiresAuth : true, requiresAdmin : false }
     },
     {
-        path: '/days-edit',
-        name: 'DaysEdit',
-        component: DaysEditView,
-        meta: { requiresAuth: true, requiresAdmin: true }
+        path : '/days-edit',
+        name : 'DaysEdit',
+        component : DaysEditView,
+        meta : { requiresAuth : true, requiresAdmin : true }
     },
     {
-        path: '/config',
-        name: 'Config',
-        component: ConfigView,
-        meta: { requiresAuth: true, requiresAdmin: true }
+        path : '/config',
+        name : 'Config',
+        component : ConfigView,
+        meta : { requiresAuth : true, requiresAdmin : true }
     },
+
     {
-        path: '/invite',
-        name: 'InviteGenerator',
-        component: InviteGeneratorView,
-        meta: { requiresAuth: true, requiresAdmin: true }
+        path : '/users-edit',
+        name : 'UsersEdit',
+        component : UsersView,
+        meta : { requiresAuth : true, requiresAdmin : true }
     },
+
+    {
+        path : '/invite',
+        name : 'InviteGenerator',
+        component : InviteGeneratorView,
+        meta : { requiresAuth : true, requiresAdmin : true }
+    },
+
+    {
+        path : '/reset-password',
+        name : 'ResetPassword',
+        component : ResetPasswordView,
+        meta : { requiresAuth : true }
+    },
+
+
     // Main application layout with nested routes
     {
-        path: '/main',
-        name: 'Main',
-        component: MainView,
-        meta: { requiresAuth: true },
-        children: [
+        path : '/main',
+        name : 'Main',
+        component : MainView,
+        meta : { requiresAuth : true },
+        children : [
             {
-                path: '',
-                redirect: '/main/scan'
+                path : '',
+                redirect : '/main/scan'
             },
             {
-                path: 'scan',
-                name: 'Scan',
-                component: ScanView,
-                meta: { requiresAuth: true , title: 'Сканирование QR'}
+                path : 'scan',
+                name : 'Scan',
+                component : ScanView,
+                meta : { requiresAuth : true, title : 'Сканирование QR' }
             },
             {
-                path: 'children',
-                name: 'Children',
-                component: () => import('@/views/ChildrenView.vue'),
-                meta: { requiresAuth: true,   title: 'Список детей'}
+                path : 'children',
+                name : 'Children',
+                component : () => import('@/views/ChildrenView.vue'),
+                meta : { requiresAuth : true, title : 'Список детей' }
             },
             {
-                path: 'child/:id',
-                name: 'ChildDetail',
-                component: () => import('@/views/ChildDetailView.vue'),
-                meta: { requiresAuth: true ,  title: 'Карточка ребёнка'}
+                path : 'child/:id',
+                name : 'ChildDetail',
+                component : () => import('@/views/ChildDetailView.vue'),
+                meta : { requiresAuth : true, title : 'Карточка ребёнка' }
             },
             {
-                path: 'bind',
-                name: 'BindBracelet',
-                component: () => import('@/views/BindBraceletView.vue'),
-                meta: { requiresAuth: true , title: 'Привязка браслета'}
-            },
-            {
-                path: 'users',
-                name: 'Users',
-                component: () => import('@/views/UsersView.vue'),
-                meta: { requiresAuth: true, requiresAdmin: true ,  title: 'Управление пользователями'}
+                path : 'bind',
+                name : 'BindBracelet',
+                component : () => import('@/views/BindBraceletView.vue'),
+                meta : { requiresAuth : true, title : 'Привязка браслета' }
             }
+
         ]
     }
 ]
 
 const router = createRouter({
-    history: createWebHistory(import.meta.env.BASE_URL),
+    history : createWebHistory(import.meta.env.BASE_URL),
     routes,
 })
 
@@ -121,7 +134,7 @@ router.beforeEach(async (to, from, next) => {
     // Check authentication
     if (to.meta.requiresAuth) {
         try {
-            const { data: { session } } = await supabase.auth.getSession()
+            const { data : { session } } = await supabase.auth.getSession()
 
             if (!session) {
                 console.log('🚫 Keine aktive Sitzung gefunden, leite zu Login weiter')
@@ -129,7 +142,7 @@ router.beforeEach(async (to, from, next) => {
             }
 
             // Get user data from 'users' table
-            const { data: userData, error } = await supabase
+            const { data : userData, error } = await supabase
                 .from('users')
                 .select('role, active')
                 .eq('user_id', session.user.id)
@@ -159,7 +172,7 @@ router.beforeEach(async (to, from, next) => {
             // Update 'last_seen_date'
             supabase
                 .from('users')
-                .update({ last_seen_date: new Date().toISOString() })
+                .update({ last_seen_date : new Date().toISOString() })
                 .eq('user_id', session.user.id)
                 .then(() => console.log('📅 Zeit des letzten Besuchs aktualisiert'))
 

@@ -30,7 +30,7 @@
                     required
                     autocomplete="username"
                     class="form-control form-control-lg"
-                    placeholder="admin@stadtranderholung.local"
+                    placeholder="your@email.com"
                   />
                 </div>
 
@@ -43,7 +43,7 @@
                     required
                     autocomplete="current-password"
                     class="form-control form-control-lg"
-                    placeholder="••••••••"
+                    placeholder=""
                   />
                 </div>
 
@@ -81,8 +81,8 @@
 
               <!-- Default Credentials -->
               <div class="mt-4 text-center">
-                <p class="text-muted small mb-1">Standardmäßig:</p>
-                <code class="small">admin@stadtranderholung.local / Password123</code>
+                <p class="text-muted small mb-1"></p>
+                <code class="small"></code>
               </div>
             </div>
           </div>
