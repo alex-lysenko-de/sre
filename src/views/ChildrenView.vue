@@ -1,104 +1,155 @@
-<script setup>
-import { onMounted, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
-import { useChildren } from '@/composables/useChildren';
-
-const router = useRouter();
-const { fetchChildrenList } = useChildren();
-
-const childrenList = ref([]);
-const loading = ref(true);
-const searchTerm = ref('');
-const error = ref(null);
-
-const fetchList = async (term) => {
-  loading.value = true;
-  error.value = null;
-  try {
-    const data = await fetchChildrenList(term);
-    childrenList.value = data;
-  } catch (e) {
-    error.value = 'Не удалось загрузить список детей: ' + e.message;
-    childrenList.value = [];
-  } finally {
-    loading.value = false;
-  }
-};
-
-// Запуск поиска при изменении поля (в реальном приложении рекомендуется использовать debounce)
-watch(searchTerm, (newTerm) => {
-  fetchList(newTerm);
-});
-
-const goToDetail = (childId) => {
-  router.push({ name: 'ChildDetail', params: { id: childId } });
-};
-
-onMounted(() => {
-  fetchList();
-});
-</script>
-
 <template>
-  <div class="children-view p-4">
-    <div class="flex justify-between items-center mb-6">
-      <h3 class="text-2xl font-semibold">Список детей ({{ childrenList.length }})</h3>
-
-      <button class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors">
-        + Добавить ребёнка
-      </button>
+  <div class="container py-4">
+    <!-- Summary Section -->
+    <div class="card mb-4 shadow-sm">
+      <div class="card-body text-center">
+        <h4>Kinderübersicht</h4>
+        <div class="row mt-3">
+          <div class="col-md-6">
+            <h5>Am Morgen</h5>
+            <div class="display-6 text-primary">{{ totalMorning }}</div>
+          </div>
+          <div class="col-md-6">
+            <h5>Aktuell</h5>
+            <div class="display-6 text-success">{{ totalCurrent }}</div>
+          </div>
+        </div>
+        <div v-if="missingGroups.length" class="alert alert-warning mt-3">
+          <i class="fas fa-exclamation-triangle me-2"></i>
+          Achtung! {{ totalMissing }} Kind(er) fehlen in {{ missingGroups.length }} Gruppe(n)
+        </div>
+      </div>
     </div>
 
-    <div class="mb-6">
-      <input
-          type="search"
-          v-model="searchTerm"
-          placeholder="Поиск по имени или ID браслета..."
-          class="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-      />
-    </div>
+    <!-- Groups Table -->
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h5>
+          <font-awesome-icon :icon="['fas', 'users']" class="me-2" />
+          Gruppenübersicht
+          <span class="badge bg-secondary ms-2">{{ groups.length }} aktiv</span>
+        </h5>
 
-    <div v-if="loading" class="text-center py-10">
-      <p class="text-indigo-600">Загрузка данных...</p>
-    </div>
-
-    <div v-else-if="error" class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
-      <strong class="font-bold">Ошибка:</strong>
-      <span class="block sm:inline"> {{ error }}</span>
-    </div>
-
-    <div v-else-if="childrenList.length === 0" class="text-center py-10 text-gray-500 border-2 border-dashed rounded-lg">
-      <p>Дети не найдены по вашему запросу.</p>
-    </div>
-
-    <div v-else class="overflow-x-auto bg-white rounded-lg shadow-xl">
-      <table class="min-w-full divide-y divide-gray-200">
-        <thead class="bg-gray-50">
-        <tr>
-          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Имя</th>
-          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Группа</th>
-          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID Браслета</th>
-          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Пловец</th>
-          <th class="px-6 py-3"></th>
-        </tr>
-        </thead>
-        <tbody class="bg-white divide-y divide-gray-200">
-        <tr v-for="child in childrenList" :key="child.id" class="hover:bg-gray-50 cursor-pointer" @click="goToDetail(child.id)">
-          <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ child.name }}</td>
-          <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ child.group_id }}</td>
-          <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ child.band_id || 'Нет' }}</td>
-          <td class="px-6 py-4 whitespace-nowrap text-sm">
-                            <span :class="['px-2 inline-flex text-xs leading-5 font-semibold rounded-full',
-                                           child.schwimmer ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800']">
-                                {{ child.schwimmer ? 'Да' : 'Нет' }}
-                            </span>
-          </td>
-          <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-            <a @click.stop="goToDetail(child.id)" class="text-indigo-600 hover:text-indigo-900">Просмотр</a>
-          </td>
-        </tr>
-        </tbody>
-      </table>
+        <div class="table-responsive mt-3">
+          <table class="table table-hover align-middle">
+            <thead class="table-light">
+            <tr>
+              <th>Status</th>
+              <th>Gruppe</th>
+              <th>Morgen</th>
+              <th>Aktuell</th>
+              <th>Betreuer</th>
+              <th>Differenz</th>
+              <th>Aktualisiert</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr v-for="group in groups" :key="group.id">
+              <td v-html="getStatusIndicator(group)"></td>
+              <td><strong>{{ group.name }}</strong></td>
+              <td>{{ group.morning }}</td>
+              <td>{{ group.current }}</td>
+              <td>{{ group.betreuer.join(', ') }}</td>
+              <td v-html="formatDifference(group)"></td>
+              <td>{{ group.timestamp }}</td>
+            </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </div>
 </template>
+
+<script>
+// This component uses synthetic data for 15 groups with 10 members each.
+// Interface language: German
+// Code comments: English
+
+export default {
+  name: "AdminGroupView",
+  data() {
+    return {
+      groups: [], // synthetic groups
+    };
+  },
+  computed: {
+    totalMorning() {
+      return this.groups.reduce((sum, g) => sum + g.morning, 0);
+    },
+    totalCurrent() {
+      return this.groups.reduce((sum, g) => sum + g.current, 0);
+    },
+    missingGroups() {
+      return this.groups.filter((g) => g.morning > g.current);
+    },
+    totalMissing() {
+      return this.missingGroups.reduce((sum, g) => sum + (g.morning - g.current), 0);
+    },
+  },
+  methods: {
+    // Generates synthetic data for 15 groups
+    generateSyntheticData() {
+      const names = ["Anna", "Max", "Lisa", "Paul", "Sophie", "Jonas", "Lena", "Tim", "Marie", "Felix"];
+      for (let i = 1; i <= 15; i++) {
+        const missing = Math.floor(Math.random() * 3); // 0–2 missing
+        const current = 10 - missing;
+        this.groups.push({
+          id: i,
+          name: `Gruppe ${i}`,
+          morning: 10,
+          current,
+          betreuer: [
+            names[Math.floor(Math.random() * names.length)],
+            names[Math.floor(Math.random() * names.length)],
+          ],
+          timestamp: new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }),
+        });
+      }
+    },
+
+    // Returns a colored status indicator depending on group condition
+    getStatusIndicator(group) {
+      const diff = group.morning - group.current;
+      if (diff === 0)
+        return '<span class="text-success"><i class="fas fa-check-circle"></i></span>';
+      else if (diff > 0)
+        return '<span class="text-danger"><i class="fas fa-exclamation-circle"></i></span>';
+      else
+        return '<span class="text-info"><i class="fas fa-plus-circle"></i></span>';
+    },
+
+    // Formats difference between morning and current counts
+    formatDifference(group) {
+      const diff = group.morning - group.current;
+      if (diff === 0)
+        return '<span class="text-success">Komplett</span>';
+      if (diff > 0)
+        return `<span class="text-danger">-${diff}</span>`;
+      return `<span class="text-info">+${Math.abs(diff)}</span>`;
+    },
+  },
+  mounted() {
+    this.generateSyntheticData();
+  },
+};
+</script>
+
+<style scoped>
+.table th,
+.table td {
+  text-align: center;
+}
+
+.card {
+  border-radius: 1rem;
+}
+
+.alert {
+  border-radius: 1rem;
+}
+
+.table-hover tbody tr:hover {
+  background-color: rgba(0, 123, 255, 0.05);
+}
+</style>

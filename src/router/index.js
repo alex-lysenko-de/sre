@@ -30,8 +30,16 @@ const routes = [
     },
     {
         path : '/',
-        redirect : '/main/scan' // Делаем рабочую область точкой входа
+        redirect : '/info' // Делаем рабочую область точкой входа
     },
+
+    {
+        path : '/children',
+        name : 'Children',
+        component : ChildrenView,
+        meta : { requiresAuth : true }
+    },
+
     {
         path : '/info',
         name : 'Info',
@@ -96,12 +104,7 @@ const routes = [
                 component : ScanView,
                 meta : { requiresAuth : true, title : 'Сканирование QR' }
             },
-            {
-                path : 'children',
-                name : 'Children',
-                component : () => import('@/views/ChildrenView.vue'),
-                meta : { requiresAuth : true, title : 'Список детей' }
-            },
+
             {
                 path : 'child/:id',
                 name : 'ChildDetail',

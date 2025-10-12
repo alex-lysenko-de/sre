@@ -24,6 +24,11 @@
                 ℹ️ Info
               </router-link>
             </li>
+            <li class="nav-item">
+              <router-link to="/children" class="nav-link text-white">
+                🧒 Kinder
+              </router-link>
+            </li>
             <li v-if="isAdmin" class="nav-item">
               <router-link to="/config" class="nav-link text-white">
                 ⚙️ Konfiguration
