@@ -32,81 +32,155 @@
             </router-link>
           </div>
 
-          <div class="table-responsive">
-            <table class="table table-striped table-hover align-middle user-table">
-              <thead class="table-light">
-              <tr>
-                <th scope="col">ID</th>
-                <th scope="col">Name</th>
-                <th scope="col">E-Mail</th>
-                <th scope="col">Rolle</th>
-                <th scope="col">Telefon</th>
-                <th scope="col" class="text-center">Aktionen</th>
-              </tr>
-              </thead>
-              <tbody>
-              <tr v-for="user in users" :key="user.id" :class="{'table-info': user.role === 'admin'}">
-                <td>{{ user.id }}</td>
-                <td>
-                  <strong>{{ user.display_name }}</strong>
-                  <span v-if="!user.active" class="badge bg-warning ms-2">INAKTIV</span>
-                </td>
-                <td>{{ user.email }}</td>
-                <td>
+          <div class="d-none d-md-block">
+            <div class="table-responsive">
+              <table class="table table-striped table-hover align-middle user-table">
+                <thead class="table-light">
+                <tr>
+                  <th scope="col">ID</th>
+                  <th scope="col">Name</th>
+                  <th scope="col">E-Mail</th>
+                  <th scope="col">Rolle</th>
+                  <th scope="col">Telefon</th>
+                  <th scope="col" class="text-center">Aktionen</th>
+                </tr>
+                </thead>
+                <tbody>
+                <tr v-for="user in users" :key="user.id" :class="{'table-info': user.role === 'admin'}">
+                  <td>{{ user.id }}</td>
+                  <td>
+                    <strong>{{ user.display_name }}</strong>
+                    <span v-if="!user.active" class="badge bg-warning ms-2">INAKTIV</span>
+                  </td>
+                  <td>{{ user.email }}</td>
+                  <td>
+                      <span class="badge" :class="user.role === 'admin' ? 'bg-danger' : 'bg-primary'">
+                        {{ user.role === 'admin' ? 'Administrator' : 'Benutzer' }}
+                      </span>
+                  </td>
+                  <td>
+                    <a v-if="user.phone" :href="`tel:${user.phone}`">{{ user.phone }}</a>
+                    <span v-else>N/A</span>
+                  </td>
+                  <td class="text-center">
+                    <div class="d-flex justify-content-center">
+                      <button
+                          class="btn btn-outline-primary btn-sm me-2"
+                          title="WhatsApp-Chat mit Benutzer öffnen"
+                          @click="openWhatsAppChat(user.phone)"
+                      >
+                        <font-awesome-icon :icon="['fab', 'whatsapp']" style="color:#25D366; font-size:1.5rem" />
+
+                      </button>
+
+
+                      <button
+                          class="btn btn-outline-primary btn-sm me-2"
+                          @click="openEditModal(user)"
+                          title="Benutzer bearbeiten"
+                      >
+                        <font-awesome-icon :icon="['fas', 'edit']" />
+                      </button>
+
+                      <button
+                          class="btn btn-outline-info btn-sm me-2"
+                          @click="sendResetPasswordEmail(user)"
+                          title="Passwort-Reset senden"
+                      >
+                        <font-awesome-icon :icon="['fas', 'envelope']" />
+                      </button>
+
+                      <button
+                          class="btn btn-outline-danger btn-sm"
+                          @click="deleteUser(user)"
+                          :disabled="user.role === 'admin' && users.filter(u => u.role === 'admin').length === 1"
+                          title="Benutzer löschen"
+                      >
+                        <font-awesome-icon :icon="['fas', 'trash-alt']" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <ul class="list-group d-md-none user-list-group">
+            <li
+                v-for="user in users"
+                :key="user.id"
+                class="list-group-item"
+                :class="{'list-group-item-success-light': user.role === 'admin'}"
+            >
+              <div class="d-flex w-100 justify-content-between">
+                <div class="flex-grow-1 me-2">
+                  <h6 class="mb-1">
+                    <strong class="text-primary">{{ user.display_name }}</strong>
+                    <span v-if="!user.active" class="badge bg-warning ms-2">INAKTIV</span>
+                  </h6>
+                  <p class="mb-1 small text-muted">ID: {{ user.id }}</p>
+                  <p class="mb-1 small">
+                    <font-awesome-icon :icon="['fas', 'envelope']" class="me-1" />
+                    {{ user.email }}
+                  </p>
+                </div>
+
+                <div class="text-end">
                     <span class="badge" :class="user.role === 'admin' ? 'bg-danger' : 'bg-primary'">
-                      {{ user.role === 'admin' ? 'Administrator' : 'Benutzer' }}
+                      {{ user.role === 'admin' ? 'Admin' : 'Benutzer' }}
                     </span>
-                </td>
-                <td>
+                </div>
+              </div>
+
+              <div class="mb-3">
+                <p class="mb-1 small">
+                  <font-awesome-icon :icon="['fas', 'phone']" class="me-1" />
+                  Telefon:
                   <a v-if="user.phone" :href="`tel:${user.phone}`">{{ user.phone }}</a>
                   <span v-else>N/A</span>
-                </td>
-                <td class="text-center">
-                  <div class="d-flex justify-content-center">
-                    <button
-                        class="btn btn-outline-primary btn-sm me-2"
-                        title="WhatsApp-Chat mit Benutzer öffnen"
-                        @click="openWhatsAppChat(user.phone)"
-                    >
-                      <font-awesome-icon :icon="['fab', 'whatsapp']" style="color:#25D366; font-size:1.5rem" />
+                </p>
+              </div>
 
-                    </button>
+              <div class="d-flex flex-wrap justify-content-start">
+                <button
+                    class="btn btn-outline-primary btn-sm me-2 mb-2"
+                    title="WhatsApp-Chat mit Benutzer öffnen"
+                    @click="openWhatsAppChat(user.phone)"
+                >
+                  <font-awesome-icon :icon="['fab', 'whatsapp']" style="color:#25D366; font-size:1.5rem" />
+                </button>
 
 
-                    <button
-                        class="btn btn-outline-primary btn-sm me-2"
-                        @click="openEditModal(user)"
-                        title="Benutzer bearbeiten"
-                    >
-                      <font-awesome-icon :icon="['fas', 'edit']" />
-                    </button>
+                <button
+                    class="btn btn-outline-primary btn-sm me-2 mb-2"
+                    @click="openEditModal(user)"
+                    title="Benutzer bearbeiten"
+                >
+                  <font-awesome-icon :icon="['fas', 'edit']" /> Bearbeiten
+                </button>
 
-                    <button
-                        class="btn btn-outline-info btn-sm me-2"
-                        @click="sendResetPasswordEmail(user)"
-                        title="Passwort-Reset senden"
-                    >
-                      <font-awesome-icon :icon="['fas', 'envelope']" />
-                    </button>
+                <button
+                    class="btn btn-outline-info btn-sm me-2 mb-2"
+                    @click="sendResetPasswordEmail(user)"
+                    title="Passwort-Reset senden"
+                >
+                  <font-awesome-icon :icon="['fas', 'envelope']" /> Reset
+                </button>
 
-                    <button
-                        class="btn btn-outline-danger btn-sm"
-                        @click="deleteUser(user)"
-                        :disabled="user.role === 'admin' && users.filter(u => u.role === 'admin').length === 1"
-                        title="Benutzer löschen"
-                    >
-                      <font-awesome-icon :icon="['fas', 'trash-alt']" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-              </tbody>
-            </table>
-          </div>
+                <button
+                    class="btn btn-outline-danger btn-sm mb-2"
+                    @click="deleteUser(user)"
+                    :disabled="user.role === 'admin' && users.filter(u => u.role === 'admin').length === 1"
+                    title="Benutzer löschen"
+                >
+                  <font-awesome-icon :icon="['fas', 'trash-alt']" /> Löschen
+                </button>
+              </div>
+            </li>
+          </ul>
         </div>
       </div>
     </div>
-
     <div class="modal fade" id="editUserModal" tabindex="-1" aria-labelledby="editUserModalLabel" aria-hidden="true">
       <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
@@ -495,6 +569,24 @@ export default {
 .table-info {
   background-color: #d1e7dd !important; /* Light success color for admin row */
 }
+
+/* START: Neue Styles für responsive List Group */
+.user-list-group {
+  margin-top: 1rem;
+}
+
+.list-group-item {
+  padding: 1rem;
+  margin-bottom: 0.5rem;
+  border-radius: 0.5rem;
+}
+
+.list-group-item-success-light {
+  /* Entspricht dem table-info/light success color */
+  background-color: #d1e7dd !important;
+}
+/* END: Neue Styles */
+
 
 /* English: Modal header color to match the primary buttons */
 .modal-header.bg-primary {
