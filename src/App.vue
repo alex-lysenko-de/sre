@@ -19,7 +19,7 @@
               class="btn btn-sm btn-light d-flex align-items-center gap-2"
               title="Gruppe ändern"
           >
-            <font-awesome-icon :icon="['fas', 'users']" />
+            <font-awesome-icon :icon="['fas', 'users']"/>
             <span>Gruppe {{ userInfo.group_id || '?' }}</span>
           </button>
 
@@ -28,7 +28,7 @@
               class="btn btn-sm btn-light d-flex align-items-center gap-2"
               title="Bus ändern"
           >
-            <font-awesome-icon :icon="['fas', 'bus']" />
+            <font-awesome-icon :icon="['fas', 'bus']"/>
             <span>Bus {{ userInfo.bus_id || '?' }}</span>
           </button>
         </div>
@@ -136,16 +136,16 @@
 
     <!-- Main Content -->
     <main class="container-fluid p-3">
-      <router-view />
+      <router-view/>
     </main>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
-import { supabase } from './supabase'
-import { useUser } from './composables/useUser'
+import {ref, computed, onMounted, watch} from 'vue'
+import {useRouter, useRoute} from 'vue-router'
+import {supabase} from './supabase'
+import {useUser} from './composables/useUser'
 import DailyCheckInModal from './views/DailyCheckInModalView.vue'
 import GroupChangeModal from './components/GroupChangeModal.vue'
 import BusChangeModal from './components/BusChangeModal.vue'
@@ -183,24 +183,43 @@ watch(() => route.path, async () => {
   await checkAuth()
 })
 
+
 /**
  * Initialize application
  * Checks for existing session or attempts auto-login
  */
 async function initializeApp() {
+  const isRegistered = localStorage.getItem('sre_user_registered') === 'true';
+
+  // Für Gäste wird der Authentifizierungsprozess übersprungen
+  if (!isRegistered) {
+    console.log('👤 Gastmodus. Authentifizierung wird übersprungen.');
+    isAuthenticated.value = false;
+    return; // Wichtig: Hier abbrechen
+  }
+
+
+  // Für registrierte Nutzer wird der normale Authentifizierungsprozess gestartet
+  console.log('✅ Registrierter Benutzer. Starte Authentifizierung...');
+
+
+  // Check for existing session
   try {
-    // Check for existing session
-    const { data: { session } } = await supabase.auth.getSession()
+    const { data : { session } } = await supabase.auth.getSession();
 
     if (session) {
-      // Session exists
-      await handleAuthentication(session)
+      await handleAuthentication(session);
     } else {
       // Try auto-login from localStorage
-      await attemptAutoLogin()
+      await attemptAutoLogin();
     }
   } catch (err) {
-    console.error('Fehler bei der Initialisierung:', err)
+    console.error('Fehler bei der Initialisierung:', err);
+    isAuthenticated.value = false;
+    // Wenn etwas schiefgeht, zum Login leiten
+    if (route.path !== '/login' && route.path !== '/welcome') {
+      await router.push('/login');
+    }
   }
 }
 
@@ -222,8 +241,8 @@ async function attemptAutoLogin() {
     console.log('🔑 Gespeicherte Anmeldedaten gefunden, führe automatische Anmeldung durch...')
 
     const { data, error } = await supabase.auth.signInWithPassword({
-      email: savedCredentials.email,
-      password: savedCredentials.password
+      email : savedCredentials.email,
+      password : savedCredentials.password
     })
 
     if (error) throw error
@@ -262,7 +281,7 @@ async function handleAuthentication(session) {
  */
 async function checkAuth() {
   try {
-    const { data: { session } } = await supabase.auth.getSession()
+    const { data : { session } } = await supabase.auth.getSession()
 
     if (session) {
       isAuthenticated.value = true

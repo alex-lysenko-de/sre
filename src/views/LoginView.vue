@@ -209,6 +209,11 @@ async function handleLogin() {
       throw new Error('Unzureichende Rechte für die Anmeldung')
     }
 
+    // NEU: Setzt den permanenten Status, dass der Nutzer registriert ist
+    localStorage.setItem('sre_user_registered', 'true');
+    console.log('✅ Registrierungsstatus im localStorage gespeichert.');
+
+
     // Save credentials if checkbox is checked
     if (rememberMe.value) {
       saveCredentials(email.value, password.value)

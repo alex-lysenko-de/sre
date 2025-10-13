@@ -122,11 +122,31 @@ async function fetchUserFromSupabase() {
             console.error('Error fetching schedule:', scheduleError)
         }
 
+        // If no record for today, try to get last known group/bus for pre-filling
+        let lastKnownGroup = null
+        let lastKnownBus = null
+
+        if (!scheduleData) {
+            const { data: lastRecord } = await supabase
+                .from('user_group_day')
+                .select('group_id, bus_id')
+                .eq('user_id', userData.id)
+                .order('day', { ascending: false })
+                .limit(1)
+                .maybeSingle()
+
+            if (lastRecord) {
+                lastKnownGroup = lastRecord.group_id
+                lastKnownBus = lastRecord.bus_id
+                console.log(`📋 Pre-filling from last record: Group ${lastKnownGroup}, Bus ${lastKnownBus}`)
+            }
+        }
+
         // Combine data
         const combinedData = {
             ...userData,
-            group_id: scheduleData?.group_id || null,
-            bus_id: scheduleData?.bus_id || null,
+            group_id: scheduleData?.group_id || lastKnownGroup,
+            bus_id: scheduleData?.bus_id || lastKnownBus,
             bMustWorkToday: scheduleData?.bMustWorkToday === 1 || false,
             isPresentToday: scheduleData?.isPresentToday === 1 || false,
             description: scheduleData?.description || null

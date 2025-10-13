@@ -202,6 +202,11 @@ async function handleRegister() {
       throw new Error(data.error || 'Registrierungsfehler')
     }
 
+    // NEU: Setzt den permanenten Status, dass der Nutzer registriert ist
+    localStorage.setItem('sre_user_registered', 'true');
+    console.log('✅ Registrierungsstatus im localStorage nach Registrierung gespeichert.');
+
+
     success.value = true
     console.log('✅ Benutzer erfolgreich registriert')
 

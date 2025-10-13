@@ -122,6 +122,24 @@ const router = createRouter({
 
 // Global navigation guard
 router.beforeEach(async (to, from, next) => {
+    // Prüfen, ob der Nutzer jemals registriert wurde
+    const isRegistered = localStorage.getItem('sre_user_registered') === 'true';
+
+    // --- LOGIK FÜR GÄSTE ---
+    if (!isRegistered) {
+        // Gäste dürfen nur auf öffentliche Seiten und die Willkommens-Seite zugreifen
+        if (to.meta.public || to.name === 'Welcome') {
+            return next();
+        }
+        // Wenn ein Gast versucht, eine andere Seite aufzurufen, wird er zur Info-Seite geleitet
+        if (to.path !== '/info') {
+            console.log('👤 Gast erkannt, leite zu /info weiter');
+            return next('/info');
+        }
+        return next();
+    }
+
+    // --- LOGIK FÜR REGISTRIERTE BENUTZER ---
     // Public pages
     if (to.meta.public) {
         return next()
