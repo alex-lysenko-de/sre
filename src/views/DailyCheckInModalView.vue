@@ -1,37 +1,61 @@
 <template>
-  <div v-if="show" class="modal-overlay">
+  <!-- Fullscreen blocking modal -->
+  <div
+      v-if="show"
+      class="modal fade show d-block"
+      tabindex="-1"
+      style="background-color: rgba(0,0,0,0.8);"
+      @click.self.prevent
+      @keydown.esc.prevent
+  >
     <div class="modal-dialog modal-dialog-centered">
-      <div class="modal-content">
-        <div class="modal-header bg-success text-white">
-          <h5 class="modal-title">
-            <font-awesome-icon :icon="['fas', 'calendar-alt']" class="me-2" />
+      <div class="modal-content border-0 shadow-lg">
+        <!-- Header -->
+        <div class="modal-header bg-success text-white border-0">
+          <h5 class="modal-title w-100 text-center fw-bold">
+            <font-awesome-icon :icon="['fas', 'calendar-check']" class="me-2" />
             {{ formattedDate }}
           </h5>
+          <!-- No close button - modal is blocking! -->
         </div>
 
+        <!-- Body -->
         <div class="modal-body p-4">
-          <!-- Alert Container -->
-          <div v-if="errorMessage" class="alert alert-danger alert-dismissible fade show" role="alert">
+          <!-- Alert container -->
+          <div v-if="error" class="alert alert-danger alert-dismissible fade show" role="alert">
             <font-awesome-icon :icon="['fas', 'exclamation-triangle']" class="me-2" />
-            {{ errorMessage }}
-            <button type="button" class="btn-close" @click="errorMessage = ''"></button>
+            {{ error }}
+            <button type="button" class="btn-close" @click="error = null"></button>
           </div>
 
+          <!-- Info message if pre-filled -->
+          <div v-if="isPreFilled" class="alert alert-info" role="alert">
+            <font-awesome-icon :icon="['fas', 'info-circle']" class="me-2" />
+            Ihre Gruppe und Bus wurden bereits zugewiesen. Bitte bestätigen Sie Ihre Anwesenheit.
+          </div>
+
+          <!-- Form -->
           <form @submit.prevent="handleSubmit">
             <!-- Group Selection -->
             <div class="mb-4">
               <label for="groupSelect" class="form-label fw-semibold">
                 <font-awesome-icon :icon="['fas', 'users']" class="me-2" />
-                Gruppe <span class="text-danger">*</span>
+                Gruppe
+                <span class="text-danger">*</span>
               </label>
               <select
                   id="groupSelect"
                   v-model.number="selectedGroup"
                   class="form-select form-select-lg"
                   required
+                  :disabled="loading"
               >
-                <option :value="null" disabled>Bitte wählen...</option>
-                <option v-for="n in totalGroups" :key="n" :value="n">
+                <option :value="null" disabled>Wählen Sie eine Gruppe</option>
+                <option
+                    v-for="n in totalGroups"
+                    :key="n"
+                    :value="n"
+                >
                   Gruppe {{ n }}
                 </option>
               </select>
@@ -41,16 +65,22 @@
             <div class="mb-4">
               <label for="busSelect" class="form-label fw-semibold">
                 <font-awesome-icon :icon="['fas', 'bus']" class="me-2" />
-                Bus <span class="text-danger">*</span>
+                Bus
+                <span class="text-danger">*</span>
               </label>
               <select
                   id="busSelect"
                   v-model.number="selectedBus"
                   class="form-select form-select-lg"
                   required
+                  :disabled="loading"
               >
-                <option :value="null" disabled>Bitte wählen...</option>
-                <option v-for="n in totalBuses" :key="n" :value="n">
+                <option :value="null" disabled>Wählen Sie einen Bus</option>
+                <option
+                    v-for="n in totalBuses"
+                    :key="n"
+                    :value="n"
+                >
                   Bus {{ n }}
                 </option>
               </select>
@@ -59,15 +89,15 @@
             <!-- Submit Button -->
             <button
                 type="submit"
-                class="btn btn-success btn-lg w-100 fw-semibold"
-                :disabled="!selectedGroup || !selectedBus || submitting"
+                class="btn btn-success btn-lg w-100 fw-bold"
+                :disabled="!isFormValid || loading"
             >
-              <span v-if="submitting">
-                <span class="spinner-border spinner-border-sm me-2"></span>
+              <span v-if="loading">
+                <span class="spinner-border spinner-border-sm me-2" role="status"></span>
                 Wird gespeichert...
               </span>
               <span v-else>
-                <font-awesome-icon :icon="['fas', 'check']" class="me-2" />
+                <font-awesome-icon :icon="['fas', 'check-circle']" class="me-2" />
                 Ich fahre heute mit!
               </span>
             </button>
@@ -79,7 +109,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useUser } from '@/composables/useUser'
 import { useConfig } from '@/modules/config'
 
@@ -87,7 +117,8 @@ import { useConfig } from '@/modules/config'
 const props = defineProps({
   show: {
     type: Boolean,
-    required: true
+    required: true,
+    default: false
   }
 })
 
@@ -101,159 +132,114 @@ const { config } = useConfig()
 // Local state
 const selectedGroup = ref(null)
 const selectedBus = ref(null)
-const submitting = ref(false)
-const errorMessage = ref('')
+const loading = ref(false)
+const error = ref(null)
 
-// Computed
+// Computed properties
 const totalGroups = computed(() => parseInt(config.value.total_groups) || 15)
 const totalBuses = computed(() => parseInt(config.value.total_buses) || 5)
 
 const formattedDate = computed(() => {
-  const date = new Date()
-  return date.toLocaleDateString('de-DE', {
-    weekday: 'long',
-    day: '2-digit',
-    month: 'long',
-    year: 'numeric'
-  })
+  const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }
+  return new Date().toLocaleDateString('de-DE', options)
 })
 
-// Watch for pre-filled values when modal opens
-watch(() => props.show, (newVal) => {
-  if (newVal) {
-    // Pre-fill with existing values if available
-    selectedGroup.value = userInfo.value.group_id || null
-    selectedBus.value = userInfo.value.bus_id || null
-    errorMessage.value = ''
+const isFormValid = computed(() =>
+    selectedGroup.value !== null && selectedBus.value !== null
+)
+
+const isPreFilled = computed(() =>
+    userInfo.value.group_id !== null || userInfo.value.bus_id !== null
+)
+
+// Watch for userInfo changes to pre-fill form
+watch(() => userInfo.value, (newVal) => {
+  if (newVal.group_id) {
+    selectedGroup.value = newVal.group_id
   }
-})
+  if (newVal.bus_id) {
+    selectedBus.value = newVal.bus_id
+  }
+}, { immediate: true })
 
 // Form submission handler
 async function handleSubmit() {
-  if (!selectedGroup.value || !selectedBus.value) {
-    errorMessage.value = 'Bitte wählen Sie sowohl Gruppe als auch Bus aus.'
-    return
-  }
+  if (!isFormValid.value || loading.value) return
 
-  submitting.value = true
-  errorMessage.value = ''
+  loading.value = true
+  error.value = null
 
   try {
-    // Step 1: Assign to group
+    // Assign group
     await assignUserToGroup(selectedGroup.value)
+    console.log(`✅ Assigned to group ${selectedGroup.value}`)
 
-    // Step 2: Assign to bus
+    // Assign bus
     await assignUserToBus(selectedBus.value)
+    console.log(`✅ Assigned to bus ${selectedBus.value}`)
 
-    // Step 3: Mark as present
-    await updateUserPresence(true)
+    // Mark as present
+    await updateUserPresence(1)
+    console.log('✅ Marked as present')
 
-    // Success - emit event to close modal
-    emit('completed')
+    // Emit completion event
+    emit('completed', {
+      group_id: selectedGroup.value,
+      bus_id: selectedBus.value
+    })
+
   } catch (err) {
-    console.error('Error during check-in:', err)
-    errorMessage.value = `Fehler beim Speichern: ${err.message}`
+    console.error('❌ Error during check-in:', err)
+    error.value = `Fehler beim Speichern: ${err.message}`
     emit('error', err)
   } finally {
-    submitting.value = false
+    loading.value = false
   }
 }
 
+// Prevent modal close on backdrop click
 onMounted(() => {
-  // Pre-fill values if already set
-  if (props.show) {
-    selectedGroup.value = userInfo.value.group_id || null
-    selectedBus.value = userInfo.value.bus_id || null
-  }
+  // Disable Bootstrap modal auto-close behavior
+  document.addEventListener('keydown', preventEscape)
 })
+
+function preventEscape(e) {
+  if (e.key === 'Escape' && props.show) {
+    e.preventDefault()
+    e.stopPropagation()
+  }
+}
 </script>
 
 <style scoped>
-/* Modal overlay that blocks all interaction */
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.75);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 9999;
-  padding: 1rem;
+/* Ensure modal is truly blocking */
+.modal {
+  pointer-events: auto;
 }
 
 .modal-dialog {
-  width: 100%;
   max-width: 500px;
 }
 
+.form-select:focus,
+.btn:focus {
+  box-shadow: 0 0 0 0.25rem rgba(25, 135, 84, 0.25);
+}
+
+/* Prevent user from closing modal */
 .modal-content {
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+  border-radius: 1rem;
 }
 
 .modal-header {
-  padding: 1.5rem;
-  border-top-left-radius: 12px;
-  border-top-right-radius: 12px;
-  border-bottom: none;
+  border-top-left-radius: 1rem;
+  border-top-right-radius: 1rem;
 }
 
-.modal-title {
-  font-size: 1.25rem;
-  font-weight: 600;
-  margin: 0;
-}
-
-.modal-body {
-  padding: 2rem 1.5rem;
-}
-
-/* Prevent body scroll when modal is open */
-body:has(.modal-overlay) {
-  overflow: hidden;
-}
-
-/* Make form elements larger and more touch-friendly */
-.form-select-lg {
-  font-size: 1.1rem;
-  padding: 0.75rem 1rem;
-}
-
-.btn-lg {
-  padding: 0.75rem 1.5rem;
-  font-size: 1.1rem;
-}
-
-/* Animation */
-.modal-overlay {
-  animation: fadeIn 0.3s ease-in-out;
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-.modal-content {
-  animation: slideUp 0.3s ease-in-out;
-}
-
-@keyframes slideUp {
-  from {
-    transform: translateY(50px);
-    opacity: 0;
-  }
-  to {
-    transform: translateY(0);
-    opacity: 1;
+/* Mobile responsive */
+@media (max-width: 576px) {
+  .modal-dialog {
+    margin: 0.5rem;
   }
 }
 </style>

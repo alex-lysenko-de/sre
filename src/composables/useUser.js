@@ -1,117 +1,116 @@
 // src/composables/useUser.js
 import { ref, computed } from 'vue'
-import { supabase } from '@/supabase.js'
+import { supabase } from '@/supabase'
 
-// Cache configuration
 const USER_CACHE_KEY = 'user_info_cache'
-const CACHE_TTL = 10 * 60 * 1000 // 10 minutes in milliseconds
+const CACHE_TTL = 10 * 60 * 1000 // 10 minutes
 
-// Reactive user state
+// Shared reactive state
 const userInfo = ref({
-    // From users table
     id: null,              // users.id (bigint)
     user_id: null,         // users.user_id (uuid from auth)
     email: null,           // users.email
     display_name: null,    // users.display_name
     role: null,            // users.role ('admin' | 'user')
+    phone: null,           // users.phone
 
-    // From user_group_day table (for today)
+    // From user_group_day table (today)
     group_id: null,        // group number
     bus_id: null,          // bus number
-    bMustWorkToday: false, // true if record exists for today and bMustWorkToday==1
-    isPresentToday: false  // true if record exists for today and isPresentToday==1
+    bMustWorkToday: false, // true if record exists for today with bMustWorkToday==1
+    isPresentToday: false, // true if record exists for today with isPresentToday==1
+    description: null      // optional note
 })
 
-// Reactive state for loading and errors
 const loading = ref(false)
 const error = ref(null)
 
-/**
- * Computed property to check if user is admin
- */
+// Computed properties
 const isAdmin = computed(() => userInfo.value.role === 'admin')
+const isCheckInRequired = computed(() =>
+    !userInfo.value.isPresentToday
+)
 
 /**
- * Gets current date in YYYY-MM-DD format
+ * Get today's date in YYYY-MM-DD format
  */
-function getCurrentDate() {
+function getTodayDate() {
     return new Date().toISOString().split('T')[0]
 }
 
 /**
- * Checks if cache is valid
- */
-function isCacheValid() {
-    try {
-        const cached = localStorage.getItem(USER_CACHE_KEY)
-        if (!cached) return false
-
-        const { timestamp } = JSON.parse(cached)
-        return (Date.now() - timestamp) < CACHE_TTL
-    } catch {
-        return false
-    }
-}
-
-/**
- * Saves user data to cache
- */
-function saveToCache(data) {
-    try {
-        const cacheData = {
-            timestamp: Date.now(),
-            data: data
-        }
-        localStorage.setItem(USER_CACHE_KEY, JSON.stringify(cacheData))
-    } catch (err) {
-        console.error('Error saving to cache:', err)
-    }
-}
-
-/**
- * Loads user data from cache
+ * Load cached user data from localStorage
  */
 function loadFromCache() {
     try {
         const cached = localStorage.getItem(USER_CACHE_KEY)
         if (!cached) return null
 
-        const { data } = JSON.parse(cached)
-        return data
+        const { timestamp, data } = JSON.parse(cached)
+        const now = Date.now()
+
+        if (now - timestamp < CACHE_TTL) {
+            return data
+        }
+
+        return null
     } catch (err) {
-        console.error('Error loading from cache:', err)
+        console.error('Error loading cache:', err)
         return null
     }
 }
 
 /**
- * Fetches user data directly from Supabase
+ * Save user data to localStorage cache
+ */
+function saveToCache(data) {
+    try {
+        const cacheData = {
+            timestamp: Date.now(),
+            data
+        }
+        localStorage.setItem(USER_CACHE_KEY, JSON.stringify(cacheData))
+    } catch (err) {
+        console.error('Error saving cache:', err)
+    }
+}
+
+/**
+ * Clear user cache from localStorage
+ */
+function clearUserCache() {
+    try {
+        localStorage.removeItem(USER_CACHE_KEY)
+    } catch (err) {
+        console.error('Error clearing cache:', err)
+    }
+}
+
+/**
+ * Fetch user data from Supabase
  */
 async function fetchUserFromSupabase() {
-    loading.value = true
-    error.value = null
-
     try {
-        // Step 1: Get authenticated user from Supabase Auth
-        const { data: { user: authUser }, error: authError } = await supabase.auth.getUser()
+        // Get current auth user
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
 
-        if (authError || !authUser) {
-            throw new Error('No authenticated user found')
-        }
+        if (sessionError) throw sessionError
+        if (!session) throw new Error('No active session')
 
-        // Step 2: Fetch user data from users table
+        const authUserId = session.user.id
+
+        // Fetch user data from users table
         const { data: userData, error: userError } = await supabase
             .from('users')
-            .select('id, user_id, email, display_name, role')
-            .eq('user_id', authUser.id)
+            .select('id, user_id, email, display_name, role, phone')
+            .eq('user_id', authUserId)
             .single()
 
-        if (userError || !userData) {
-            throw new Error('User data not found in database')
-        }
+        if (userError) throw userError
+        if (!userData) throw new Error('User not found in database')
 
-        // Step 3: Fetch today's schedule from user_group_day
-        const today = getCurrentDate()
+        // Fetch today's schedule from user_group_day
+        const today = getTodayDate()
         const { data: scheduleData, error: scheduleError } = await supabase
             .from('user_group_day')
             .select('group_id, bus_id, bMustWorkToday, isPresentToday, description')
@@ -119,82 +118,92 @@ async function fetchUserFromSupabase() {
             .eq('day', today)
             .maybeSingle()
 
-        if (scheduleError) {
-            console.warn('Error fetching schedule:', scheduleError)
+        if (scheduleError && scheduleError.code !== 'PGRST116') {
+            console.error('Error fetching schedule:', scheduleError)
         }
 
-        // Step 4: Combine all data
+        // Combine data
         const combinedData = {
-            id: userData.id,
-            user_id: userData.user_id,
-            email: userData.email,
-            display_name: userData.display_name,
-            role: userData.role,
+            ...userData,
             group_id: scheduleData?.group_id || null,
             bus_id: scheduleData?.bus_id || null,
-            bMustWorkToday: scheduleData?.bMustWorkToday === 1,
-            isPresentToday: scheduleData?.isPresentToday === 1
+            bMustWorkToday: scheduleData?.bMustWorkToday === 1 || false,
+            isPresentToday: scheduleData?.isPresentToday === 1 || false,
+            description: scheduleData?.description || null
         }
 
-        // Update reactive state
-        userInfo.value = combinedData
-
-        // Save to cache
-        saveToCache(combinedData)
-
         return combinedData
+    } catch (err) {
+        console.error('Error fetching user from Supabase:', err)
+        throw err
+    }
+}
 
+/**
+ * Load user data (with caching)
+ * @param {boolean} force - Force reload from database, ignore cache
+ */
+async function loadUser(force = false) {
+    if (loading.value) return
+
+    loading.value = true
+    error.value = null
+
+    try {
+        // Try cache first if not forced
+        if (!force) {
+            const cached = loadFromCache()
+            if (cached) {
+                userInfo.value = cached
+                console.log('✅ User data loaded from cache')
+                return
+            }
+        }
+
+        // Fetch from database
+        const data = await fetchUserFromSupabase()
+        userInfo.value = data
+        saveToCache(data)
+        console.log('✅ User data loaded from Supabase')
     } catch (err) {
         error.value = err
-        console.error('Error fetching user data:', err)
-        throw err
+        console.error('❌ Error loading user:', err)
     } finally {
         loading.value = false
     }
 }
 
 /**
- * Loads user data with caching support
- * @param {boolean} force - If true, bypass cache and fetch from database
- */
-async function loadUser(force = false) {
-    if (!force && isCacheValid()) {
-        const cachedData = loadFromCache()
-        if (cachedData) {
-            userInfo.value = cachedData
-            return cachedData
-        }
-    }
-
-    return await fetchUserFromSupabase()
-}
-
-/**
- * Assigns user to a group for a specific date
+ * Assign user to a group for a specific date
  * @param {number} groupId - Group number
- * @param {string} date - Date in YYYY-MM-DD format (defaults to today)
+ * @param {string} date - Date in YYYY-MM-DD format (default: today)
  */
-async function assignUserToGroup(groupId, date = null) {
-    if (!userInfo.value.id) {
-        throw new Error('User not loaded')
-    }
-
-    const targetDate = date || getCurrentDate()
-
+async function assignUserToGroup(groupId, date = getTodayDate()) {
     try {
-        // Check if record exists for this date
-        const { data: existing } = await supabase
+        if (!userInfo.value.id) {
+            throw new Error('User not loaded')
+        }
+
+        // Check if record exists
+        const { data: existing, error: fetchError } = await supabase
             .from('user_group_day')
             .select('id')
             .eq('user_id', userInfo.value.id)
-            .eq('day', targetDate)
+            .eq('day', date)
             .maybeSingle()
+
+        if (fetchError && fetchError.code !== 'PGRST116') {
+            throw fetchError
+        }
 
         if (existing) {
             // Update existing record
             const { error: updateError } = await supabase
                 .from('user_group_day')
-                .update({ group_id: groupId })
+                .update({
+                    group_id: groupId,
+                    updated_at: new Date().toISOString()
+                })
                 .eq('id', existing.id)
 
             if (updateError) throw updateError
@@ -204,9 +213,8 @@ async function assignUserToGroup(groupId, date = null) {
                 .from('user_group_day')
                 .insert({
                     user_id: userInfo.value.id,
-                    day: targetDate,
+                    day: date,
                     group_id: groupId,
-                    bus_id: userInfo.value.bus_id,
                     bMustWorkToday: 0,
                     isPresentToday: 0,
                     created_at: new Date().toISOString()
@@ -215,13 +223,13 @@ async function assignUserToGroup(groupId, date = null) {
             if (insertError) throw insertError
         }
 
-        // Update local state if date is today
-        if (targetDate === getCurrentDate()) {
+        // Update local state if it's today
+        if (date === getTodayDate()) {
             userInfo.value.group_id = groupId
             saveToCache(userInfo.value)
         }
 
-        return true
+        console.log(`✅ User assigned to group ${groupId} for ${date}`)
     } catch (err) {
         console.error('Error assigning user to group:', err)
         throw err
@@ -229,31 +237,36 @@ async function assignUserToGroup(groupId, date = null) {
 }
 
 /**
- * Assigns user to a bus for a specific date
+ * Assign user to a bus for a specific date
  * @param {number} busId - Bus number
- * @param {string} date - Date in YYYY-MM-DD format (defaults to today)
+ * @param {string} date - Date in YYYY-MM-DD format (default: today)
  */
-async function assignUserToBus(busId, date = null) {
-    if (!userInfo.value.id) {
-        throw new Error('User not loaded')
-    }
-
-    const targetDate = date || getCurrentDate()
-
+async function assignUserToBus(busId, date = getTodayDate()) {
     try {
-        // Check if record exists for this date
-        const { data: existing } = await supabase
+        if (!userInfo.value.id) {
+            throw new Error('User not loaded')
+        }
+
+        // Check if record exists
+        const { data: existing, error: fetchError } = await supabase
             .from('user_group_day')
             .select('id')
             .eq('user_id', userInfo.value.id)
-            .eq('day', targetDate)
+            .eq('day', date)
             .maybeSingle()
+
+        if (fetchError && fetchError.code !== 'PGRST116') {
+            throw fetchError
+        }
 
         if (existing) {
             // Update existing record
             const { error: updateError } = await supabase
                 .from('user_group_day')
-                .update({ bus_id: busId })
+                .update({
+                    bus_id: busId,
+                    updated_at: new Date().toISOString()
+                })
                 .eq('id', existing.id)
 
             if (updateError) throw updateError
@@ -263,8 +276,7 @@ async function assignUserToBus(busId, date = null) {
                 .from('user_group_day')
                 .insert({
                     user_id: userInfo.value.id,
-                    day: targetDate,
-                    group_id: userInfo.value.group_id,
+                    day: date,
                     bus_id: busId,
                     bMustWorkToday: 0,
                     isPresentToday: 0,
@@ -274,13 +286,13 @@ async function assignUserToBus(busId, date = null) {
             if (insertError) throw insertError
         }
 
-        // Update local state if date is today
-        if (targetDate === getCurrentDate()) {
+        // Update local state if it's today
+        if (date === getTodayDate()) {
             userInfo.value.bus_id = busId
             saveToCache(userInfo.value)
         }
 
-        return true
+        console.log(`✅ User assigned to bus ${busId} for ${date}`)
     } catch (err) {
         console.error('Error assigning user to bus:', err)
         throw err
@@ -288,47 +300,63 @@ async function assignUserToBus(busId, date = null) {
 }
 
 /**
- * Updates user's presence status for a specific date
- * @param {boolean} isPresent - True if user confirms presence
- * @param {string} date - Date in YYYY-MM-DD format (defaults to today)
+ * Update user presence status
+ * @param {number} status - 0 (absent) or 1 (present)
+ * @param {string} date - Date in YYYY-MM-DD format (default: today)
  */
-async function updateUserPresence(isPresent, date = null) {
-    if (!userInfo.value.id) {
-        throw new Error('User not loaded')
-    }
-
-    const targetDate = date || getCurrentDate()
-    const presenceValue = isPresent ? 1 : 0
-
+async function updateUserPresence(status, date = getTodayDate()) {
     try {
-        // Check if record exists for this date
-        const { data: existing } = await supabase
+        if (!userInfo.value.id) {
+            throw new Error('User not loaded')
+        }
+
+        const isPresentValue = status === 1 ? 1 : 0
+
+        // Check if record exists
+        const { data: existing, error: fetchError } = await supabase
             .from('user_group_day')
             .select('id')
             .eq('user_id', userInfo.value.id)
-            .eq('day', targetDate)
+            .eq('day', date)
             .maybeSingle()
+
+        if (fetchError && fetchError.code !== 'PGRST116') {
+            throw fetchError
+        }
 
         if (existing) {
             // Update existing record
             const { error: updateError } = await supabase
                 .from('user_group_day')
-                .update({ isPresentToday: presenceValue })
+                .update({
+                    isPresentToday: isPresentValue,
+                    updated_at: new Date().toISOString()
+                })
                 .eq('id', existing.id)
 
             if (updateError) throw updateError
         } else {
-            // This shouldn't normally happen - presence should be set after group/bus assignment
-            throw new Error('No record found for this date')
+            // Create new record
+            const { error: insertError } = await supabase
+                .from('user_group_day')
+                .insert({
+                    user_id: userInfo.value.id,
+                    day: date,
+                    isPresentToday: isPresentValue,
+                    bMustWorkToday: 0,
+                    created_at: new Date().toISOString()
+                })
+
+            if (insertError) throw insertError
         }
 
-        // Update local state if date is today
-        if (targetDate === getCurrentDate()) {
-            userInfo.value.isPresentToday = isPresent
+        // Update local state if it's today
+        if (date === getTodayDate()) {
+            userInfo.value.isPresentToday = isPresentValue === 1
             saveToCache(userInfo.value)
         }
 
-        return true
+        console.log(`✅ User presence updated to ${isPresentValue} for ${date}`)
     } catch (err) {
         console.error('Error updating user presence:', err)
         throw err
@@ -336,94 +364,60 @@ async function updateUserPresence(isPresent, date = null) {
 }
 
 /**
- * Gets user's schedule information for a specific date
- * @param {string} date - Date in YYYY-MM-DD format (defaults to today)
- * @returns {Object} Schedule data
+ * Get user's schedule info for a specific date
+ * @param {string} date - Date in YYYY-MM-DD format (default: today)
+ * @returns {Object} { group_id, bus_id, bMustWorkToday, isPresentToday, description }
  */
-async function getUserDayInfo(date = null) {
-    if (!userInfo.value.id) {
-        throw new Error('User not loaded')
-    }
-
-    const targetDate = date || getCurrentDate()
-
+async function getUserDayInfo(date = getTodayDate()) {
     try {
-        const { data, error: fetchError } = await supabase
+        if (!userInfo.value.id) {
+            throw new Error('User not loaded')
+        }
+
+        const { data, error } = await supabase
             .from('user_group_day')
             .select('group_id, bus_id, bMustWorkToday, isPresentToday, description')
             .eq('user_id', userInfo.value.id)
-            .eq('day', targetDate)
+            .eq('day', date)
             .maybeSingle()
 
-        if (fetchError) throw fetchError
-
-        if (!data) {
-            return {
-                group_id: null,
-                bus_id: null,
-                bMustWorkToday: false,
-                isPresentToday: false,
-                description: null
-            }
+        if (error && error.code !== 'PGRST116') {
+            throw error
         }
 
-        return {
-            group_id: data.group_id,
-            bus_id: data.bus_id,
-            bMustWorkToday: data.bMustWorkToday === 1,
-            isPresentToday: data.isPresentToday === 1,
-            description: data.description
+        return data || {
+            group_id: null,
+            bus_id: null,
+            bMustWorkToday: false,
+            isPresentToday: false,
+            description: null
         }
     } catch (err) {
-        console.error('Error fetching user day info:', err)
+        console.error('Error getting user day info:', err)
         throw err
     }
 }
 
 /**
- * Clears user cache (used during logout)
- */
-function clearUserCache() {
-    try {
-        localStorage.removeItem(USER_CACHE_KEY)
-        userInfo.value = {
-            id: null,
-            user_id: null,
-            email: null,
-            display_name: null,
-            role: null,
-            group_id: null,
-            bus_id: null,
-            bMustWorkToday: false,
-            isPresentToday: false
-        }
-    } catch (err) {
-        console.error('Error clearing user cache:', err)
-    }
-}
-
-/**
- * Main composable export
+ * Composable export
  */
 export function useUser() {
     return {
         // Reactive state
         userInfo,
         isAdmin,
+        isCheckInRequired,
         loading,
         error,
 
-        // Methods for loading data
+        // Methods
         loadUser,
         fetchUserFromSupabase,
-
-        // Methods for working with user_group_day
         assignUserToGroup,
         assignUserToBus,
         updateUserPresence,
         getUserDayInfo,
-
-        // Utilities
-        clearUserCache
+        clearUserCache,
+        getTodayDate
     }
 }

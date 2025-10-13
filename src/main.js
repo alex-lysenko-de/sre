@@ -11,11 +11,15 @@ import 'bootstrap'
 import { library } from '@fortawesome/fontawesome-svg-core'
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
 import { faWhatsapp } from '@fortawesome/free-brands-svg-icons'
-// Импортируешь все реально используемые иконки (в алфавитном порядке для удобства)
+
+// Import all actually used icons (in alphabetical order for convenience)
 import {
     faArrowLeft,
+    faBus, // NEW: Added for bus icon
     faCalendarAlt,
+    faCalendarCheck, // NEW: Added for check-in modal
     faCheck,
+    faCheckCircle, // NEW: Added for check-in button
     faChild,
     faCity,
     faCog,
@@ -25,28 +29,31 @@ import {
     faEnvelope,
     faEuroSign,
     faExclamationTriangle,
-    faHand, // Замена для 👋
+    faHand,
     faHome,
-    faInfoCircle, // Замена для ℹ️
-    faLock, // Замена для 🔒
+    faInfoCircle,
+    faLock,
     faMapMarkerAlt,
     faPhone,
     faPlus,
-    faSave, // Замена для 💾
-    faThumbsUp, // Замена для 👍
+    faSave,
+    faThumbsUp,
     faTimes,
     faTrashAlt,
-    faTree, // Замена для 🌳
-    faUser, // Замена для 👤
+    faTree,
+    faUser,
     faUserPlus,
     faUsers,
 } from '@fortawesome/free-solid-svg-icons'
 
-// Добавляешь только их
+// Add them to library
 library.add(
     faArrowLeft,
+    faBus, // NEW
     faCalendarAlt,
+    faCalendarCheck, // NEW
     faCheck,
+    faCheckCircle, // NEW
     faChild,
     faCity,
     faCog,
@@ -87,7 +94,7 @@ const updateSW = registerSW({
     onNeedRefresh() {
         // New version found
         console.log('🌀 Neue Version der App gefunden!')
-        updateSW(true).then(r => console.log('version is updated')) // Apply new version immediately
+        updateSW(true).then(r => console.log('version is updated'))
     },
     onOfflineReady() {
         console.log('✅ App ist bereit für Offline-Betrieb')
