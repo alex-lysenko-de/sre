@@ -5,15 +5,22 @@
         :show="showCheckInModal"
         @completed="onCheckInCompleted"
         @error="onCheckInError"
+        @close="showCheckInModal = false"
     />
 
     <!-- Navigation Bar -->
     <nav v-if="isAuthenticated" class="navbar navbar-expand-lg navbar-light bg-success shadow-sm">
       <div class="container-fluid px-3">
-        <span class="navbar-brand text-white fw-bold mb-0">🌳 Stadtranderholung</span>
+
+        <div v-if="isCheckInRequired" class="ms-auto me-3">
+          <button class="btn btn-warning fw-bold" @click="showCheckInModal = true">
+            Ich fahre heute mit!
+          </button>
+        </div>
+        <span v-else class="navbar-brand text-white fw-bold mb-0">🌳 SRE</span>
 
         <!-- User Info Indicators (Group & Bus) -->
-        <div v-if="userInfo.isPresentToday" class="d-none d-lg-flex align-items-center gap-3 me-3">
+        <div v-if="!isCheckInRequired && userInfo.isPresentToday" class="d-flex align-items-center gap-3 me-3">
           <button
               @click="showGroupChangeModal = true"
               class="btn btn-sm btn-light d-flex align-items-center gap-2"
@@ -78,28 +85,13 @@
               </router-link>
             </li>
             <li class="nav-item">
-              <router-link to="/main/scan" class="nav-link text-white">
+              <router-link to="/main/scan" class="nav-link text-white" :class="{'disabled-link': isCheckInRequired}">
                 📷 Scannen
               </router-link>
             </li>
           </ul>
 
           <!-- Mobile Group/Bus Indicators -->
-          <div v-if="userInfo.isPresentToday" class="d-lg-none mb-2">
-            <button
-                @click="showGroupChangeModal = true"
-                class="btn btn-sm btn-light me-2"
-            >
-              👥 Gruppe {{ userInfo.group_id || '?' }}
-            </button>
-            <button
-                @click="showBusChangeModal = true"
-                class="btn btn-sm btn-light"
-            >
-              🚌 Bus {{ userInfo.bus_id || '?' }}
-            </button>
-          </div>
-
           <div class="d-flex flex-column flex-lg-row align-items-lg-center gap-2">
             <span class="text-white small">
               👤 {{ userEmail }}
@@ -107,7 +99,7 @@
             </span>
             <button
                 @click="logout"
-                class="btn btn-danger btn-sm"
+                class="btn btn-secondary btn-sm"
             >
               🚪 Abmelden
             </button>
@@ -167,11 +159,8 @@ const isAuthenticated = ref(false)
 const userEmail = ref('')
 const showGroupChangeModal = ref(false)
 const showBusChangeModal = ref(false)
+const showCheckInModal = ref(false)
 
-// Computed
-const showCheckInModal = computed(() =>
-    isAuthenticated.value && isCheckInRequired.value
-)
 
 // Initialize app
 onMounted(async () => {
@@ -321,8 +310,9 @@ function clearSavedCredentials() {
  * Handle check-in completion
  */
 function onCheckInCompleted(data) {
-  console.log('✅ Ежедневная регистрация завершена:', data)
-  // Modal will close automatically via isCheckInRequired becoming false
+  console.log('✅ Daily registration completed', data)
+  showCheckInModal.value = false // Закрываем модалку
+  loadUser(true) // Перезагружаем данные пользователя, чтобы обновить UI
 }
 
 /**
@@ -377,6 +367,11 @@ async function logout() {
 <style scoped>
 .navbar-toggler {
   filter: brightness(0) invert(1);
+}
+
+.disabled-link {
+  pointer-events: none;
+  opacity: 0.5;
 }
 
 .nav-link {

@@ -3,7 +3,7 @@
     <div class="card">
       <div class="card-header">
         <h3 class="mb-0">
-          <font-awesome-icon :icon="['fas', 'child']" />
+          <font-awesome-icon :icon="['fas', 'children']" />
           Gruppe {{ groupNumber }}. Kinder
         </h3>
       </div>

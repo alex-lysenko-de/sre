@@ -28,7 +28,7 @@ const error = ref(null)
 // Computed properties
 const isAdmin = computed(() => userInfo.value.role === 'admin')
 const isCheckInRequired = computed(() =>
-    !userInfo.value.isPresentToday
+    !!userInfo.value.id && !userInfo.value.isPresentToday
 )
 
 /**

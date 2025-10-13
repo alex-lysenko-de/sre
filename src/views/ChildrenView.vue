@@ -105,8 +105,8 @@ export default {
 
     // Determine status color class
     const getStatusClass = (group) => {
-      if (group.current === group.morning) return 'bg-success'
-      if (group.current < group.morning) return 'bg-danger'
+      if (group.current === group.morning) return 'bg-transparent'
+      if (group.current < group.morning) return 'bg-warning'
       return 'bg-secondary'
     }
 

@@ -1,73 +1,49 @@
 <template>
-  <!-- Fullscreen blocking modal -->
   <div
       v-if="show"
       class="modal fade show d-block"
       tabindex="-1"
-      style="background-color: rgba(0,0,0,0.8);"
-      @click.self.prevent
-      @keydown.esc.prevent
+      style="background-color: rgba(0,0,0,0.5);"
+      @click.self="closeModal"
   >
     <div class="modal-dialog modal-dialog-centered">
       <div class="modal-content border-0 shadow-lg">
-        <!-- Header -->
         <div class="modal-header bg-success text-white border-0">
           <h5 class="modal-title w-100 text-center fw-bold">
             <font-awesome-icon :icon="['fas', 'calendar-check']" class="me-2" />
             {{ formattedDate }}
           </h5>
-          <!-- No close button - modal is blocking! -->
+          <button type-button class="btn-close btn-close-white" @click="closeModal" aria-label="Schließen"></button>
         </div>
 
-        <!-- Body -->
         <div class="modal-body p-4">
-          <!-- Alert container -->
-          <div v-if="error" class="alert alert-danger alert-dismissible fade show" role="alert">
-            <font-awesome-icon :icon="['fas', 'exclamation-triangle']" class="me-2" />
-            {{ error }}
-            <button type="button" class="btn-close" @click="error = null"></button>
-          </div>
-
-          <!-- Info message if pre-filled -->
-          <div v-if="isPreFilled" class="alert alert-info" role="alert">
-            <font-awesome-icon :icon="['fas', 'info-circle']" class="me-2" />
-            Ihre Gruppe und Bus wurden bereits zugewiesen. Bitte bestätigen Sie Ihre Anwesenheit.
-          </div>
-
-          <!-- Form -->
           <form @submit.prevent="handleSubmit">
-            <!-- Group Selection -->
             <div class="mb-4">
               <label for="groupSelect" class="form-label fw-semibold">
                 <font-awesome-icon :icon="['fas', 'users']" class="me-2" />
-                Gruppe
-                <span class="text-danger">*</span>
+                Gruppe (Optional)
               </label>
               <select
                   id="groupSelect"
                   v-model.number="selectedGroup"
                   class="form-select form-select-lg"
-                  required
                   :disabled="loading"
               >
-                <option :value="null" disabled>Wählen Sie eine Gruppe</option>
-                <option
-                    v-for="n in totalGroups"
-                    :key="n"
-                    :value="n"
-                >
-                  Gruppe {{ n }}
-                </option>
+                <option :value="null">Keine Gruppe</option> <option
+                  v-for="n in totalGroups"
+                  :key="n"
+                  :value="n"
+              >
+                Gruppe {{ n }}
+              </option>
               </select>
             </div>
 
-            <!-- Bus Selection -->
             <div class="mb-4">
               <label for="busSelect" class="form-label fw-semibold">
                 <font-awesome-icon :icon="['fas', 'bus']" class="me-2" />
                 Bus
-                <span class="text-danger">*</span>
-              </label>
+                <span class="text-danger">*</span> </label>
               <select
                   id="busSelect"
                   v-model.number="selectedBus"
@@ -98,7 +74,7 @@
               </span>
               <span v-else>
                 <font-awesome-icon :icon="['fas', 'check-circle']" class="me-2" />
-                Ich fahre heute mit!
+                Ok
               </span>
             </button>
           </form>
@@ -107,6 +83,7 @@
     </div>
   </div>
 </template>
+
 
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
@@ -123,7 +100,7 @@ const props = defineProps({
 })
 
 // Emits
-const emit = defineEmits(['completed', 'error'])
+const emit = defineEmits(['completed', 'error', 'close'])
 
 // Composables
 const { userInfo, assignUserToGroup, assignUserToBus, updateUserPresence } = useUser()
@@ -145,7 +122,7 @@ const formattedDate = computed(() => {
 })
 
 const isFormValid = computed(() =>
-    selectedGroup.value !== null && selectedBus.value !== null
+     selectedBus.value !== null
 )
 
 const isPreFilled = computed(() =>
@@ -171,9 +148,10 @@ async function handleSubmit() {
 
   try {
     // Assign group
-    await assignUserToGroup(selectedGroup.value)
-    console.log(`✅ Assigned to group ${selectedGroup.value}`)
-
+    if (selectedGroup.value) {
+      await assignUserToGroup(selectedGroup.value);
+      console.log(`✅ Assigned to group ${selectedGroup.value}`);
+    }
     // Assign bus
     await assignUserToBus(selectedBus.value)
     console.log(`✅ Assigned to bus ${selectedBus.value}`)
@@ -197,16 +175,9 @@ async function handleSubmit() {
   }
 }
 
-// Prevent modal close on backdrop click
-onMounted(() => {
-  // Disable Bootstrap modal auto-close behavior
-  document.addEventListener('keydown', preventEscape)
-})
-
-function preventEscape(e) {
-  if (e.key === 'Escape' && props.show) {
-    e.preventDefault()
-    e.stopPropagation()
+function closeModal() {
+  if (!loading.value) {
+    emit('close');
   }
 }
 </script>

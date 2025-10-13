@@ -21,6 +21,7 @@ import {
     faCheck,
     faCheckCircle, // NEW: Added for check-in button
     faChild,
+    faChildren,
     faCity,
     faCog,
     faComment,
@@ -55,6 +56,7 @@ library.add(
     faCheck,
     faCheckCircle, // NEW
     faChild,
+    faChildren,
     faCity,
     faCog,
     faComment,

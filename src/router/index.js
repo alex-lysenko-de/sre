@@ -13,6 +13,8 @@ import UsersView from '@/views/UsersView.vue';
 import GroupEditView from "@/views/GroupEditView.vue";
 import DaysEditView from "@/views/DaysEditView.vue";
 import ResetPasswordView from '@/views/ResetPasswordView.vue';
+import ArmbandConnectView from "@/views/ArmbandConnectView.vue";
+import ArmbandView from "@/views/ArmbandView.vue";
 
 const routes = [
     {
@@ -40,6 +42,13 @@ const routes = [
     },
 
     {
+        path : '/armband/:id',
+        name : 'Armband',
+        component : ArmbandView,
+        meta : { requiresAuth : true, title : 'Armband Scannen' }
+    },
+
+    {
         path : '/info',
         name : 'Info',
         component : InfoView,
@@ -50,6 +59,13 @@ const routes = [
         name : 'GroupEdit',
         component : GroupEditView,
         meta : { requiresAuth : true, requiresAdmin : false }
+    },
+
+    {
+        path : '/armband-connect/:id',
+        name : 'ArmbandConnect',
+        component : ArmbandConnectView,
+        meta : { requiresAuth : true, title : 'Armband Verbinden' }
     },
     {
         path : '/days-edit',
@@ -195,6 +211,14 @@ router.beforeEach(async (to, from, next) => {
             console.error('❌ Fehler bei der Berechtigungsprüfung:', err)
             return next('/login')
         }
+    }
+
+    // check ?id=123 in url for child id and redirect to /main/child/123
+    if (to.query.id || to.query.n) {
+        const childId = to.query.id || to.query.n
+        console.log('➡️ Umleitung zu /main/child/' + childId)
+        // Remove the query parameter from the URL
+        return next({ name: 'Armband', params: { id: childId } });
     }
 
     next()
