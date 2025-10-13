@@ -4,9 +4,8 @@
       <div class="card-header">
         <h3 class="mb-0">
           <font-awesome-icon :icon="['fas', 'child']" />
-          Kinderliste für Gruppe {{ groupNumber }}
+          Gruppe {{ groupNumber }}. Kinder
         </h3>
-        <p class="mb-0 mt-2">{{ formattedCurrentDate }}</p>
       </div>
       <div class="card-body">
         <div id="alertContainer"></div>
@@ -399,7 +398,7 @@ export default {
     },
 
     goBack() {
-      alert('Zurück-Navigation (Emulation): Rückkehr zur Gruppenauswahl.');
+      history.back();
     }
   }
 };

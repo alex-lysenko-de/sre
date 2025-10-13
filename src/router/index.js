@@ -6,10 +6,9 @@ import InviteGeneratorView from '@/views/InviteGeneratorView.vue'
 import WelcomeView from '@/views/WelcomeView.vue'
 import MainView from '@/views/MainView.vue'
 import ScanView from '@/views/ScanView.vue'
-import {supabase} from '@/supabase'
+import {supabase} from '@/supabase';
 import ChildrenView from '@/views/ChildrenView.vue';
 import ChildDetailView from '@/views/ChildDetailView.vue';
-import BindBraceletView from '@/views/BindBraceletView.vue';
 import UsersView from '@/views/UsersView.vue';
 import GroupEditView from "@/views/GroupEditView.vue";
 import DaysEditView from "@/views/DaysEditView.vue";
@@ -30,7 +29,7 @@ const routes = [
     },
     {
         path : '/',
-        redirect : '/info' // Делаем рабочую область точкой входа
+        redirect : '/info'
     },
 
     {
@@ -111,12 +110,6 @@ const routes = [
                 component : () => import('@/views/ChildDetailView.vue'),
                 meta : { requiresAuth : true, title : 'Карточка ребёнка' }
             },
-            {
-                path : 'bind',
-                name : 'BindBracelet',
-                component : () => import('@/views/BindBraceletView.vue'),
-                meta : { requiresAuth : true, title : 'Привязка браслета' }
-            }
 
         ]
     }
