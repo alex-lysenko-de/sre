@@ -9,20 +9,20 @@
       </div>
 
       <div class="card-body">
-        <div v-if="!isAdmin" class="alert alert-danger" role="alert">
+        <div v-if="!configStore.isAdmin" class="alert alert-danger" role="alert">
           <font-awesome-icon :icon="['fas', 'lock']" class="me-2" />
           Sie haben keine Rechte, auf diese Seite zuzugreifen.
         </div>
 
         <div v-else>
-          <div v-if="loading" class="text-center py-4">
+          <div v-if="configStore.loading" class="text-center py-4">
             <div class="spinner-border mb-2" role="status">
               <span class="visually-hidden">Wird geladen...</span>
             </div>
             <p class="text-muted">Einstellungen werden geladen...</p>
           </div>
           <div v-else>
-            <div v-for="(value, key) in config" :key="key" class="border-bottom py-3">
+            <div v-for="(value, key) in configStore.config" :key="key" class="border-bottom py-3">
               <label :for="'config-key-' + key" class="form-label fw-semibold text-dark">{{ key }}</label>
               <div class="input-group">
                 <input
@@ -51,23 +51,20 @@
 
 <script setup>
 import { reactive, onMounted } from 'vue'
-import { useConfig } from '../modules/config'
-import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome' // Assuming FontAwesome is available
+import { useConfigStore } from '../stores/config'
+import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
 
 // Destructure reactive state and functions from the composable
-const { config, loadConfig, updateConfig, isAdmin, initConfigModule, loading } = useConfig()
+const configStore = useConfigStore()
 
 // Local state for form inputs, reactive to handle updates
 const localConfig = reactive({})
 
 // Lifecycle hook: initialize module, load config, and sync local state
 onMounted(async () => {
-  // Initialize the configuration module
-  await initConfigModule()
-  // Load the configuration data from the backend
-  await loadConfig()
-  // Deep copy the config values to the local form state
-  Object.assign(localConfig, config.value)
+  await configStore.initConfigModule()
+  await configStore.loadConfig()
+  Object.assign(localConfig, configStore.config)
 })
 
 /**
@@ -75,8 +72,7 @@ onMounted(async () => {
  * @param {string} key - The configuration key to update.
  */
 async function saveConfig(key) {
-  // Call the composable function to update the config in the backend
-  await updateConfig(key, localConfig[key])
+  await configStore.updateConfig(key, localConfig[key])
   // Optional: Add a local alert/toast notification here if needed,
   // but for simplicity, we rely on the logic inside useConfig.
 }
@@ -113,7 +109,7 @@ async function saveConfig(key) {
 }
 
 .btn-success {
-  background-color: #198754; /* Standard Bootstrap success green */
+  background-color: #198754;
   border-color: #198754;
 }
 

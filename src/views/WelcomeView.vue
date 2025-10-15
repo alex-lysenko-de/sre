@@ -29,7 +29,7 @@
               <!-- Registration Form -->
               <form v-else @submit.prevent="handleRegister" class="needs-validation" novalidate>
                 <div class="mb-3">
-                  <label for="name" class="form-label fw-semibold">Name</label>
+                  <label for="name" class="form-label fw-semibold">Name *</label>
                   <input
                     v-model="name"
                     id="name"
@@ -41,7 +41,7 @@
                 </div>
 
                 <div class="mb-3">
-                  <label for="email" class="form-label fw-semibold">Email</label>
+                  <label for="email" class="form-label fw-semibold">Email *</label>
                   <input
                     v-model="email"
                     id="email"
@@ -54,7 +54,7 @@
                 </div>
 
                 <div class="mb-3">
-                  <label for="phone" class="form-label fw-semibold">Telefon</label>
+                  <label for="phone" class="form-label fw-semibold">Telefon *</label>
                   <input
                     v-model="phone"
                     id="phone"
@@ -66,7 +66,7 @@
                 </div>
 
                 <div class="mb-3">
-                  <label for="password" class="form-label fw-semibold">Passwort</label>
+                  <label for="password" class="form-label fw-semibold">Passwort *</label>
                   <input
                     v-model="password"
                     id="password"
@@ -81,7 +81,7 @@
                 </div>
 
                 <div class="mb-4">
-                  <label for="confirmPassword" class="form-label fw-semibold">Passwort bestätigen</label>
+                  <label for="confirmPassword" class="form-label fw-semibold">Passwort bestätigen *</label>
                   <input
                     v-model="confirmPassword"
                     id="confirmPassword"

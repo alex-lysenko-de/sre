@@ -79,9 +79,9 @@
                   <span class="spinner-border spinner-border-sm me-2" role="status"></span>
                   Wird gespeichert...
                 </span>
-                <span v-else">
-                <font-awesome-icon :icon="['fas', 'save']" class="me-2" />
-                Speichern
+                <span v-else>
+                  <font-awesome-icon :icon="['fas', 'save']" class="me-2" />
+                  Speichern
                 </span>
               </button>
             </div>
@@ -94,8 +94,9 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { useUser } from '@/composables/useUser.js'
-import { useConfig } from '@/modules/config.js'
+import { storeToRefs } from 'pinia'
+import { useUserStore } from '@/stores/user'
+import { useConfigStore } from '@/stores/config'
 
 // Props
 const props = defineProps({
@@ -112,9 +113,12 @@ const props = defineProps({
 // Emits
 const emit = defineEmits(['close', 'saved'])
 
-// Composables
-const { assignUserToBus } = useUser()
-const { config } = useConfig()
+// Stores
+const userStore = useUserStore()
+const configStore = useConfigStore()
+
+// Get reactive config
+const { config } = storeToRefs(configStore)
 
 // Local state
 const selectedBus = ref(props.currentBus)
@@ -143,7 +147,7 @@ async function handleSave() {
   error.value = null
 
   try {
-    await assignUserToBus(selectedBus.value)
+    await userStore.assignUserToBus(selectedBus.value)
     console.log(`✅ Bus geändert auf: ${selectedBus.value}`)
 
     emit('saved', selectedBus.value)

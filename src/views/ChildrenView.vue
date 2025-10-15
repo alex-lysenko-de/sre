@@ -72,7 +72,7 @@
 
 <script>
 // 🧠 English comments
-// This version loads the total number of groups from Supabase config (useConfig)
+// This version loads the total number of groups from Supabase config using Pinia store
 // If config not loaded yet, defaults to 15 groups.
 // Each group displays a colored status dot:
 //  🟢 green if morning == current
@@ -80,12 +80,12 @@
 // Group number links to /group-edit?gr={id}
 
 import { ref, computed, onMounted } from 'vue'
-import { useConfig } from '@/modules/config.js'
+import { useConfigStore } from '@/stores/config'
 
 export default {
   name: 'AdminGroupView',
   setup() {
-    const { config, loadConfig } = useConfig()
+    const configStore = useConfigStore()
 
     const groups = ref([])
 
@@ -139,7 +139,7 @@ export default {
     }
 
     onMounted(async () => {
-      const loaded = await loadConfig()
+      const loaded = await configStore.loadConfig()
       const total = parseInt(loaded?.total_groups || 15)
       initGroups(total)
     })

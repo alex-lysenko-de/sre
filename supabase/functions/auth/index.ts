@@ -1,4 +1,5 @@
 // supabase/functions/auth/index.ts
+// npx supabase functions deploy auth
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 // CORS headers - allows requests from your frontend

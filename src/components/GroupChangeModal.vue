@@ -94,8 +94,9 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { useUser } from '@/composables/useUser.js'
-import { useConfig } from '@/modules/config.js'
+import { storeToRefs } from 'pinia'
+import { useUserStore } from '@/stores/user'
+import { useConfigStore } from '@/stores/config'
 
 // Props
 const props = defineProps({
@@ -112,9 +113,12 @@ const props = defineProps({
 // Emits
 const emit = defineEmits(['close', 'saved'])
 
-// Composables
-const { assignUserToGroup } = useUser()
-const { config } = useConfig()
+// Stores
+const userStore = useUserStore()
+const configStore = useConfigStore()
+
+// Get reactive config
+const { config } = storeToRefs(configStore)
 
 // Local state
 const selectedGroup = ref(props.currentGroup)
@@ -143,7 +147,7 @@ async function handleSave() {
   error.value = null
 
   try {
-    await assignUserToGroup(selectedGroup.value)
+    await userStore.assignUserToGroup(selectedGroup.value)
     console.log(`✅ Gruppe geändert auf: ${selectedGroup.value}`)
 
     emit('saved', selectedGroup.value)

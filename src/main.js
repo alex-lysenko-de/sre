@@ -1,4 +1,5 @@
 import { createApp } from 'vue'
+import { createPinia } from 'pinia'
 import App from './App.vue'
 import router from './router'
 import { registerSW } from 'virtual:pwa-register'
@@ -15,11 +16,11 @@ import { faWhatsapp } from '@fortawesome/free-brands-svg-icons'
 // Import all actually used icons (in alphabetical order for convenience)
 import {
     faArrowLeft,
-    faBus, // NEW: Added for bus icon
+    faBus,
     faCalendarAlt,
-    faCalendarCheck, // NEW: Added for check-in modal
+    faCalendarCheck,
     faCheck,
-    faCheckCircle, // NEW: Added for check-in button
+    faCheckCircle,
     faChild,
     faChildren,
     faCity,
@@ -50,11 +51,11 @@ import {
 // Add them to library
 library.add(
     faArrowLeft,
-    faBus, // NEW
+    faBus,
     faCalendarAlt,
-    faCalendarCheck, // NEW
+    faCalendarCheck,
     faCheck,
-    faCheckCircle, // NEW
+    faCheckCircle,
     faChild,
     faChildren,
     faCity,
@@ -83,7 +84,11 @@ library.add(
     faWhatsapp
 )
 
+// Create Pinia instance
+const pinia = createPinia()
+
 const app = createApp(App)
+app.use(pinia) // Register Pinia before router
 app.use(router)
 
 // Register the FontAwesomeIcon component globally

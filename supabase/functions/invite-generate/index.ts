@@ -1,3 +1,6 @@
+// supabase/functions/invite-generate/index.ts
+// npx supabase functions deploy invite-generate
+
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts"
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2"
 import { v4 as uuidv4 } from "https://esm.sh/uuid@9.0.1"

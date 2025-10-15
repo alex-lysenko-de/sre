@@ -39,7 +39,7 @@
                   Notizen: {{ child.notes }}
                 </p>
                 <p v-else class="text-muted mb-0 mt-1" style="font-size: 0.9em;">
-                  Keine Notizen
+                  <!-- Keine Notizen -->
                 </p>
               </div>
 
@@ -158,68 +158,67 @@
 </template>
 
 <script>
-// Import des Composables für die Datenbankverbindung
-import { useChildren } from '@/composables/useChildren';
+// Import composable for database connection
+import { useChildren } from '@/composables/useChildren'
 
-// --- Statische Daten für die Anzeige ---
+// --- Static data for display ---
 const SWIM_LEVELS = {
   0: 'Nichtschwimmer',
   1: 'Seepferdchen',
   2: 'Bronze',
   3: 'Silber',
   4: 'Gold',
-};
+}
 const SWIM_BADGE_CLASSES = {
   0: 'bg-danger text-white',
   1: 'bg-warning text-dark',
-  2: 'bg-info text-white',
-  3: 'bg-secondary text-white',
-  4: 'bg-success text-white',
-};
+  2: 'bg-secondary text-warning',
+  3: 'bg-light text-secondary',
+  4: 'bg-dark text-warning',
+}
 
 const Utils = {
   getSwimLevel(level) {
-    return SWIM_LEVELS[level] || 'Unbekannt';
+    return SWIM_LEVELS[level] || 'Unbekannt'
   },
   getSwimBadgeClass(level) {
-    // FIX: Accessor direkt auf statisches Objekt gerichtet (aus früherem Fehler)
-    return SWIM_BADGE_CLASSES[level] || 'bg-light text-dark';
+    return SWIM_BADGE_CLASSES[level] || 'bg-light text-dark'
   },
 
   getCurrentDateString() {
-    return new Date().toISOString().split('T')[0];
+    return new Date().toISOString().split('T')[0]
   },
   formatDateForDisplay(dateString) {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('de-DE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    const date = new Date(dateString)
+    return date.toLocaleDateString('de-DE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
   },
   showAlert(message, type = 'info', containerId = 'alertContainer') {
-    const alertContainer = document.getElementById(containerId);
-    if (!alertContainer) return;
+    const alertContainer = document.getElementById(containerId)
+    if (!alertContainer) return
 
-    alertContainer.innerHTML = '';
+    alertContainer.innerHTML = ''
 
-    const alertDiv = document.createElement('div');
-    alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
-    alertDiv.role = 'alert';
+    const alertDiv = document.createElement('div')
+    alertDiv.className = `alert alert-${type} alert-dismissible fade show`
+    alertDiv.role = 'alert'
     alertDiv.innerHTML = `
             ${message}
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        `;
-    alertContainer.appendChild(alertDiv);
+        `
+    alertContainer.appendChild(alertDiv)
 
     setTimeout(() => {
-      alertDiv.remove();
-    }, 5000);
+      alertDiv.remove()
+    }, 5000)
   },
-};
+}
 
 export default {
   name: 'GroupEditView',
   setup() {
-    // Verwendung der Datenbank-Funktionen
-    const { fetchChildrenList, saveChild, deleteChild } = useChildren();
-    return { fetchChildrenList, saveChild, deleteChild };
+    // Use database functions
+    const { fetchChildrenList, saveChild, deleteChild } = useChildren()
+    return { fetchChildrenList, saveChild, deleteChild }
   },
 
   data() {
@@ -229,96 +228,96 @@ export default {
 
       groupNumber: this.$route.query ? this.$route.query.gr || '1' : '1',
 
-      // Daten für die Formularfelder
+      // Data for form fields
       newChildName: '',
       newChildAge: '',
       newChildSchwimm: 0,
       newChildNotes: '',
       newChildBandId: '',
 
-      // Zustand für Bearbeitung
+      // State for editing
       editingChildId: null,
 
       formattedCurrentDate: '',
       allChildrenData: [],
-    };
+    }
   },
   computed: {
     children() {
-      // Kinder der aktuellen Gruppe filtern
-      const groupID = parseInt(this.groupNumber);
-      return (this.allChildrenData || []).filter(child => child.group_id === groupID);
+      // Filter children for current group
+      const groupID = parseInt(this.groupNumber)
+      return (this.allChildrenData || []).filter(child => child.group_id === groupID)
     }
   },
   async created() {
-    this.formattedCurrentDate = Utils.formatDateForDisplay(Utils.getCurrentDateString());
-    this.groupNumber = String(this.groupNumber);
-    await this.loadInitialData();
+    this.formattedCurrentDate = Utils.formatDateForDisplay(Utils.getCurrentDateString())
+    this.groupNumber = String(this.groupNumber)
+    await this.loadInitialData()
   },
   methods: {
     getSwimLevel: Utils.getSwimLevel,
     getSwimBadgeClass: Utils.getSwimBadgeClass,
     showAlert: Utils.showAlert,
 
-    // --- CRUD / Daten-Methoden ---
+    // --- CRUD / Data methods ---
 
     async loadInitialData() {
-      this.loadingInitialData = true;
+      this.loadingInitialData = true
       try {
-        const data = await this.fetchChildrenList();
-        this.allChildrenData = data;
-        this.showAlert(`Daten für Gruppe ${this.groupNumber} von Supabase geladen.`, 'info');
+        const data = await this.fetchChildrenList()
+        this.allChildrenData = data
+        this.showAlert(`Daten für Gruppe ${this.groupNumber} von Supabase geladen.`, 'info')
       } catch (error) {
-        this.showAlert(`Fehler beim Laden der Kinderdaten: ${error.message}`, 'danger');
-        this.isConfigLoaded = false;
+        this.showAlert(`Fehler beim Laden der Kinderdaten: ${error.message}`, 'danger')
+        this.isConfigLoaded = false
       } finally {
-        this.loadingInitialData = false;
+        this.loadingInitialData = false
       }
     },
 
     resetForm() {
-      this.newChildName = '';
-      this.newChildAge = '';
-      this.newChildSchwimm = 0;
-      this.newChildNotes = '';
-      this.newChildBandId = '';
-      this.editingChildId = null;
+      this.newChildName = ''
+      this.newChildAge = ''
+      this.newChildSchwimm = 0
+      this.newChildNotes = ''
+      this.newChildBandId = ''
+      this.editingChildId = null
     },
 
     cancelEdit() {
-      this.resetForm();
-      this.showAlert('Bearbeitung abgebrochen.', 'info', 'formAlertContainer');
+      this.resetForm()
+      this.showAlert('Bearbeitung abgebrochen.', 'info', 'formAlertContainer')
     },
 
     validateChildData() {
-      const name = this.newChildName.trim();
-      const age = this.newChildAge;
-      const schwimmer = this.newChildSchwimm;
-      const bandId = this.newChildBandId;
+      const name = this.newChildName.trim()
+      const age = this.newChildAge
+      const schwimmer = this.newChildSchwimm
+      const bandId = this.newChildBandId
 
       if (!name) {
-        this.showAlert('Bitte geben Sie einen Namen für das Kind ein.', 'warning', 'formAlertContainer');
-        return false;
+        this.showAlert('Bitte geben Sie einen Namen für das Kind ein.', 'warning', 'formAlertContainer')
+        return false
       }
       if (!Number.isInteger(Number(age)) || Number(age) <= 0 || Number(age) > 99) {
-        this.showAlert('Bitte geben Sie ein gültiges Alter (positive Zahl bis 99) ein.', 'warning', 'formAlertContainer');
-        return false;
+        this.showAlert('Bitte geben Sie ein gültiges Alter (positive Zahl bis 99) ein.', 'warning', 'formAlertContainer')
+        return false
       }
       if (!Number.isInteger(Number(schwimmer)) || Number(schwimmer) < 0 || Number(schwimmer) > 4) {
-        this.showAlert('Bitte wählen Sie ein gültiges Schwimmer-Level (0 bis 4).', 'warning', 'formAlertContainer');
-        return false;
+        this.showAlert('Bitte wählen Sie ein gültiges Schwimmer-Level (0 bis 4).', 'warning', 'formAlertContainer')
+        return false
       }
       if (bandId && (isNaN(Number(bandId)) || !Number.isInteger(Number(bandId)) || Number(bandId) <= 0)) {
-        this.showAlert('Armband Code muss eine positive Ganzzahl sein.', 'warning', 'formAlertContainer');
-        return false;
+        this.showAlert('Armband Code muss eine positive Ganzzahl sein.', 'warning', 'formAlertContainer')
+        return false
       }
 
-      return true;
+      return true
     },
 
     async saveChild() {
       if (!this.validateChildData()) {
-        return;
+        return
       }
 
       const childData = {
@@ -328,84 +327,83 @@ export default {
         notes: this.newChildNotes.trim(),
         group_id: parseInt(this.groupNumber),
         band_id: this.newChildBandId ? String(this.newChildBandId) : null,
-      };
+      }
 
       if (this.editingChildId !== null) {
-        childData.id = this.editingChildId;
+        childData.id = this.editingChildId
       }
 
       try {
-        // Ruft die saveChild-Funktion aus dem useChildren-Composable auf
-        const { data, message } = await this.saveChild(childData);
+        // Call saveChild function from useChildren composable
+        const { data, message } = await this.saveChild(childData)
 
-        // Daten im lokalen Array aktualisieren (lokaler Cache)
+        // Update data in local array (local cache)
         if (this.editingChildId !== null) {
-          const index = this.allChildrenData.findIndex(c => c.id === this.editingChildId);
+          const index = this.allChildrenData.findIndex(c => c.id === this.editingChildId)
           if (index !== -1) {
-            // Vue 2/3 kompatibel: Ersetzen des Elements im Array
-            this.allChildrenData.splice(index, 1, data);
+            // Vue 2/3 compatible: Replace element in array
+            this.allChildrenData.splice(index, 1, data)
           }
         } else {
-          this.allChildrenData.push(data);
+          this.allChildrenData.push(data)
         }
 
-        this.showAlert(message, 'success');
-        this.resetForm();
+        this.showAlert(message, 'success')
+        this.resetForm()
       } catch (error) {
-        this.showAlert(`Fehler beim Speichern: ${error.message}`, 'danger', 'formAlertContainer');
+        this.showAlert(`Fehler beim Speichern: ${error.message}`, 'danger', 'formAlertContainer')
       }
     },
 
     editChild(childId) {
-      this.editingChildId = childId;
-      const childToEdit = this.allChildrenData.find(c => c.id === childId);
+      this.editingChildId = childId
+      const childToEdit = this.allChildrenData.find(c => c.id === childId)
 
       if (childToEdit) {
-        // Formular füllen
-        this.newChildName = childToEdit.name;
-        this.newChildAge = childToEdit.age;
-        this.newChildSchwimm = childToEdit.schwimmer;
-        // Spezielle Behandlung des Standardplatzhalters '""' aus der Datenbank
-        this.newChildNotes = (childToEdit.notes && childToEdit.notes.trim() !== '""') ? childToEdit.notes : '';
-        this.newChildBandId = childToEdit.band_id || '';
+        // Fill form
+        this.newChildName = childToEdit.name
+        this.newChildAge = childToEdit.age
+        this.newChildSchwimm = childToEdit.schwimmer
+        // Special handling of default placeholder '""' from database
+        this.newChildNotes = (childToEdit.notes && childToEdit.notes.trim() !== '""') ? childToEdit.notes : ''
+        this.newChildBandId = childToEdit.band_id || ''
 
-        document.getElementById('newChildName').focus();
-        this.showAlert(`Kind "${childToEdit.name}" zum Bearbeiten geladen.`, 'info', 'formAlertContainer');
+        document.getElementById('newChildName').focus()
+        this.showAlert(`Kind "${childToEdit.name}" zum Bearbeiten geladen.`, 'info', 'formAlertContainer')
       }
     },
 
     async removeChild(childId, childName) {
       if (confirm(`Möchten Sie das Kind "${childName}" (ID: ${childId}) wirklich entfernen?`)) {
         try {
-          // Ruft die deleteChild-Funktion aus dem useChildren-Composable auf
-          await this.deleteChild(childId);
+          // Call deleteChild function from useChildren composable
+          await this.deleteChild(childId)
 
-          // Lokales Entfernen aus dem Cache
-          const index = this.allChildrenData.findIndex(c => c.id === childId);
+          // Remove locally from cache
+          const index = this.allChildrenData.findIndex(c => c.id === childId)
           if (index !== -1) {
-            this.allChildrenData.splice(index, 1);
+            this.allChildrenData.splice(index, 1)
           }
 
           if (this.editingChildId === childId) {
-            this.resetForm();
+            this.resetForm()
           }
 
-          this.showAlert(`Kind "${childName}" erfolgreich entfernt.`, 'success');
+          this.showAlert(`Kind "${childName}" erfolgreich entfernt.`, 'success')
         } catch (error) {
-          this.showAlert(`Fehler beim Entfernen des Kindes: ${error.message}`, 'danger');
+          this.showAlert(`Fehler beim Entfernen des Kindes: ${error.message}`, 'danger')
         }
       }
     },
 
     goBack() {
-      history.back();
+      history.back()
     }
   }
-};
+}
 </script>
 
 <style>
-/* ... (Der Stilblock bleibt unverändert) ... */
 .main-container {
   display: flex;
   flex-direction: column;
@@ -480,4 +478,6 @@ export default {
   background-color: #5a6268;
   border-color: #545b62;
 }
+
+
 </style>

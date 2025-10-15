@@ -29,13 +29,14 @@
                   class="form-select form-select-lg"
                   :disabled="loading"
               >
-                <option :value="null">Keine Gruppe</option> <option
-                  v-for="n in totalGroups"
-                  :key="n"
-                  :value="n"
-              >
-                Gruppe {{ n }}
-              </option>
+                <option :value="null">Keine Gruppe</option>
+                <option
+                    v-for="n in totalGroups"
+                    :key="n"
+                    :value="n"
+                >
+                  Gruppe {{ n }}
+                </option>
               </select>
             </div>
 
@@ -43,7 +44,8 @@
               <label for="busSelect" class="form-label fw-semibold">
                 <font-awesome-icon :icon="['fas', 'bus']" class="me-2" />
                 Bus
-                <span class="text-danger">*</span> </label>
+                <span class="text-danger">*</span>
+              </label>
               <select
                   id="busSelect"
                   v-model.number="selectedBus"
@@ -87,8 +89,9 @@
 
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
-import { useUser } from '@/composables/useUser'
-import { useConfig } from '@/modules/config'
+import { storeToRefs } from 'pinia'
+import { useUserStore } from '@/stores/user'
+import { useConfigStore } from '@/stores/config'
 
 // Props
 const props = defineProps({
@@ -102,9 +105,13 @@ const props = defineProps({
 // Emits
 const emit = defineEmits(['completed', 'error', 'close'])
 
-// Composables
-const { userInfo, assignUserToGroup, assignUserToBus, updateUserPresence } = useUser()
-const { config } = useConfig()
+// Stores
+const userStore = useUserStore()
+const configStore = useConfigStore()
+
+// Get reactive state from stores
+const { userInfo } = storeToRefs(userStore)
+const { config } = storeToRefs(configStore)
 
 // Local state
 const selectedGroup = ref(null)
@@ -122,7 +129,7 @@ const formattedDate = computed(() => {
 })
 
 const isFormValid = computed(() =>
-     selectedBus.value !== null
+    selectedBus.value !== null
 )
 
 const isPreFilled = computed(() =>
@@ -149,15 +156,15 @@ async function handleSubmit() {
   try {
     // Assign group
     if (selectedGroup.value) {
-      await assignUserToGroup(selectedGroup.value);
-      console.log(`✅ Assigned to group ${selectedGroup.value}`);
+      await userStore.assignUserToGroup(selectedGroup.value)
+      console.log(`✅ Assigned to group ${selectedGroup.value}`)
     }
     // Assign bus
-    await assignUserToBus(selectedBus.value)
+    await userStore.assignUserToBus(selectedBus.value)
     console.log(`✅ Assigned to bus ${selectedBus.value}`)
 
     // Mark as present
-    await updateUserPresence(1)
+    await userStore.updateUserPresence(1)
     console.log('✅ Marked as present')
 
     // Emit completion event
@@ -177,7 +184,7 @@ async function handleSubmit() {
 
 function closeModal() {
   if (!loading.value) {
-    emit('close');
+    emit('close')
   }
 }
 </script>

@@ -22,12 +22,12 @@
               <div class="card-body p-4 text-center">
 
                 <a
-                    v-if="config.public_phone_number"
-                    :href="`tel:${config.public_phone_number}`"
+                    v-if="configStore.config.public_phone_number"
+                    :href="`tel:${configStore.config.public_phone_number}`"
                     class="btn btn-success btn-lg fw-semibold d-inline-flex align-items-center gap-2"
                 >
                   <font-awesome-icon :icon="['fas', 'phone']"/>
-                  {{ config.public_phone_number }}
+                  {{ configStore.config.public_phone_number }}
                 </a>
                 <div v-else class="text-muted">
                   <div class="spinner-border spinner-border-sm me-2" role="status">
@@ -50,15 +50,16 @@
 </template>
 
 <script setup>
-import {onMounted} from 'vue'
-import {useConfig} from '../modules/config'
-import {FontAwesomeIcon} from "@fortawesome/vue-fontawesome";
+import { onMounted } from 'vue'
+import { useConfigStore } from '@/stores/config'
+import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
 
-const { config, initConfigModule, loadConfig } = useConfig()
+// Use Pinia store
+const configStore = useConfigStore()
 
 onMounted(async () => {
-  await initConfigModule()
-  await loadConfig()
+  await configStore.initConfigModule()
+  await configStore.loadConfig()
 })
 </script>
 

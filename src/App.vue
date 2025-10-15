@@ -20,14 +20,14 @@
         <span v-else class="navbar-brand text-white fw-bold mb-0">🌳 SRE</span>
 
         <!-- User Info Indicators (Group & Bus) -->
-        <div v-if="!isCheckInRequired && userInfo.isPresentToday" class="d-flex align-items-center gap-3 me-3">
+        <div v-if="!isCheckInRequired && userStore.userInfo.isPresentToday" class="d-flex align-items-center gap-3 me-3">
           <button
               @click="showGroupChangeModal = true"
               class="btn btn-sm btn-light d-flex align-items-center gap-2"
               title="Gruppe ändern"
           >
             <font-awesome-icon :icon="['fas', 'users']"/>
-            <span>Gruppe {{ userInfo.group_id || '?' }}</span>
+            <span>Gruppe {{ userStore.userInfo.group_id || '?' }}</span>
           </button>
 
           <button
@@ -36,7 +36,7 @@
               title="Bus ändern"
           >
             <font-awesome-icon :icon="['fas', 'bus']"/>
-            <span>Bus {{ userInfo.bus_id || '?' }}</span>
+            <span>Bus {{ userStore.userInfo.bus_id || '?' }}</span>
           </button>
         </div>
 
@@ -59,7 +59,7 @@
                 ℹ️ Info
               </router-link>
             </li>
-            <li class="nav-item">
+            <li v-if="isAdmin" class="nav-item">
               <router-link to="/children" class="nav-link text-white">
                 🧒 Kinder
               </router-link>
@@ -112,7 +112,7 @@
     <GroupChangeModal
         v-if="showGroupChangeModal"
         :show="showGroupChangeModal"
-        :current-group="userInfo.group_id"
+        :current-group="userStore.userInfo.group_id"
         @close="showGroupChangeModal = false"
         @saved="onGroupChanged"
     />
@@ -121,7 +121,7 @@
     <BusChangeModal
         v-if="showBusChangeModal"
         :show="showBusChangeModal"
-        :current-bus="userInfo.bus_id"
+        :current-bus="userStore.userInfo.bus_id"
         @close="showBusChangeModal = false"
         @saved="onBusChanged"
     />
@@ -134,10 +134,10 @@
 </template>
 
 <script setup>
-import {ref, computed, onMounted, watch} from 'vue'
-import {useRouter, useRoute} from 'vue-router'
-import {supabase} from './supabase'
-import {useUser} from './composables/useUser'
+import { ref, computed, onMounted, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
+import { supabase } from './supabase'
+import { useUserStore } from './stores/user'
 import DailyCheckInModal from './views/DailyCheckInModalView.vue'
 import GroupChangeModal from './components/GroupChangeModal.vue'
 import BusChangeModal from './components/BusChangeModal.vue'
@@ -145,18 +145,16 @@ import BusChangeModal from './components/BusChangeModal.vue'
 const router = useRouter()
 const route = useRoute()
 
-// User composable
-const {
-  userInfo,
-  isAdmin,
-  isCheckInRequired,
-  loadUser,
-  clearUserCache
-} = useUser()
+// Use Pinia store
+const userStore = useUserStore()
+
+// Computed properties from store
+const isAdmin = computed(() => userStore.isAdmin)
+const isCheckInRequired = computed(() => userStore.isCheckInRequired)
+const userEmail = computed(() => userStore.userEmail)
 
 // Local state
 const isAuthenticated = ref(false)
-const userEmail = ref('')
 const showGroupChangeModal = ref(false)
 const showBusChangeModal = ref(false)
 const showCheckInModal = ref(false)
@@ -227,7 +225,7 @@ async function attemptAutoLogin() {
       return
     }
 
-    console.log('🔑 Gespeicherte Anmeldedaten gefunden, führe automatische Anmeldung durch...')
+    console.log('🔐 Gespeicherte Anmeldedaten gefunden, führe automatische Anmeldung durch...')
 
     const { data, error } = await supabase.auth.signInWithPassword({
       email : savedCredentials.email,
@@ -254,10 +252,9 @@ async function attemptAutoLogin() {
  */
 async function handleAuthentication(session) {
   isAuthenticated.value = true
-  userEmail.value = session.user.email
 
-  // Load user data with useUser composable
-  await loadUser()
+  // Load user data with Pinia store
+  await userStore.loadUser()
 
   // Check if user needs to check in
   if (isCheckInRequired.value) {
@@ -274,11 +271,9 @@ async function checkAuth() {
 
     if (session) {
       isAuthenticated.value = true
-      userEmail.value = session.user.email
-      await loadUser()
+      await userStore.loadUser()
     } else {
       isAuthenticated.value = false
-      userEmail.value = ''
     }
   } catch (err) {
     console.error('Fehler bei der Berechtigungsprüfung:', err)
@@ -311,8 +306,8 @@ function clearSavedCredentials() {
  */
 function onCheckInCompleted(data) {
   console.log('✅ Daily registration completed', data)
-  showCheckInModal.value = false // Закрываем модалку
-  loadUser(true) // Перезагружаем данные пользователя, чтобы обновить UI
+  showCheckInModal.value = false
+  userStore.loadUser(true) // Force reload user data
 }
 
 /**
@@ -328,7 +323,7 @@ function onCheckInError(error) {
 async function onGroupChanged(newGroupId) {
   console.log(`✅ Gruppe geändert auf: ${newGroupId}`)
   showGroupChangeModal.value = false
-  await loadUser(true) // Force reload
+  await userStore.loadUser(true) // Force reload
 }
 
 /**
@@ -337,7 +332,7 @@ async function onGroupChanged(newGroupId) {
 async function onBusChanged(newBusId) {
   console.log(`✅ Bus geändert auf: ${newBusId}`)
   showBusChangeModal.value = false
-  await loadUser(true) // Force reload
+  await userStore.loadUser(true) // Force reload
 }
 
 /**
@@ -348,8 +343,8 @@ async function logout() {
     // Clear stored credentials
     clearSavedCredentials()
 
-    // Clear user cache
-    clearUserCache()
+    // Clear user cache and reset store
+    userStore.clearUserCache()
 
     // Sign out from Supabase
     await supabase.auth.signOut()
