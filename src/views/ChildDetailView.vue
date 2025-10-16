@@ -221,7 +221,7 @@ async function markPresence() {
  */
 function editChild() {
   if (child.value?.id) {
-    router.push({ name: 'ChildEdit', params: { id: child.value.id } })
+    router.push({ name: 'ChildDetailEdit', params: { id: child.value.id } })
   }
 }
 

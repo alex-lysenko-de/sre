@@ -14,7 +14,9 @@ import ArmbandConnectView from '@/views/ArmbandConnectView.vue'
 import ArmbandView from '@/views/ArmbandView.vue'
 import SelectChildView from "@/views/SelectChildView.vue";
 import ChildDetailView from "@/views/ChildDetailView.vue";
+import ChildEditView from "@/views/ChildEditView.vue";
 
+// Define routes
 const routes = [
     {
         path: '/login',
