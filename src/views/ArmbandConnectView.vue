@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // TODO: Implement ArmbandConnectView.
 // - this view must be  similar to GroupEditView with a list of children in the group
-// - if user is not in a group today, show a message "Sie müssen sich zuerst in einer Gruppe anmelden"
+// - if current  user is not in a group today, show a message "Sie müssen sich zuerst in einer Gruppe anmelden"
 // - this view shows all kinder in the group to which the user heute verbunden ist.
 // - the form allows to select ein kind from the list. Wenn ein kind selected ist, show a button "Armband mit Kind verknüpfen"
 // - bei Bedarf User can create a new kind (show a button "Neues Kind anlegen" which opens a modal with the same form as in ChildDetailView)

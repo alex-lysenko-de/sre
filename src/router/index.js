@@ -12,6 +12,7 @@ import DaysEditView from '@/views/DaysEditView.vue'
 import ResetPasswordView from '@/views/ResetPasswordView.vue'
 import ArmbandConnectView from '@/views/ArmbandConnectView.vue'
 import ArmbandView from '@/views/ArmbandView.vue'
+import SelectChildView from "@/views/SelectChildView.vue";
 
 const routes = [
     {
@@ -55,6 +56,13 @@ const routes = [
         path: '/group-edit',
         name: 'GroupEdit',
         component: GroupEditView,
+        meta: { requiresAuth: true, requiresAdmin: false }
+    },
+
+    {
+        path: '/select-child',
+        name: 'SelectChild',
+        component: SelectChildView,
         meta: { requiresAuth: true, requiresAdmin: false }
     },
 
