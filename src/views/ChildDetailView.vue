@@ -102,7 +102,7 @@
 
         <!-- Back to group button -->
         <button
-            @click="goMain"
+            @click="goBack"
             class="btn btn-outline-secondary w-100"
         >
           ↩️ Zurück
@@ -221,7 +221,8 @@ function editChild() {
  * Вернуться назад
  */
 function goBack() {
-  router.back()
+  //router.back()
+  router.push('/main')
 }
 </script>
 

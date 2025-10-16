@@ -12,9 +12,10 @@ import DaysEditView from '@/views/DaysEditView.vue'
 import ResetPasswordView from '@/views/ResetPasswordView.vue'
 import ArmbandConnectView from '@/views/ArmbandConnectView.vue'
 import ArmbandView from '@/views/ArmbandView.vue'
-import SelectChildView from "@/views/SelectChildView.vue";
-import ChildDetailView from "@/views/ChildDetailView.vue";
-import ChildEditView from "@/views/ChildEditView.vue";
+import SelectChildView from "@/views/SelectChildView.vue"
+import ChildDetailView from "@/views/ChildDetailView.vue"
+import ChildEditView from "@/views/ChildEditView.vue"
+import MainView from "@/views/MainView.vue"
 
 // Define routes
 const routes = [
@@ -32,24 +33,26 @@ const routes = [
     },
     {
         path: '/',
-        redirect: '/info'
+        redirect: '/main'
     },
-
+    {
+        path: '/main',
+        name: 'Main',
+        component: MainView,
+        meta: { requiresAuth: false }
+    },
     {
         path: '/children',
         name: 'Children',
         component: ChildrenView,
         meta: { requiresAuth: true, requiresAdmin: true}
     },
-
     {
         path: '/armband/:id',
         name: 'Armband',
         component: ArmbandView,
         meta: { requiresAuth: true, title: 'Armband Scannen' }
     },
-
-
     {
         path: '/info',
         name: 'Info',
@@ -62,28 +65,24 @@ const routes = [
         component: GroupEditView,
         meta: { requiresAuth: true, requiresAdmin: false }
     },
-
     {
         path: '/select-child',
         name: 'SelectChild',
         component: SelectChildView,
         meta: { requiresAuth: true, requiresAdmin: false }
     },
-
     {
         path: '/child/:id',
         name: 'ChildDetail',
         component: ChildDetailView,
         meta: { requiresAuth: true, requiresAdmin: false }
     },
-
     {
         path: '/child-edit/:id',
         name: 'ChildDetailEdit',
         component: ChildEditView,
         meta: { requiresAuth: true, requiresAdmin: false }
     },
-
     {
         path: '/armband-connect/:id',
         name: 'ArmbandConnect',
@@ -102,29 +101,24 @@ const routes = [
         component: ConfigView,
         meta: { requiresAuth: true, requiresAdmin: true }
     },
-
     {
         path: '/users-edit',
         name: 'UsersEdit',
         component: UsersView,
         meta: { requiresAuth: true, requiresAdmin: true }
     },
-
     {
         path: '/invite',
         name: 'InviteGenerator',
         component: InviteGeneratorView,
         meta: { requiresAuth: true, requiresAdmin: true }
     },
-
     {
         path: '/reset-password',
         name: 'ResetPassword',
         component: ResetPasswordView,
         meta: { requiresAuth: true }
     },
-
-
 ]
 
 const router = createRouter({
@@ -135,23 +129,23 @@ const router = createRouter({
 // Global navigation guard
 router.beforeEach(async (to, from, next) => {
     // Prüfen, ob der Nutzer jemals registriert wurde
-    const isRegistered = localStorage.getItem('sre_user_registered') === 'true';
+    const isRegistered = localStorage.getItem('sre_user_registered') === 'true'
 
-    // --- LOGIK FÜR GÄSTE ---
+    // --- ЛОГИКА ДЛЯ ГОСТЕЙ ---
     if (!isRegistered) {
         // Gäste dürfen nur auf öffentliche Seiten und die Willkommens-Seite zugreifen
-        if (to.meta.public || to.name === 'Welcome') {
-            return next();
+        if (to.meta.public || to.name === 'Welcome' || to.name === 'Main' || to.name === 'Info') {
+            return next()
         }
         // Wenn ein Gast versucht, eine andere Seite aufzurufen, wird er zur Info-Seite geleitet
         if (to.path !== '/info') {
             console.log('👤 Gast erkannt, leite zu /info weiter');
             return next('/info');
-        }
+    }
         return next();
     }
 
-    // --- LOGIK FÜR REGISTRIERTE BENUTZER ---
+    // --- ЛОГИКА ДЛЯ ЗАРЕГИСТРИРОВАННЫХ ПОЛЬЗОВАТЕЛЕЙ ---
     // Public pages
     if (to.meta.public) {
         return next()
@@ -192,7 +186,7 @@ router.beforeEach(async (to, from, next) => {
             if (to.meta.requiresAdmin && userData.role !== 'admin') {
                 console.log('⛔ Zugriff verweigert: Rolle \'admin\' erforderlich')
                 alert('⛔ Zugriff verweigert: Nur für Administratoren!')
-                return next('/info')
+                return next('/main')
             }
 
             // Update 'last_seen_date'
@@ -209,12 +203,11 @@ router.beforeEach(async (to, from, next) => {
         }
     }
 
-    // check ?id=123 in url for child id and redirect to /main/child/123
+    // Check for ?id=123 or ?n=123 in URL for child id and redirect to /armband/:id
     if (to.query.id || to.query.n) {
         const childId = to.query.id || to.query.n
-        console.log('➡️ Umleitung zu /main/child/' + childId)
-        // Remove the query parameter from the URL
-        return next({ name: 'Armband', params: { id: childId } });
+        console.log('➡️ Umleitung zu /armband/' + childId)
+        return next({ name: 'Armband', params: { id: childId } })
     }
 
     next()

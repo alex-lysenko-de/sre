@@ -50,7 +50,7 @@
               </td>
               <td>
                 <router-link
-                    :to="`/group-edit?gr=${group.id}`"
+                    :to="`/group-edit/${group.id}`"
                     class="text-decoration-none fw-bold"
                 >
                   Gruppe {{ group.id }}
@@ -77,7 +77,7 @@
 // Each group displays a colored status dot:
 //  🟢 green if morning == current
 //  🔴 red if current < morning
-// Group number links to /group-edit?gr={id}
+// Group number links to /group-edit/{id}
 
 import { ref, computed, onMounted } from 'vue'
 import { useConfigStore } from '@/stores/config'

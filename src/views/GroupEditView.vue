@@ -96,7 +96,7 @@ export default {
     return {
       isConfigLoaded: true,
       loadingInitialData: true,
-      groupNumber: this.$route.query ? this.$route.query.gr || '1' : '1',
+      groupNumber: '1', // Wird in created() aus route.params gesetzt
       formattedCurrentDate: '',
       allChildrenData: [],
 
@@ -113,7 +113,10 @@ export default {
   },
   async created() {
     this.formattedCurrentDate = Utils.formatDateForDisplay(Utils.getCurrentDateString())
-    this.groupNumber = String(this.groupNumber)
+
+    // Получаем ID группы из route params (вместо query)
+    this.groupNumber = this.$route.params.id || '1'
+
     await this.loadInitialData()
   },
   methods: {
@@ -183,7 +186,7 @@ export default {
     },
 
     goBack() {
-      history.back()
+      this.$router.push('/main')
     }
   }
 }

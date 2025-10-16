@@ -17,7 +17,11 @@
             Ich fahre heute mit!
           </button>
         </div>
-        <span v-else class="navbar-brand text-white fw-bold mb-0">🌳 SRE</span>
+
+        <!-- Logo/Brand - Links to Main -->
+        <router-link to="/main" class="navbar-brand text-white fw-bold mb-0 text-decoration-none">
+          🌳 SRE
+        </router-link>
 
         <!-- User Info Indicators (Group & Bus) -->
         <div v-if="!isCheckInRequired && userStore.userInfo.isPresentToday" class="d-flex align-items-center gap-3 me-3">
@@ -55,6 +59,11 @@
         <div class="collapse navbar-collapse" id="navbarNav">
           <ul class="navbar-nav me-auto">
             <li class="nav-item">
+              <router-link to="/main" class="nav-link text-white">
+                🏠 Hauptmenü
+              </router-link>
+            </li>
+            <li class="nav-item">
               <router-link to="/info" class="nav-link text-white">
                 ℹ️ Info
               </router-link>
@@ -85,7 +94,7 @@
               </router-link>
             </li>
             <li class="nav-item">
-              <router-link to="/main/scan" class="nav-link text-white" :class="{'disabled-link': isCheckInRequired}">
+              <router-link to="/select-child" class="nav-link text-white" :class="{'disabled-link': isCheckInRequired}">
                 📷 Scannen
               </router-link>
             </li>
@@ -95,7 +104,7 @@
           <div class="d-flex flex-column flex-lg-row align-items-lg-center gap-2">
             <span class="text-white small">
               👤 {{ userEmail }}
-              <span v-if="isAdmin" class="badge bg-dark ms-2">ADMIN</span>
+             <span v-if="isAdmin" class="badge bg-dark ms-2">ADMIN</span>
             </span>
             <button
                 @click="logout"
@@ -185,10 +194,8 @@ async function initializeApp() {
     return; // Wichtig: Hier abbrechen
   }
 
-
   // Für registrierte Nutzer wird der normale Authentifizierungsprozess gestartet
   console.log('✅ Registrierter Benutzer. Starte Authentifizierung...');
-
 
   // Check for existing session
   try {
@@ -204,7 +211,7 @@ async function initializeApp() {
     console.error('Fehler bei der Initialisierung:', err);
     isAuthenticated.value = false;
     // Wenn etwas schiefgeht, zum Login leiten
-    if (route.path !== '/login' && route.path !== '/welcome') {
+    if (route.path !== '/login' && route.path !== '/welcome' && route.path !== '/main') {
       await router.push('/login');
     }
   }
@@ -219,13 +226,13 @@ async function attemptAutoLogin() {
 
     if (!savedCredentials) {
       // No saved credentials, redirect to login
-      if (route.path !== '/login' && route.path !== '/welcome') {
+      if (route.path !== '/login' && route.path !== '/welcome' && route.path !== '/main') {
         await router.push('/login')
       }
       return
     }
 
-    console.log('🔐 Gespeicherte Anmeldedaten gefunden, führe automatische Anmeldung durch...')
+    console.log('🔍 Gespeicherte Anmeldedaten gefunden, führe automatische Anmeldung durch...')
 
     const { data, error } = await supabase.auth.signInWithPassword({
       email : savedCredentials.email,
@@ -241,7 +248,7 @@ async function attemptAutoLogin() {
     console.error('Fehler bei der automatischen Anmeldung:', err)
     clearSavedCredentials()
 
-    if (route.path !== '/login' && route.path !== '/welcome') {
+    if (route.path !== '/login' && route.path !== '/welcome' && route.path !== '/main') {
       await router.push('/login')
     }
   }
@@ -258,7 +265,7 @@ async function handleAuthentication(session) {
 
   // Check if user needs to check in
   if (isCheckInRequired.value) {
-    console.log('⚠️ Ежедневная регистрация требуется')
+    console.log('⚠️ Tägliche Registrierung erforderlich')
   }
 }
 
@@ -314,7 +321,7 @@ function onCheckInCompleted(data) {
  * Handle check-in error
  */
 function onCheckInError(error) {
-  console.error('❌ Ошибка при регистрации:', error)
+  console.error('❌ Fehler bei der Registrierung:', error)
 }
 
 /**
@@ -357,8 +364,8 @@ async function logout() {
 
     console.log('👋 Erfolgreich abgemeldet')
 
-    // Redirect to login
-    await router.push('/login')
+    // Redirect to main page
+    await router.push('/main')
   } catch (err) {
     console.error('Fehler beim Abmelden:', err)
   }
@@ -394,3 +401,4 @@ async function logout() {
   }
 }
 </style>
+ 
