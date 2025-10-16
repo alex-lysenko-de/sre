@@ -38,13 +38,10 @@
                 <p v-if="child.notes && child.notes.trim() !== '\u0022\u0022' && child.notes.trim().length > 0" class="text-muted mb-0 mt-1" style="font-size: 0.9em;">
                   Notizen: {{ child.notes }}
                 </p>
-                <p v-else class="text-muted mb-0 mt-1" style="font-size: 0.9em;">
-                  <!-- Keine Notizen -->
-                </p>
               </div>
 
               <div class="d-flex">
-                <button class="btn btn-outline-primary btn-sm me-2" @click="editChild(child.id)" title="Kind bearbeiten">
+                <button class="btn btn-outline-primary btn-sm me-2" @click="editChild(child)" title="Kind bearbeiten">
                   <font-awesome-icon :icon="['fas', 'edit']" />
                 </button>
                 <button class="btn btn-outline-danger btn-sm" @click="removeChild(child.id, child.name)" title="Kind entfernen">
@@ -55,6 +52,11 @@
           </ul>
 
           <div class="d-grid gap-2 mt-4">
+            <button class="btn btn-success btn-lg" @click="openAddChildModal">
+              <font-awesome-icon :icon="['fas', 'plus']" />
+              Neues Kind hinzufügen
+            </button>
+
             <button class="btn btn-secondary btn-lg" @click="goBack">
               <font-awesome-icon :icon="['fas', 'arrow-left']" />
               Zurück zur Auswahl
@@ -64,102 +66,20 @@
       </div>
     </div>
 
-    <div class="card mt-4">
-      <div class="card-header">
-        <h3 class="mb-0">
-          <font-awesome-icon :icon="['fas', 'child']" />
-          {{ editingChildId !== null ? 'Kind bearbeiten:' : 'Neues Kind hinzufügen:' }}
-        </h3>
-      </div>
-      <div class="card-body">
-        <div id="formAlertContainer"></div>
-
-        <form @submit.prevent="saveChild">
-          <div class="mb-3">
-            <label for="newChildName" class="form-label">Name <span class="text-danger">*</span></label>
-            <input
-                type="text"
-                id="newChildName"
-                class="form-control"
-                v-model="newChildName"
-                placeholder="Name des Kindes"
-                required
-            >
-          </div>
-
-          <div class="row">
-            <div class="col-md-4 mb-3">
-              <label for="newChildAge" class="form-label">Alter <span class="text-danger">*</span></label>
-              <input
-                  type="number"
-                  id="newChildAge"
-                  class="form-control"
-                  v-model.number="newChildAge"
-                  placeholder="Alter"
-                  min="0"
-                  required
-              >
-            </div>
-            <div class="col-md-4 mb-3">
-              <label for="newChildSchwimm" class="form-label">Schwimmer (Level 0-4) <span class="text-danger">*</span></label>
-              <select
-                  id="newChildSchwimm"
-                  class="form-select"
-                  v-model.number="newChildSchwimm"
-                  required
-              >
-                <option :value="0">0 - Nichtschwimmer</option>
-                <option :value="1">1 - Seepferdchen</option>
-                <option :value="2">2 - Bronze</option>
-                <option :value="3">3 - Silber</option>
-                <option :value="4">4 - Gold</option>
-              </select>
-            </div>
-            <div class="col-md-4 mb-3">
-              <label for="newChildBandId" class="form-label">Armband Code (optional)</label>
-              <input
-                  type="text"
-                  id="newChildBandId"
-                  class="form-control"
-                  v-model="newChildBandId"
-                  placeholder="z.B. 123456789"
-              >
-            </div>
-          </div>
-
-          <div class="mb-4">
-            <label for="newChildNotes" class="form-label">Notizen</label>
-            <input
-                type="text"
-                id="newChildNotes"
-                class="form-control"
-                v-model="newChildNotes"
-                placeholder="Besondere Hinweise (Allergien, Medikamente etc.)"
-            >
-          </div>
-
-          <div class="d-flex justify-content-between">
-            <button type="submit" class="btn btn-primary btn-lg flex-grow-1 me-2">
-              <font-awesome-icon :icon="['fas', editingChildId !== null ? 'save' : 'add']" />
-              {{ editingChildId !== null ? 'Speichern' : 'Kind hinzufügen' }}
-            </button>
-            <button v-if="editingChildId !== null" type="button" class="btn btn-outline-secondary btn-lg" @click="cancelEdit">
-              Abbrechen
-            </button>
-            <button v-else type="button" class="btn btn-outline-secondary btn-lg" @click="resetForm">
-              <font-awesome-icon :icon="['fas', 'eraser']" />
-              Formular leeren
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+    <!-- Add/Edit Child Modal -->
+    <AddEditChildModal
+        :show="showChildModal"
+        :child-data="selectedChild"
+        :group-id="parseInt(groupNumber)"
+        @close="closeChildModal"
+        @saved="onChildSaved"
+    />
   </div>
 </template>
 
 <script>
-// Import composable for database connection
 import { useChildren } from '@/composables/useChildren'
+import AddEditChildModal from '@/components/AddEditChildModal.vue'
 
 // --- Static data for display ---
 const SWIM_LEVELS = {
@@ -202,9 +122,9 @@ const Utils = {
     alertDiv.className = `alert alert-${type} alert-dismissible fade show`
     alertDiv.role = 'alert'
     alertDiv.innerHTML = `
-            ${message}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        `
+      ${message}
+      <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `
     alertContainer.appendChild(alertDiv)
 
     setTimeout(() => {
@@ -215,36 +135,29 @@ const Utils = {
 
 export default {
   name: 'GroupEditView',
+  components: {
+    AddEditChildModal
+  },
   setup() {
-    // Use database functions
-    const { fetchChildrenList, saveChild, deleteChild } = useChildren()
-    return { fetchChildrenList, saveChild, deleteChild }
+    const { fetchChildrenList, deleteChild } = useChildren()
+    return { fetchChildrenList, deleteChild }
   },
 
   data() {
     return {
       isConfigLoaded: true,
       loadingInitialData: true,
-
       groupNumber: this.$route.query ? this.$route.query.gr || '1' : '1',
-
-      // Data for form fields
-      newChildName: '',
-      newChildAge: '',
-      newChildSchwimm: 0,
-      newChildNotes: '',
-      newChildBandId: '',
-
-      // State for editing
-      editingChildId: null,
-
       formattedCurrentDate: '',
       allChildrenData: [],
+
+      // Modal state
+      showChildModal: false,
+      selectedChild: null
     }
   },
   computed: {
     children() {
-      // Filter children for current group
       const groupID = parseInt(this.groupNumber)
       return (this.allChildrenData || []).filter(child => child.group_id === groupID)
     }
@@ -258,8 +171,6 @@ export default {
     getSwimLevel: Utils.getSwimLevel,
     getSwimBadgeClass: Utils.getSwimBadgeClass,
     showAlert: Utils.showAlert,
-
-    // --- CRUD / Data methods ---
 
     async loadInitialData() {
       this.loadingInitialData = true
@@ -275,118 +186,44 @@ export default {
       }
     },
 
-    resetForm() {
-      this.newChildName = ''
-      this.newChildAge = ''
-      this.newChildSchwimm = 0
-      this.newChildNotes = ''
-      this.newChildBandId = ''
-      this.editingChildId = null
+    openAddChildModal() {
+      this.selectedChild = null
+      this.showChildModal = true
     },
 
-    cancelEdit() {
-      this.resetForm()
-      this.showAlert('Bearbeitung abgebrochen.', 'info', 'formAlertContainer')
+    editChild(child) {
+      this.selectedChild = child
+      this.showChildModal = true
     },
 
-    validateChildData() {
-      const name = this.newChildName.trim()
-      const age = this.newChildAge
-      const schwimmer = this.newChildSchwimm
-      const bandId = this.newChildBandId
-
-      if (!name) {
-        this.showAlert('Bitte geben Sie einen Namen für das Kind ein.', 'warning', 'formAlertContainer')
-        return false
-      }
-      if (!Number.isInteger(Number(age)) || Number(age) <= 0 || Number(age) > 99) {
-        this.showAlert('Bitte geben Sie ein gültiges Alter (positive Zahl bis 99) ein.', 'warning', 'formAlertContainer')
-        return false
-      }
-      if (!Number.isInteger(Number(schwimmer)) || Number(schwimmer) < 0 || Number(schwimmer) > 4) {
-        this.showAlert('Bitte wählen Sie ein gültiges Schwimmer-Level (0 bis 4).', 'warning', 'formAlertContainer')
-        return false
-      }
-      if (bandId && (isNaN(Number(bandId)) || !Number.isInteger(Number(bandId)) || Number(bandId) <= 0)) {
-        this.showAlert('Armband Code muss eine positive Ganzzahl sein.', 'warning', 'formAlertContainer')
-        return false
-      }
-
-      return true
+    closeChildModal() {
+      this.showChildModal = false
+      this.selectedChild = null
     },
 
-    async saveChild() {
-      if (!this.validateChildData()) {
-        return
-      }
-
-      const childData = {
-        name: this.newChildName.trim(),
-        age: parseInt(this.newChildAge),
-        schwimmer: parseInt(this.newChildSchwimm),
-        notes: this.newChildNotes.trim(),
-        group_id: parseInt(this.groupNumber),
-        band_id: this.newChildBandId ? String(this.newChildBandId) : null,
-      }
-
-      if (this.editingChildId !== null) {
-        childData.id = this.editingChildId
-      }
-
-      try {
-        // Call saveChild function from useChildren composable
-        const { data, message } = await this.saveChild(childData)
-
-        // Update data in local array (local cache)
-        if (this.editingChildId !== null) {
-          const index = this.allChildrenData.findIndex(c => c.id === this.editingChildId)
-          if (index !== -1) {
-            // Vue 2/3 compatible: Replace element in array
-            this.allChildrenData.splice(index, 1, data)
-          }
-        } else {
-          this.allChildrenData.push(data)
+    onChildSaved(savedChild) {
+      if (this.selectedChild && this.selectedChild.id) {
+        // Update existing child
+        const index = this.allChildrenData.findIndex(c => c.id === savedChild.id)
+        if (index !== -1) {
+          this.allChildrenData.splice(index, 1, savedChild)
         }
-
-        this.showAlert(message, 'success')
-        this.resetForm()
-      } catch (error) {
-        this.showAlert(`Fehler beim Speichern: ${error.message}`, 'danger', 'formAlertContainer')
-      }
-    },
-
-    editChild(childId) {
-      this.editingChildId = childId
-      const childToEdit = this.allChildrenData.find(c => c.id === childId)
-
-      if (childToEdit) {
-        // Fill form
-        this.newChildName = childToEdit.name
-        this.newChildAge = childToEdit.age
-        this.newChildSchwimm = childToEdit.schwimmer
-        // Special handling of default placeholder '""' from database
-        this.newChildNotes = (childToEdit.notes && childToEdit.notes.trim() !== '""') ? childToEdit.notes : ''
-        this.newChildBandId = childToEdit.band_id || ''
-
-        document.getElementById('newChildName').focus()
-        this.showAlert(`Kind "${childToEdit.name}" zum Bearbeiten geladen.`, 'info', 'formAlertContainer')
+        this.showAlert(`Kind "${savedChild.name}" erfolgreich aktualisiert.`, 'success')
+      } else {
+        // Add new child
+        this.allChildrenData.push(savedChild)
+        this.showAlert(`Kind "${savedChild.name}" erfolgreich hinzugefügt.`, 'success')
       }
     },
 
     async removeChild(childId, childName) {
       if (confirm(`Möchten Sie das Kind "${childName}" (ID: ${childId}) wirklich entfernen?`)) {
         try {
-          // Call deleteChild function from useChildren composable
           await this.deleteChild(childId)
 
-          // Remove locally from cache
           const index = this.allChildrenData.findIndex(c => c.id === childId)
           if (index !== -1) {
             this.allChildrenData.splice(index, 1)
-          }
-
-          if (this.editingChildId === childId) {
-            this.resetForm()
           }
 
           this.showAlert(`Kind "${childName}" erfolgreich entfernt.`, 'success')
@@ -403,7 +240,7 @@ export default {
 }
 </script>
 
-<style>
+<style scoped>
 .main-container {
   display: flex;
   flex-direction: column;
@@ -419,10 +256,6 @@ export default {
   max-width: 650px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   border-radius: 12px;
-}
-
-.card + .card {
-  margin-top: 20px;
 }
 
 .card-header {
@@ -479,5 +312,13 @@ export default {
   border-color: #545b62;
 }
 
+.btn-success {
+  background-color: #28a745;
+  border-color: #28a745;
+}
 
+.btn-success:hover {
+  background-color: #218838;
+  border-color: #1e7e34;
+}
 </style>

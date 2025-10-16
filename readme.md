@@ -37,7 +37,7 @@ Durch tägliche Check-ins wird sichergestellt, dass **alle Kinder erfasst und si
 
 ### REQUIREMENTS
 - UI Language: **German (Deutsch)**  
-- Comment & Debug Language: **English**  
+- Comment & Debug Language: **German or English**  
 - **NO Russian words** anywhere in code, comments, or UI text  
 - Encoding: **UTF-8**  
 - Indentation: **2 spaces**
@@ -45,21 +45,19 @@ Durch tägliche Check-ins wird sichergestellt, dass **alle Kinder erfasst und si
 ### ARCHITECTURE & DESIGN
 - Use **Composables** to isolate data logic (e.g. Supabase operations)  
 - Keep **minimal coupling** to Supabase — prefer modular APIs and wrappers  
-- Plan for **migration to Pinia** (state management)  
+- Use **Pinia** in new code (state management) . we are planing to migrate all code to Pinia 
 - Use a global **config module** for environment and runtime settings  
 - Maintain **clear separation** between UI, logic, and data layers  
 
 ### RULES
-- All visible UI text → **German**  
-- All comments, logs, debug messages → **English**  
+- All visible UI text → **German (Deutsch)**  
+- All comments, logs, debug messages → **German or English**  
 - Follow **ESLint + Prettier** formatting rules  
 - Keep **responsive, mobile-first** layout  
 - Use **@ alias** for imports  
 - NEVER hardcode **secrets or credentials**  
-- Minimize **network requests** and use caching where possible  
-- Consistent naming conventions → camelCase / PascalCase  
-
----
+- To minimize dependency on a specific database, store all database queries in a separate module, for example `src/composables/useXXX.js`
+----
 
 ## 🚀 Setup & Entwicklung
 
@@ -96,6 +94,7 @@ src/
  ├─ views/            → Main views and pages
  ├─ router/           → Vue Router configuration
  ├─ assets/           → Static resources
+ ├─ stores/           → Pinia modules
  ├─ supabase/         → Edge Functions (Deno / TypeScript)
 ```
 
