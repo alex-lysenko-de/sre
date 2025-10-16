@@ -13,6 +13,7 @@ import ResetPasswordView from '@/views/ResetPasswordView.vue'
 import ArmbandConnectView from '@/views/ArmbandConnectView.vue'
 import ArmbandView from '@/views/ArmbandView.vue'
 import SelectChildView from "@/views/SelectChildView.vue";
+import ChildDetailView from "@/views/ChildDetailView.vue";
 
 const routes = [
     {
@@ -45,6 +46,7 @@ const routes = [
         component: ArmbandView,
         meta: { requiresAuth: true, title: 'Armband Scannen' }
     },
+    
 
     {
         path: '/info',
@@ -53,7 +55,7 @@ const routes = [
         meta: { requiresAuth: false }
     },
     {
-        path: '/group-edit',
+        path: '/group-edit/:id',
         name: 'GroupEdit',
         component: GroupEditView,
         meta: { requiresAuth: true, requiresAdmin: false }
@@ -67,9 +69,9 @@ const routes = [
     },
 
     {
-        path: '/child',
-        name: 'ChildDetails',
-        component: ChildDetailsView,
+        path: '/child/:id',
+        name: 'ChildDetail',
+        component: ChildDetailView,
         meta: { requiresAuth: true, requiresAdmin: false }
     },
 
