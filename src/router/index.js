@@ -46,7 +46,7 @@ const routes = [
         component: ArmbandView,
         meta: { requiresAuth: true, title: 'Armband Scannen' }
     },
-    
+
 
     {
         path: '/info',
@@ -72,6 +72,13 @@ const routes = [
         path: '/child/:id',
         name: 'ChildDetail',
         component: ChildDetailView,
+        meta: { requiresAuth: true, requiresAdmin: false }
+    },
+
+    {
+        path: '/child-edit/:id',
+        name: 'ChildDetailEdit',
+        component: ChildEditView,
         meta: { requiresAuth: true, requiresAdmin: false }
     },
 
