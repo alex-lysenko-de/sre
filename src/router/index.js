@@ -67,6 +67,13 @@ const routes = [
     },
 
     {
+        path: '/child',
+        name: 'ChildDetails',
+        component: ChildDetailsView,
+        meta: { requiresAuth: true, requiresAdmin: false }
+    },
+
+    {
         path: '/armband-connect/:id',
         name: 'ArmbandConnect',
         component: ArmbandConnectView,
