@@ -13,29 +13,19 @@
       <h4 class="alert-heading">⚠️ Fehler</h4>
       <p>{{ error }}</p>
       <hr>
-      <button @click="goBack" class="btn btn-secondary btn-sm">
-        ↩️ Zurück
-      </button>
     </div>
 
     <!-- Child detail card -->
     <div v-else-if="child" class="card shadow-sm">
       <div class="card-body p-4">
         <!-- Header -->
-        <div class="d-flex align-items-start justify-content-between mb-4">
+        <div class="d-flex align-items-start justify-content-center mb-4">
           <div>
             <h2 class="card-title mb-1">
-              👶 {{ child.name }}
+               {{ child.name }}
             </h2>
-            <p class="text-muted mb-0">ID: {{ child.id }}</p>
           </div>
-          <button
-              @click="goBack"
-              class="btn btn-sm btn-outline-secondary"
-              title="Zurück"
-          >
-            ↩️
-          </button>
+
         </div>
 
         <!-- Child info grid -->
@@ -112,10 +102,10 @@
 
         <!-- Back to group button -->
         <button
-            @click="goBack"
+            @click="goMain"
             class="btn btn-outline-secondary w-100"
         >
-          ↩️ Zurück zur Gruppe
+          ↩️ Zurück
         </button>
 
         <!-- Success message -->
@@ -132,6 +122,8 @@ import { ref, onMounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { useArmband } from '@/composables/useArmband'
+import Utils from '@/utils/Utils'
+
 
 const router = useRouter()
 const route = useRoute()
