@@ -189,6 +189,12 @@ export const useUserStore = defineStore('user', {
                 this.userInfo = data
                 this.saveToCache(data)
                 console.log('✅ User data loaded from Supabase')
+
+                // if admin, subscribe to realtime updates
+                if (this.userInfo.role === 'admin') {
+                    await this.subscribeToUserStatus()
+                }
+
             } catch (err) {
                 this.error = err
                 console.error('❌ Error loading user:', err)
@@ -392,6 +398,46 @@ export const useUserStore = defineStore('user', {
                 throw err
             }
         },
+
+        /**
+         * subscribe to Realtime updates for user status (admin only)
+         * @returns {Promise<void>}
+         */
+        async subscribeToUserStatus() {
+            try {
+                const { data: { user } } = await supabase.auth.getUser()
+                if (!user) return
+
+                // subscribe only if admin
+                if (this.userInfo.role !== 'admin') return
+
+                console.log('📡 Realtime: Admin is subscribing to user status changes')
+
+                // Unsubscribe previous if any
+                if (this.userStatusChannel) {
+                    await supabase.removeChannel(this.userStatusChannel)
+                }
+
+                this.userStatusChannel = supabase
+                    .channel(`user_status_admin_${user.id}`)
+                    .on(
+                        'postgres_changes',
+                        { event: 'UPDATE', schema: 'public', table: 'users' },
+                        async (payload) => {
+                            const updated = payload.new
+                            const previous = payload.old
+
+                            if (previous.active === true && updated.active === false) {
+                                console.log(`⛔ User ${updated.email}  was deactivated`)
+                            }
+                        }
+                    )
+                    .subscribe((status) => console.log('Realtime channel status:', status))
+            } catch (err) {
+                console.error('Error while subscribe to Realtime:', err)
+            }
+        },
+
 
         /**
          * Get user's schedule info for a specific date

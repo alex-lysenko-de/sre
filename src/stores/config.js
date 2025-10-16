@@ -24,7 +24,7 @@ export const useConfigStore = defineStore('config', {
     actions: {
         async fetchFromSupabase() {
             this.loading = true
-            const { data, error: err } = await supabase.from('config').select('*')
+            const { data, error: err } = await supabase.from('config').select('*').order('sort_order', { ascending: true })
             this.loading = false
 
             if (err) {

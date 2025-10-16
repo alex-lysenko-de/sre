@@ -346,6 +346,12 @@ async function logout() {
     // Clear user cache and reset store
     userStore.clearUserCache()
 
+    if (userStore.userStatusChannel) {
+      await supabase.removeChannel(userStore.userStatusChannel)
+      userStore.userStatusChannel = null
+      console.log('🧹 Realtime subscription entfernt')
+    }
+
     // Sign out from Supabase
     await supabase.auth.signOut()
 
