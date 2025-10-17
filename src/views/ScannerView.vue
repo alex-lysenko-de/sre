@@ -86,6 +86,18 @@ const scannerActive = ref(false)
 const showFlash = ref(false)
 let html5QrCode = null
 
+// --- Добавлено для Clean Code & Устранения Дубликатов ---
+const isProcessingScan = ref(false) // Флаг для блокировки повторных вызовов
+let CAMERA_ID = null // ID камеры для возможности перезапуска
+
+// Конфигурация сканера
+const SCANNER_CONFIG = {
+  fps : 10,
+  qrbox : { width : 250, height : 250 },
+  aspectRatio : 1.0
+}
+// --------------------------------------------------------
+
 // Audio für Success/Error Sounds
 const successSound = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSx+zPLTgjMGHm7A7+OZUQ4NVKvl8LNkHgU2jdXxxHcsBS5+y/LajDYIGWi68OScTgwOUKXh8LllHwU4kdXzyXotBS1+yvLaizYIGGe88OWbTw0NUKXh8LplHwU4kdXzyXotBS1+yvLajDYIGGe88OWbTw0NUKXh8LplHwU4kdXzyXotBS1+yvLajDYIGGe88OWbTw0NUKXh8LplHwU4kdXzyXotBS1+yvLajDYIGGe88OWbTw0NUKXh8LplHwU4kdXzyXotBS1+yvLajDYIGGe88OWbTw0NUKXh8LplHwU4kdXzyXotBS1+yvLajDYIGGe88OWbTw0NUKXh8LplHwU4kdXzyXotBS1+yvLajDYIGGe88OWbTw0NUKXh8LplHwU4kdXzyXotBS1+yvLajDYIGGe88OWbTw0NUKXh8LplHwU4kdXzyXotBS1+yvLajDYIGGe88OWbTw0NUKXh8LplHwU4kdXzyXotBS1+yvLajDYIGGe88OWbTw0NUKXh8Lpl')
 
@@ -117,6 +129,38 @@ const createQrCodePattern = () => {
   return new RegExp(`^${escapedDomain}\\/?\\?id=(\\d{1,3})$`)
 }
 
+// --- Управление Сканером (Clean Code) ---
+
+// Отдельная функция для запуска сканера
+const startScanning = async () => {
+  if (!CAMERA_ID) return
+
+  await html5QrCode.start(
+      CAMERA_ID,
+      SCANNER_CONFIG,
+      onScanSuccess,
+      onScanError
+  )
+  scannerActive.value = true
+  console.log('✅ Scanner успешно запущен.')
+}
+
+// Отдельная функция для остановки сканера
+const stopScanning = async () => {
+  if (html5QrCode && scannerActive.value) {
+    try {
+      // Использование .stop() для завершения видеопотока
+      await html5QrCode.stop()
+      scannerActive.value = false
+      console.log('🛑 Scanner остановлен.')
+    } catch (error) {
+      // Это может произойти, если сканер уже остановлен или произошла ошибка
+      console.warn('⚠️ Fehler beim Stoppen des Scanners:', error)
+      scannerActive.value = false
+    }
+  }
+}
+
 // Scanner initialisieren
 const initScanner = async () => {
   try {
@@ -133,20 +177,10 @@ const initScanner = async () => {
       ) || devices[ 0 ]
 
       console.log('📷 Verwende Kamera:', backCamera.label)
+      CAMERA_ID = backCamera.id // Сохраняем ID камеры
 
-      await html5QrCode.start(
-          backCamera.id,
-          {
-            fps : 10,
-            qrbox : { width : 250, height : 250 },
-            aspectRatio : 1.0
-          },
-          onScanSuccess,
-          onScanError
-      )
+      await startScanning() // Запуск через чистую функцию
 
-      scannerActive.value = true
-      console.log('✅ Scanner erfolgreich gestartet')
     } else {
       alert('Keine Kamera gefunden!')
     }
@@ -156,9 +190,9 @@ const initScanner = async () => {
   }
 }
 
-// Erfolgreicher Scan
-const onScanSuccess = async (decodedText) => {
-  console.log('🔍 QR-Code gelesen:', decodedText)
+// --- Бизнес-логика обработки данных (отделена от управления сканером) ---
+const processScannedData = async (decodedText) => {
+  console.log('🔍 QR-Code gelesen (Beginn Verarbeitung):', decodedText)
 
   // Clear previous error
   lastError.value = ''
@@ -234,6 +268,28 @@ const onScanSuccess = async (decodedText) => {
   }
 }
 
+
+// Успешный Scan (Менеджер Потока)
+const onScanSuccess = async (decodedText) => {
+  // 1. БЛОКИРОВКА: Игнорируем сканирование, если предыдущее еще не завершено
+  if (isProcessingScan.value) {
+    return
+  }
+
+  isProcessingScan.value = true
+
+  // 2. БЛОКИРОВКА СКАНИРОВАНИЯ: Сразу останавливаем, чтобы избежать дубликатов (гонки)
+  await stopScanning()
+
+  // 3. ДЕЛЕГИРОВАНИЕ: Передаем обработку данных в отдельную функцию
+  await processScannedData(decodedText)
+
+  // 4. РАЗБЛОКИРОВКА: Возобновляем сканирование и сбрасываем флаг
+  await startScanning()
+  isProcessingScan.value = false
+}
+
+
 // Scan-Fehler (wird oft aufgerufen, nicht loggen)
 const onScanError = () => {
   // Ignorieren - normal beim Scannen
@@ -271,15 +327,7 @@ const triggerFlashEffect = () => {
 
 // Scanner beenden
 const exitScanner = async () => {
-  if (html5QrCode) {
-    try {
-      await html5QrCode.stop()
-      scannerActive.value = false
-      console.log('⏹️ Scanner gestoppt')
-    } catch (error) {
-      console.error('❌ Fehler beim Stoppen des Scanners:', error)
-    }
-  }
+  await stopScanning() // Используем чистую функцию
 
   // Direkt zu /main navigieren
   router.push('/main')
@@ -291,13 +339,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(async () => {
-  if (html5QrCode && scannerActive.value) {
-    try {
-      await html5QrCode.stop()
-    } catch (error) {
-      console.error('❌ Fehler beim Cleanup:', error)
-    }
-  }
+  await stopScanning() // Используем чистую функцию
 })
 </script>
 
