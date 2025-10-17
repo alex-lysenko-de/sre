@@ -35,9 +35,9 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
-import { BrowserMultiFormatReader } from '@zxing/browser'
-import { Modal } from 'bootstrap'
+import {ref, onMounted, onUnmounted} from 'vue'
+import {BrowserMultiFormatReader} from '@zxing/browser'
+import {Modal} from 'bootstrap'
 
 const video = ref(null)
 const reader = new BrowserMultiFormatReader()
@@ -57,14 +57,24 @@ async function startScan() {
   scannedCodes.value = []
 
   try {
+    // 🔒 1. Запрос разрешения на камеру
+    await navigator.mediaDevices.getUserMedia({ video : true })
+
+    // 🔍 2. Получаем список устройств после разрешения
     const devices = await BrowserMultiFormatReader.listVideoInputDevices()
-    const selectedDeviceId = devices[0]?.deviceId
+    console.log('Gefundene Kameras:', devices)
+
+    const selectedDeviceId =
+        devices.find(d => d.label.toLowerCase().includes('back'))?.deviceId ||
+        devices[ 0 ]?.deviceId
+
     if (!selectedDeviceId) {
       alert('Keine Kamera gefunden!')
       isScanning.value = false
       return
     }
 
+    // 🎥 3. Запуск сканирования
     reader.decodeFromVideoDevice(selectedDeviceId, video.value, (result, err) => {
       if (result) {
         const text = result.getText()
@@ -77,7 +87,7 @@ async function startScan() {
     })
   } catch (e) {
     console.error('Scan-Fehler:', e)
-    alert('Fehler beim Starten des Scanners!')
+    alert('Fehler beim Zugriff auf die Kamera!')
     isScanning.value = false
   }
 }
