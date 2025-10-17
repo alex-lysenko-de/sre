@@ -128,12 +128,13 @@ export function useArmband() {
 
     /**
      * Создать запись в таблице scans (отметить присутствие)
-     * @param {number} userId - ID пользователя (воспитателя)
-     * @param {number} childId - ID ребенка
-     * @param {bigint} bandId - ID браслета
+     * @param {int} userId - ID пользователя (воспитателя)
+     * @param {int} childId - ID ребенка
+     * @param {int} bandId - ID браслета
+     * @param {int|null} busId - ID автобуса (необязательно)
      * @returns {Object} Созданная запись
      */
-    const recordChildPresence = async (userId, childId, bandId) => {
+    const recordChildPresence = async (userId, childId, bandId, busId = null) => {
         try {
             const today = new Date().toISOString().split('T')[0]
 
@@ -143,7 +144,8 @@ export function useArmband() {
                     date: today,
                     user_id: userId,
                     child_id: childId,
-                    band_id: bandId
+                    band_id: bandId,
+                    bus_id: busId
                 })
                 .select()
                 .single()
