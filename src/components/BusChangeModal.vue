@@ -1,3 +1,5 @@
+// src/components/BusChangeModal.vue
+// TODO: bugfix  the number of busses is not taken from config store (config.value.total_buses is not defined)
 <template>
   <!-- Bus Change Modal -->
   <div
@@ -126,7 +128,7 @@ const loading = ref(false)
 const error = ref(null)
 
 // Computed
-const totalBuses = computed(() => parseInt(config.value.total_buses) || 5)
+const totalBuses = computed(() => parseInt(config.value.total_buses) || 3)
 
 const isFormValid = computed(() =>
     selectedBus.value !== null && selectedBus.value !== props.currentBus

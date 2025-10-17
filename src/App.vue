@@ -10,9 +10,9 @@
 
     <!-- Navigation Bar -->
     <nav v-if="isAuthenticated" class="navbar navbar-expand-lg navbar-light bg-success shadow-sm">
-      <div class="container-fluid px-3">
+      <div class="container-fluid px-1">
 
-        <div v-if="isCheckInRequired" class="ms-auto me-3">
+        <div v-if="isCheckInRequired" class="ms-auto me-2">
           <button class="btn btn-warning fw-bold" @click="showCheckInModal = true">
             Ich fahre heute mit!
           </button>
@@ -24,7 +24,7 @@
         </router-link>
 
         <!-- User Info Indicators (Group & Bus) -->
-        <div v-if="!isCheckInRequired && userStore.userInfo.isPresentToday" class="d-flex align-items-center gap-3 me-3">
+        <div v-if="!isCheckInRequired && userStore.userInfo.isPresentToday" class="d-flex align-items-center gap-2 me-1">
           <button
               @click="showGroupChangeModal = true"
               class="btn btn-sm btn-light d-flex align-items-center gap-2"

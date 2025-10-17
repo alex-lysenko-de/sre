@@ -1,3 +1,7 @@
+// src/views/ScannerView.vue
+// TODO: Make the scanner view reusable. Main idea is to use it for different scanning tasks in the future.
+// it could be used for preparing a list of children in a bus or for checking attendance or for speed assignment of bracelets to children.
+
 <template>
   <div class="scanner-view">
     <!-- Compact Header -->
@@ -180,7 +184,7 @@ const startScanning = async () => {
       onScanError
   )
   scannerActive.value = true
-  console.log('✅ Scanner успешно запущен.')
+  console.log('✅ Scanner has started.')
 }
 
 // Остановка сканера
@@ -189,7 +193,7 @@ const stopScanning = async () => {
     try {
       await html5QrCode.stop()
       scannerActive.value = false
-      console.log('🛑 Scanner остановлен.')
+      console.log('🛑 Scanner has stopped.')
     } catch (error) {
       console.warn('⚠️ Fehler beim Stoppen des Scanners:', error)
       scannerActive.value = false
@@ -236,17 +240,17 @@ const processQueue = async () => {
   }
 
   isProcessingQueue = true
-  console.log('🔄 Начало обработки очереди. Элементов:', processingQueue.length)
+  console.log('🔄 Start of processing the queue. Total items:', processingQueue.length)
 
   // Обрабатываем все элементы по одному
   while (processingQueue.length > 0) {
     const decodedText = processingQueue.shift()
-    console.log('⚙️ Обработка URL из очереди:', decodedText)
+    console.log('⚙️ Processing URL in queue', decodedText)
     await processScannedData(decodedText)
   }
 
   isProcessingQueue = false
-  console.log('✅ Очередь обработана полностью')
+  console.log('✅ Queue processing completed.')
 }
 
 // Бизнес-логика обработки данных
@@ -286,11 +290,10 @@ const processScannedData = async (decodedText) => {
 
       setTimeout(() => {
         lastError.value = ''
-      }, 3000)
+      }, 5000)
       return
     }
-
-    // ФИНАЛЬНАЯ проверка на дубликаты (после всех async операций)
+    // Check for duplicate scans
     const alreadyScanned = scannedChildren.value.some(c => c.id === child.id)
     if (alreadyScanned) {
       console.log('ℹ️ Kind bereits gescannt:', child.name)
@@ -331,22 +334,22 @@ const processScannedData = async (decodedText) => {
 // SCAN HANDLERS
 // ============================================
 
-// Успешный Scan (Менеджер с проверкой URL и очередью)
+// Erfolgreicher Scan
 const onScanSuccess = async (decodedText) => {
-  // 🛡️ УРОВЕНЬ 1: Проверка, не сканировали ли мы этот URL раньше
+  // 🛡️ Level 1: Check for duplicates in Set
   if (scannedUrls.has(decodedText)) {
     return
   }
 
-  // 🛡️ УРОВЕНЬ 2: Добавляем URL в Set сразу же (синхронная операция)
+  // 🛡️ Level 2: Mark as seen in Set
   scannedUrls.add(decodedText)
   console.log('📝 Neuer URL zur Verarbeitung hinzugefügt:', decodedText)
 
-  // 🛡️ УРОВЕНЬ 3: Добавляем в очередь на обработку
+  // 🛡️ Level 3: Add to processing queue
   processingQueue.push(decodedText)
-  console.log('➕ URL в очередь добавлен. Размер очереди:', processingQueue.length)
+  console.log('➕ URL has been added. Queu size: ', processingQueue.length)
 
-  // 🔄 Запускаем обработчик очереди (если он еще не работает)
+  // 🔄 Run queue processor
   processQueue()
 }
 

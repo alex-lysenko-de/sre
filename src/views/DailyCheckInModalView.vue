@@ -1,3 +1,6 @@
+// src/components/DailyCheckInModal.vue
+// TODO: bugfix: the number of groups is not taken from config store (config.value.total_groups is not defined)
+
 <template>
   <div
       v-if="show"
@@ -121,7 +124,7 @@ const error = ref(null)
 
 // Computed properties
 const totalGroups = computed(() => parseInt(config.value.total_groups) || 15)
-const totalBuses = computed(() => parseInt(config.value.total_buses) || 5)
+const totalBuses = computed(() => parseInt(config.value.total_buses) || 3)
 
 const formattedDate = computed(() => {
   const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }

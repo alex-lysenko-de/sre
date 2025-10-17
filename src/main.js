@@ -46,6 +46,9 @@ import {
     faUser,
     faUserPlus,
     faUsers,
+    faQrcode,
+    faArrowRight,
+    faChartLine,
 } from '@fortawesome/free-solid-svg-icons'
 
 // Add them to library
@@ -81,7 +84,10 @@ library.add(
     faUser,
     faUserPlus,
     faUsers,
-    faWhatsapp
+    faQrcode,
+    faArrowRight,
+    faWhatsapp,
+    faChartLine
 )
 
 // Create Pinia instance

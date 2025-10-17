@@ -1,3 +1,5 @@
+// src/components/GroupChangeModal.vue
+
 <template>
   <!-- Group Change Modal -->
   <div

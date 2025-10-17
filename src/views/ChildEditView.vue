@@ -23,7 +23,7 @@
       <div class="card-header bg-primary text-white">
         <h3 class="mb-0">
           <font-awesome-icon :icon="['fas', 'edit']" />
-          Kind bearbeiten: {{ formData.name || 'Lädt...' }}
+          {{ formData.name || 'Lädt...' }}
         </h3>
       </div>
 

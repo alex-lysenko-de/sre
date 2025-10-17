@@ -1,3 +1,10 @@
+// src/views/ArmbandView.vue
+// TODO: change all texts to German
+// TODO: replace a dropdown with a list of children to
+<ul>
+<li></li>
+</ul> with radio buttons for better UX on mobile
+
 <template>
   <div class="armband-container">
     <!-- Loading state -->
@@ -40,23 +47,24 @@
           <label for="childSelect" class="form-label fw-bold">
             👶 Kind auswählen
           </label>
-          <select
-              id="childSelect"
-              v-model="selectedChildId"
-              class="form-select form-select-lg"
-              :disabled="children.length === 0"
-          >
-            <option value="">-- Bitte wählen Sie ein Kind --</option>
-            <option
-                v-for="child in children"
-                :key="child.id"
-                :value="child.id"
-            >
-              {{ child.name }} ({{ child.age }} Jahre)
-              <span v-if="child.band_id"> - Armband: {{ child.band_id }}</span>
-            </option>
-          </select>
+          <ul class="list-group">
+            <li v-for="child in children" :key="child.id" class="list-group-item">
+              <div class="form-check">
+                <input
+                    class="form-check-input"
+                    type="radio"
+                    :id="'child-' + child.id"
+                    :value="child.id"
+                    v-model="selectedChildId"
+                >
+                <label class="form-check-label" :for="'child-' + child.id">
+                  {{ child.name }} (Alter: {{ child.age }} Jahre)
+                </label>
+              </div>
+            </li>
+          </ul>
         </div>
+
 
         <!-- No children warning -->
         <div v-if="children.length === 0" class="alert alert-warning">
@@ -105,10 +113,10 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
-import { useUserStore } from '@/stores/user'
-import { useArmband } from '@/composables/useArmband'
+import {ref, onMounted, computed} from 'vue'
+import {useRouter, useRoute} from 'vue-router'
+import {useUserStore} from '@/stores/user'
+import {useArmband} from '@/composables/useArmband'
 
 const router = useRouter()
 const route = useRoute()
@@ -146,7 +154,7 @@ async function checkBraceletStatus() {
       console.log(`✅ Armband ${bandId.value} уже привязан к ребенку ${status.name}`)
 
       // Перенаправляем на страницу ребенка
-      await router.push({ name: 'ChildDetail', params: { id: status.id } })
+      await router.push({ name : 'ChildDetail', params : { id : status.id } })
     } else {
       // Браслет не привязан, загружаем список детей группы
       await loadChildren()
@@ -204,7 +212,7 @@ async function assignArmband() {
     console.log(`✅ Armband erfolgreich zugeordnet. Weiterleitung zur Seite des Kindes...`)
 
     // Перенаправляем на страницу ребенка
-    await router.push({ name: 'ChildDetail', params: { id: updatedChild.id } })
+    await router.push({ name : 'ChildDetail', params : { id : updatedChild.id } })
   } catch (err) {
     console.error('Fehler beim Zuordnen des Armbands:', err)
     error.value = err.message || 'Fehler beim Zuordnen des Armbands'
