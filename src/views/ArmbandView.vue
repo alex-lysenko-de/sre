@@ -1,6 +1,5 @@
-<script setup lang="ts">
 /* src/views/ArmbandView.vue */
-</script>
+
 
 <template>
   <div class="armband-container">
@@ -55,7 +54,7 @@
                     v-model="selectedChildId"
                 >
                 <label class="form-check-label" :for="'child-' + child.id">
-                  {{ child.name }} (Alter: {{ child.age }} Jahre)
+                  {{ child.name }} ({{ child.age }} J)
                 </label>
               </div>
             </li>

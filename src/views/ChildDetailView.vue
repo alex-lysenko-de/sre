@@ -1,3 +1,6 @@
+// src/views/ChildDetailView.vue
+// TODO: write correct swimming status (currently always shows "Ja").
+// It must be shown based on child.schwimmer value.(see utils/utils.js getSwimLevel function)
 <template>
   <div class="child-detail-container">
     <!-- Loading state -->
