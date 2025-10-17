@@ -71,6 +71,15 @@ const routes = [
         component: SelectChildView,
         meta: { requiresAuth: true, requiresAdmin: false }
     },
+
+    {
+        path: '/scanner',
+        name: 'Scanner',
+        component: () => import('@/views/ScannerView.vue'),
+        meta: { requiresAuth: true, requiresAdmin: false }
+    },
+
+
     {
         path: '/child/:id',
         name: 'ChildDetail',

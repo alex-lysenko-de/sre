@@ -165,7 +165,7 @@ function goToAdminOverview() {
 }
 
 function goToScan() {
-  router.push('/select-child')
+  router.push('/scanner')
 }
 
 function goToLogin() {
