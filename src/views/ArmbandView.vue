@@ -1,13 +1,10 @@
-// src/views/ArmbandView.vue
-// TODO: change all texts to German
-// TODO: replace a dropdown with a list of children to
-<ul>
-<li></li>
-</ul> with radio buttons for better UX on mobile
+<script setup lang="ts">
+/* src/views/ArmbandView.vue */
+</script>
 
 <template>
   <div class="armband-container">
-    <!-- Loading state -->
+    <!-- Ladezustand -->
     <div v-if="isLoading" class="text-center py-5">
       <div class="spinner-border text-success" role="status">
         <span class="visually-hidden">Lädt...</span>
@@ -15,7 +12,7 @@
       <p class="mt-3 text-muted">Armband wird überprüft...</p>
     </div>
 
-    <!-- Error state -->
+    <!-- Fehlerzustand -->
     <div v-else-if="error" class="alert alert-danger" role="alert">
       <h4 class="alert-heading">⚠️ Fehler</h4>
       <p>{{ error }}</p>
@@ -25,24 +22,24 @@
       </button>
     </div>
 
-    <!-- Armband assignment form -->
+    <!-- Formular zur Armband-Zuordnung -->
     <div v-else-if="!childData && !isAssigning" class="card shadow-sm">
       <div class="card-body p-4">
         <h3 class="card-title mb-4">
-          📍 Armband Zuordnung
+          📍 Armband‑Zuordnung
         </h3>
 
         <p class="text-muted mb-4">
-          Dieser Armband ist noch keinem Kind zugeordnet.<br>
+          Dieses Armband ist noch keinem Kind zugeordnet.<br>
           Bitte wählen Sie ein Kind aus Ihrer Gruppe aus.
         </p>
 
-        <!-- Group info -->
+        <!-- Gruppeninfo -->
         <div class="alert alert-info mb-4">
           <strong>Ihre Gruppe:</strong> {{ currentGroupId }}
         </div>
 
-        <!-- Children select -->
+        <!-- Liste der Kinder mit Radio-Buttons -->
         <div class="mb-3">
           <label for="childSelect" class="form-label fw-bold">
             👶 Kind auswählen
@@ -65,13 +62,12 @@
           </ul>
         </div>
 
-
-        <!-- No children warning -->
+        <!-- Warnung: keine Kinder -->
         <div v-if="children.length === 0" class="alert alert-warning">
           ⚠️ Keine Kinder in Ihrer Gruppe gefunden.
         </div>
 
-        <!-- Action buttons -->
+        <!-- Aktionstasten -->
         <div class="d-flex gap-2">
           <button
               @click="assignArmband"
@@ -94,7 +90,7 @@
       </div>
     </div>
 
-    <!-- Assignment success state -->
+    <!-- Zuordnung läuft -->
     <div v-else-if="isAssigning" class="text-center py-5">
       <div class="spinner-border text-success" role="status">
         <span class="visually-hidden">Wird zugeordnet...</span>
@@ -102,10 +98,10 @@
       <p class="mt-3 text-muted">Armband wird zugeordnet...</p>
     </div>
 
-    <!-- Child data already exists - redirect in progress -->
+    <!-- Kind wird geladen / Weiterleitung -->
     <div v-else class="text-center py-5">
       <div class="spinner-border text-success" role="status">
-        <span class="visually-hidden">Wird weitergleitet...</span>
+        <span class="visually-hidden">Wird weitergeleitet...</span>
       </div>
       <p class="mt-3 text-muted">Kind wird geladen...</p>
     </div>
@@ -113,10 +109,10 @@
 </template>
 
 <script setup>
-import {ref, onMounted, computed} from 'vue'
-import {useRouter, useRoute} from 'vue-router'
-import {useUserStore} from '@/stores/user'
-import {useArmband} from '@/composables/useArmband'
+import { ref, onMounted, computed } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
+import { useUserStore } from '@/stores/user'
+import { useArmband } from '@/composables/useArmband'
 
 const router = useRouter()
 const route = useRoute()
@@ -131,32 +127,32 @@ const isAssigning = ref(false)
 const error = ref(null)
 const childData = ref(null)
 const children = ref([])
-const selectedChildId = ref('')
+const selectedChildId = ref(null) // initial null statt leerer String
 
 onMounted(async () => {
   await checkBraceletStatus()
 })
 
 /**
- * Проверить статус браслета
+ * Prüft den Status des Armbands
  */
 async function checkBraceletStatus() {
   try {
     isLoading.value = true
     error.value = null
 
-    // Получаем статус браслета
+    // Status des Armbands abfragen
     const status = await armbandComposable.getBraceletStatus(bandId.value)
 
     if (status) {
-      // Браслет уже привязан, сохраняем данные и перенаправляем
+      // Armband ist bereits zugeordnet -> Daten setzen und weiterleiten
       childData.value = status
-      console.log(`✅ Armband ${bandId.value} уже привязан к ребенку ${status.name}`)
+      console.log(`✅ Armband ${bandId.value} ist bereits dem Kind ${status.name} zugeordnet`)
 
-      // Перенаправляем на страницу ребенка
-      await router.push({ name : 'ChildDetail', params : { id : status.id } })
+      // Weiterleitung zur Kind-Detailseite
+      await router.push({ name: 'ChildDetail', params: { id: status.id } })
     } else {
-      // Браслет не привязан, загружаем список детей группы
+      // Nicht zugeordnet -> Kinder der Gruppe laden
       await loadChildren()
     }
   } catch (err) {
@@ -168,7 +164,7 @@ async function checkBraceletStatus() {
 }
 
 /**
- * Загрузить список детей текущей группы
+ * Lädt die Kinder der aktuellen Gruppe
  */
 async function loadChildren() {
   try {
@@ -191,7 +187,7 @@ async function loadChildren() {
 }
 
 /**
- * Привязать браслет к выбранному ребенку
+ * Weist das Armband dem ausgewählten Kind zu
  */
 async function assignArmband() {
   try {
@@ -203,16 +199,16 @@ async function assignArmband() {
     isAssigning.value = true
     error.value = null
 
-    // Привязываем браслет
+    // Armband zuordnen
     const updatedChild = await armbandComposable.assignBraceletToChild(
         selectedChildId.value,
         bandId.value
     )
 
-    console.log(`✅ Armband erfolgreich zugeordnet. Weiterleitung zur Seite des Kindes...`)
+    console.log('✅ Armband erfolgreich zugeordnet. Weiterleitung zur Kinderseite...')
 
-    // Перенаправляем на страницу ребенка
-    await router.push({ name : 'ChildDetail', params : { id : updatedChild.id } })
+    // Weiterleitung zur Kind-Detailseite
+    await router.push({ name: 'ChildDetail', params: { id: updatedChild.id } })
   } catch (err) {
     console.error('Fehler beim Zuordnen des Armbands:', err)
     error.value = err.message || 'Fehler beim Zuordnen des Armbands'
@@ -221,7 +217,7 @@ async function assignArmband() {
 }
 
 /**
- * Вернуться назад
+ * Zurück navigieren
  */
 function goBack() {
   router.back()
