@@ -89,6 +89,7 @@
 
           <!-- Info Button (always visible) -->
           <button
+              v-if="!isAuthenticated"
               @click="goToInfo"
               class="btn btn-outline-secondary btn-lg d-flex align-items-center justify-content-between"
           >
@@ -96,7 +97,7 @@
               <font-awesome-icon :icon="['fas', 'info-circle']" class="me-3" size="2x" />
               <span>
                 <div class="fw-bold text-start">Informationen</div>
-                <small class="opacity-75">Über die App</small>
+                <small class="opacity-75">Für Gäste</small>
               </span>
             </span>
             <font-awesome-icon :icon="['fas', 'arrow-right']" />

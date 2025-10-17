@@ -19,7 +19,7 @@
         </div>
 
         <!-- Logo/Brand - Links to Main -->
-        <router-link to="/main" class="navbar-brand text-white fw-bold mb-0 text-decoration-none">
+        <router-link to="/main" class="navbar-brand text-white fw-bold mb-0 text-decoration-none btn btn-success shadow">
           🌳 SRE
         </router-link>
 
@@ -45,6 +45,7 @@
         </div>
 
         <button
+            ref="navbarToggler"
             class="navbar-toggler border-white"
             type="button"
             data-bs-toggle="collapse"
@@ -52,50 +53,43 @@
             aria-controls="navbarNav"
             aria-expanded="false"
             aria-label="Navigation umschalten"
+            @click="onTogglerClick"
         >
           <span class="navbar-toggler-icon"></span>
         </button>
 
-        <div class="collapse navbar-collapse" id="navbarNav">
+        <div class="collapse navbar-collapse" id="navbarNav" ref="navbarCollapse">
           <ul class="navbar-nav me-auto">
-            <li class="nav-item">
-              <router-link to="/main" class="nav-link text-white">
-                🏠 Hauptmenü
-              </router-link>
-            </li>
-            <li class="nav-item">
-              <router-link to="/info" class="nav-link text-white">
-                ℹ️ Info
-              </router-link>
-            </li>
+
             <li v-if="isAdmin" class="nav-item">
-              <router-link to="/children" class="nav-link text-white">
+              <router-link to="/children" class="nav-link text-white" @click="closeMenu">
                 🧒 Kinder
               </router-link>
             </li>
             <li v-if="isAdmin" class="nav-item">
-              <router-link to="/config" class="nav-link text-white">
-                ⚙️ Konfiguration
-              </router-link>
-            </li>
-            <li v-if="isAdmin" class="nav-item">
-              <router-link to="/users-edit" class="nav-link text-white">
-                👥 Benutzer
-              </router-link>
-            </li>
-            <li v-if="isAdmin" class="nav-item">
-              <router-link to="/invite" class="nav-link text-white">
+              <router-link to="/invite" class="nav-link text-white" @click="closeMenu">
                 🎟️ Einladungen
               </router-link>
             </li>
             <li v-if="isAdmin" class="nav-item">
-              <router-link to="/days-edit" class="nav-link text-white">
+              <router-link to="/users-edit" class="nav-link text-white" @click="closeMenu">
+                👥 Benutzer
+              </router-link>
+            </li>
+
+            <li v-if="isAdmin" class="nav-item">
+              <router-link to="/days-edit" class="nav-link text-white" @click="closeMenu">
                 🗓️ Tage bearbeiten
               </router-link>
             </li>
+            <li v-if="isAdmin" class="nav-item">
+              <router-link to="/config" class="nav-link text-white" @click="closeMenu">
+                ⚙️ Konfiguration
+              </router-link>
+            </li>
             <li class="nav-item">
-              <router-link to="/select-child" class="nav-link text-white" :class="{'disabled-link': isCheckInRequired}">
-                📷 Scannen
+              <router-link to="/info" class="nav-link text-white" @click="closeMenu">
+                ℹ️ Info
               </router-link>
             </li>
           </ul>
@@ -143,7 +137,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { supabase } from './supabase'
 import { useUserStore } from './stores/user'
@@ -168,17 +162,69 @@ const showGroupChangeModal = ref(false)
 const showBusChangeModal = ref(false)
 const showCheckInModal = ref(false)
 
+// Refs for menu control
+const navbarCollapse = ref(null)
+const navbarToggler = ref(null)
+let menuTimeout = null
 
 // Initialize app
 onMounted(async () => {
   await initializeApp()
 })
 
-// Watch for route changes
+// Cleanup on unmount
+onUnmounted(() => {
+  clearMenuTimeout()
+})
+
+// Watch for route changes - close menu on navigation
 watch(() => route.path, async () => {
+  closeMenu()
   await checkAuth()
 })
 
+/**
+ * Handle navbar toggler click - start auto-close timer
+ */
+function onTogglerClick() {
+  clearMenuTimeout()
+
+  // Start 5-second timer when menu is opened
+  menuTimeout = setTimeout(() => {
+    closeMenu()
+  }, 10000)
+}
+
+/**
+ * Close mobile menu
+ */
+function closeMenu() {
+  clearMenuTimeout()
+
+  if (navbarCollapse.value && navbarToggler.value) {
+    // Check if menu is expanded (mobile view)
+    const bsCollapse = window.bootstrap?.Collapse?.getInstance(navbarCollapse.value)
+
+    if (bsCollapse) {
+      bsCollapse.hide()
+    } else {
+      // Fallback: remove Bootstrap classes manually
+      navbarCollapse.value.classList.remove('show')
+      navbarToggler.value.classList.add('collapsed')
+      navbarToggler.value.setAttribute('aria-expanded', 'false')
+    }
+  }
+}
+
+/**
+ * Clear menu auto-close timeout
+ */
+function clearMenuTimeout() {
+  if (menuTimeout) {
+    clearTimeout(menuTimeout)
+    menuTimeout = null
+  }
+}
 
 /**
  * Initialize application
@@ -232,7 +278,7 @@ async function attemptAutoLogin() {
       return
     }
 
-    console.log('🔍 Gespeicherte Anmeldedaten gefunden, führe automatische Anmeldung durch...')
+    console.log('🔐 Gespeicherte Anmeldedaten gefunden, führe automatische Anmeldung durch...')
 
     const { data, error } = await supabase.auth.signInWithPassword({
       email : savedCredentials.email,
@@ -401,4 +447,3 @@ async function logout() {
   }
 }
 </style>
- 
