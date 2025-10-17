@@ -122,7 +122,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { useArmband } from '@/composables/useArmband'
-import Utils from '@/utils/Utils'
+import Utils from '@/utils/utils'
 
 
 const router = useRouter()

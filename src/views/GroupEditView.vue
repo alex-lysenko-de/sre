@@ -80,7 +80,7 @@
 <script>
 import { useChildren } from '@/composables/useChildren'
 import AddEditChildModal from '@/components/AddEditChildModal.vue'
-import Utils from '@/utils/Utils'
+import Utils from '@/utils/utils'
 
 export default {
   name: 'GroupEditView',
