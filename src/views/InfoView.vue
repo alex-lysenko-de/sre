@@ -58,8 +58,8 @@ import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
 const configStore = useConfigStore()
 
 onMounted(async () => {
-  await configStore.initConfigModule()
-  await configStore.loadConfig()
+  // Load configuration on mount
+
 })
 </script>
 

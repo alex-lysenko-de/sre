@@ -97,9 +97,16 @@ const app = createApp(App)
 app.use(pinia) // Register Pinia before router
 app.use(router)
 
+// === new code for async global initialization of config store ===
+import { useConfigStore } from '@/stores/config'
+
+// run async initialization before mounting the app
+const configStore = useConfigStore()
+await configStore.initConfigModule()
+// =========================================================
+
 // Register the FontAwesomeIcon component globally
 app.component('font-awesome-icon', FontAwesomeIcon)
-
 app.mount('#app')
 
 // Register Service Worker with auto-update

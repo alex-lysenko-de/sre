@@ -62,8 +62,7 @@ const localConfig = reactive({})
 
 // Lifecycle hook: initialize module, load config, and sync local state
 onMounted(async () => {
-  await configStore.initConfigModule()
-  await configStore.loadConfig()
+  // Load configuration on mount
   Object.assign(localConfig, configStore.config)
 })
 
