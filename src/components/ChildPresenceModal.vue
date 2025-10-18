@@ -145,7 +145,6 @@ const emit = defineEmits(['close', 'confirm'])
 
 // Store
 const configStore = useConfigStore()
-const { config } = storeToRefs(configStore)
 
 // Local state
 const localIncludeBusId = ref(false)
@@ -154,7 +153,7 @@ const loading = ref(false)
 const error = ref(null)
 
 // Computed
-const totalBuses = computed(() => parseInt(config.value?.total_buses) || 10)
+const totalBuses = computed(() => configStore.totalBuses || 10)
 
 const infoText = computed(() => {
   if (props.isFirstCheckToday) {
