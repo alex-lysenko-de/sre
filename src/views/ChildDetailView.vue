@@ -1,6 +1,5 @@
-// src/views/ChildDetailView.vue
-// TODO: write correct swimming status (currently always shows "Ja").
-// It must be shown based on child.schwimmer value.(see utils/utils.js getSwimLevel function)
+<!-- vue -->
+<!-- src/views/ChildDetailView.vue -->
 <template>
   <div class="child-detail-container">
     <!-- Loading state -->
@@ -25,7 +24,7 @@
         <div class="d-flex align-items-start justify-content-center mb-4">
           <div>
             <h2 class="card-title mb-1">
-               {{ child.name }}
+              {{ child.name }}
             </h2>
           </div>
 
@@ -47,13 +46,10 @@
           </div>
           <div class="col-md-6 mb-3">
             <div class="info-block">
-              <span class="info-label">🏊 Plätzchen</span>
+              <span class="info-label">🏊 Schwimmabzeichen</span>
               <span class="info-value">
-                <span v-if="child.schwimmer === 1" class="badge bg-success">
-                  Ja ✅
-                </span>
-                <span v-else class="badge bg-secondary">
-                  Nein ❌
+                <span class="badge" :class="Utils.getSwimBadgeClass(child.schwimmer)">
+                  {{ Utils.getSwimLevel(child.schwimmer) }}
                 </span>
               </span>
             </div>
@@ -183,7 +179,7 @@ async function markPresence() {
     }
 
     if (!child.value.id) {
-      throw new Error('Kind-ID nicht gefunden')
+      throw new Error('Kind-ID nicht найден')
     }
 
     if (!child.value.band_id) {
@@ -227,6 +223,7 @@ function goBack() {
   //router.back()
   router.push('/main')
 }
+
 </script>
 
 <style scoped>
