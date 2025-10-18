@@ -65,7 +65,7 @@
               <font-awesome-icon :icon="['fas', 'qrcode']" class="me-3" size="2x" />
               <span>
                 <div class="fw-bold text-start">Scannen</div>
-                <small class="text-white-50">Kinder erfassen</small>
+                <small class="text-white-50">Kinder im Bus zählen</small>
               </span>
             </span>
             <font-awesome-icon :icon="['fas', 'arrow-right']" />

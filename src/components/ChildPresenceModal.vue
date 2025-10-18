@@ -62,7 +62,7 @@
               <select
                   class="form-select"
                   id="busSelect"
-                  v-model="localSelectedBusId"
+                  v-model.number="localSelectedBusId"
                   :disabled="loading"
               >
                 <option :value="null">Kein Bus</option>
@@ -157,11 +157,11 @@ const totalBuses = computed(() => configStore.totalBuses || 10)
 
 const infoText = computed(() => {
   if (props.isFirstCheckToday) {
-    return 'Erste Anwesenheitsprüfung heute - Bus-Nummer wird empfohlen.'
+    return 'Erste Anwesenheitsprüfung heute - Kind steigt gerade in den Bus.'
   } else if (props.currentBusId) {
-    return `Kind ist bereits in Bus #${props.currentBusId} registriert. Bus-Nummer nur ändern, wenn nötig.`
+    return `Kind ist bereits in Bus #${props.currentBusId} registriert. Nur ändern, wenn Kind den Bus gewechselt hat.`
   } else {
-    return 'Kind ist bereits anwesend. Bus-Nummer bei Bedarf hinzufügen.'
+    return 'Kind ist bereits anwesend. Bus-Nummer bei Bedarf hinzufügen oder aktualisieren.'
   }
 })
 
@@ -174,18 +174,22 @@ watch(() => props.show, (newVal) => {
 
 /**
  * Initialize form with smart defaults
+ * - Checkbox ON nur wenn это первая запись за день (первый check-in)
+ * - Pre-fill bus с defaultBusId пользователя
  */
 function initializeForm() {
   error.value = null
   loading.value = false
 
-  // Smart default: checkbox ON if first check OR no bus assigned yet
+  // Логика: галочка включена ТОЛЬКО при первом check-in за день
+  // Если это первая запись и нет информации об автобусе - ребенок только садится в автобус
+  // Если это не первая запись - скорее всего сканируется в другом месте, автобус не нужен
   localIncludeBusId.value = props.isFirstCheckToday || !props.currentBusId
 
-  // Pre-fill with default bus (usually user's bus)
+  // Pre-fill с автобусом пользователя (машинист едит в том же автобусе)
   localSelectedBusId.value = props.defaultBusId || null
 
-  console.log(`🎯 Modal initialized: includeBus=${localIncludeBusId.value}, busId=${localSelectedBusId.value}`)
+  console.log(`🎯 Modal initialized: includeBus=${localIncludeBusId.value}, busId=${localSelectedBusId.value}, isFirst=${props.isFirstCheckToday}, currentBus=${props.currentBusId}`)
 }
 
 /**

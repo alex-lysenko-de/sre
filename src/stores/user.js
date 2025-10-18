@@ -3,7 +3,7 @@ import { defineStore } from 'pinia'
 import { supabase } from '@/supabase'
 
 const USER_CACHE_KEY = 'user_info_cache'
-const CACHE_TTL = 10 * 60 * 1000 // 10 minutes
+const CACHE_TTL =  60 * 1000 // 1 minutes
 
 export const useUserStore = defineStore('user', {
     state: () => ({

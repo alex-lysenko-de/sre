@@ -225,6 +225,12 @@ async function loadPresenceInfo() {
  * Öffnet Präsenz-Modal
  */
 function openPresenceModal() {
+  // Validate user bus_id is available
+  if (!userStore.userInfo.bus_id) {
+    error.value = 'Dein Arbeitsbus ist nicht zugeordnet. Kontaktiere einen Administrator.'
+    return
+  }
+
   showPresenceModal.value = true
 }
 
