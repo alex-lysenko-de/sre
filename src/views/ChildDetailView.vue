@@ -126,101 +126,18 @@
       </div>
     </div>
 
-    <!-- Presence Modal -->
-    <div
-        class="modal fade"
-        id="presenceModal"
-        tabindex="-1"
-        aria-labelledby="presenceModalLabel"
-        aria-hidden="true"
-        ref="presenceModalElement"
-    >
-      <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title" id="presenceModalLabel">
-              <i class="fas fa-clipboard-check me-2"></i>
-              Präsenz registrieren
-            </h5>
-            <button
-                type="button"
-                class="btn-close"
-                data-bs-dismiss="modal"
-                aria-label="Close"
-            ></button>
-          </div>
-          <div class="modal-body">
-            <div class="mb-3">
-              <p class="mb-3">
-                <strong>{{ child?.name }}</strong> wird als anwesend markiert.
-              </p>
-
-              <!-- Bus ID hinzufügen Checkbox -->
-              <div class="form-check mb-3">
-                <input
-                    class="form-check-input"
-                    type="checkbox"
-                    v-model="modalData.includeBusId"
-                    id="includeBusCheckbox"
-                >
-                <label class="form-check-label" for="includeBusCheckbox">
-                  <i class="fas fa-bus me-1"></i>
-                  Bus-Nummer hinzufügen
-                </label>
-              </div>
-
-              <!-- Bus Auswahl -->
-              <div v-if="modalData.includeBusId" class="mb-3">
-                <label for="busSelect" class="form-label">
-                  <i class="fas fa-bus me-1"></i>
-                  Bus-Nummer
-                </label>
-                <select
-                    class="form-select"
-                    id="busSelect"
-                    v-model="modalData.selectedBusId"
-                >
-                  <option :value="null">Kein Bus</option>
-                  <option v-for="n in 10" :key="n" :value="n">
-                    Bus #{{ n }}
-                  </option>
-                </select>
-              </div>
-
-              <!-- Info Text -->
-              <div class="alert alert-info small mb-0">
-                <i class="fas fa-info-circle me-1"></i>
-                {{ getModalInfoText() }}
-              </div>
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button
-                type="button"
-                class="btn btn-secondary"
-                data-bs-dismiss="modal"
-            >
-              Abbrechen
-            </button>
-            <button
-                type="button"
-                class="btn btn-success"
-                @click="confirmPresence"
-                :disabled="isMarkingPresence"
-            >
-              <span v-if="!isMarkingPresence">
-                <i class="fas fa-check me-1"></i>
-                Bestätigen
-              </span>
-              <span v-else>
-                <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-                Wird registriert...
-              </span>
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+    <!-- Presence Modal Component -->
+    <ChildPresenceModal
+        v-if="showPresenceModal"
+        ref="presenceModalRef"
+        :show="showPresenceModal"
+        :child-name="child?.name || ''"
+        :is-first-check-today="!presenceInfo.isPresent"
+        :current-bus-id="presenceInfo.busId"
+        :default-bus-id="userStore.userInfo.bus_id"
+        @close="showPresenceModal = false"
+        @confirm="handlePresenceConfirm"
+    />
   </div>
 </template>
 
@@ -230,8 +147,8 @@ import { useRouter, useRoute } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { useArmband } from '@/composables/useArmband'
 import { useScan } from '@/composables/useScan'
+import ChildPresenceModal from '@/components/ChildPresenceModal.vue'
 import Utils from '@/utils/utils'
-import { Modal } from 'bootstrap'
 
 const router = useRouter()
 const route = useRoute()
@@ -242,7 +159,6 @@ const scanComposable = useScan()
 const childId = computed(() => route.params.id)
 
 const isLoading = ref(true)
-const isMarkingPresence = ref(false)
 const error = ref(null)
 const successMessage = ref(null)
 const child = ref(null)
@@ -251,22 +167,12 @@ const presenceInfo = ref({
   busId: null
 })
 
-const presenceModalElement = ref(null)
-let presenceModal = null
-
-const modalData = ref({
-  includeBusId: false,
-  selectedBusId: null
-})
+const showPresenceModal = ref(false)
+const presenceModalRef = ref(null)
 
 onMounted(async () => {
   await loadChildDetails()
   await loadPresenceInfo()
-
-  // Initialize Bootstrap modal
-  if (presenceModalElement.value) {
-    presenceModal = new Modal(presenceModalElement.value)
-  }
 })
 
 /**
@@ -316,55 +222,26 @@ async function loadPresenceInfo() {
 }
 
 /**
- * Öffnet Modal mit intelligenten Voreinstellungen
+ * Öffnet Präsenz-Modal
  */
-async function openPresenceModal() {
+function openPresenceModal() {
+  showPresenceModal.value = true
+}
+
+/**
+ * Behandelt Bestätigung aus Modal
+ */
+async function handlePresenceConfirm(data) {
   try {
-    // Smart defaults basierend auf Anwesenheitsstatus
-    const hasBusInfo = presenceInfo.value.busId !== null
-    const userBusId = userStore.userInfo.bus_id
-
-    // Logik:
-    // 1. Wenn Kind noch nicht anwesend oder kein Bus zugewiesen -> Checkbox AN
-    // 2. Wenn Kind bereits anwesend und Bus zugewiesen -> Checkbox AUS
-    modalData.value.includeBusId = !presenceInfo.value.isPresent || !hasBusInfo
-
-    // Bus-Nummer vom User vorausfüllen (falls vorhanden)
-    modalData.value.selectedBusId = userBusId || null
-
-    console.log(`🎯 Modal-Defaults: includeBus=${modalData.value.includeBusId}, busId=${modalData.value.selectedBusId}`)
-
-    // Modal öffnen
-    if (presenceModal) {
-      presenceModal.show()
+    // Set loading state in modal
+    if (presenceModalRef.value) {
+      presenceModalRef.value.setLoading(true)
     }
-  } catch (err) {
-    console.error('Fehler beim Öffnen des Modals:', err)
-  }
-}
 
-/**
- * Info-Text für Modal basierend auf Status
- */
-function getModalInfoText() {
-  if (!presenceInfo.value.isPresent) {
-    return 'Erste Anwesenheitsprüfung heute - Bus-Nummer wird empfohlen.'
-  } else if (presenceInfo.value.busId) {
-    return `Kind ist bereits in Bus #${presenceInfo.value.busId} registriert. Bus-Nummer nur ändern, wenn nötig.`
-  } else {
-    return 'Kind ist bereits anwesend. Bus-Nummer bei Bedarf hinzufügen.'
-  }
-}
-
-/**
- * Bestätigt Präsenz und erstellt Scan
- */
-async function confirmPresence() {
-  try {
-    isMarkingPresence.value = true
     error.value = null
     successMessage.value = null
 
+    // Validierung
     if (!userStore.userInfo.id) {
       throw new Error('Benutzer nicht authentifiziert')
     }
@@ -377,27 +254,22 @@ async function confirmPresence() {
       throw new Error('Armband für dieses Kind nicht zugeordnet')
     }
 
-    // Bus-ID nur hinzufügen wenn Checkbox aktiviert
-    const busIdToSave = modalData.value.includeBusId ? modalData.value.selectedBusId : null
-
     // Erstelle Scan-Eintrag
     await scanComposable.createScan({
       user_id: userStore.userInfo.id,
       child_id: child.value.id,
       band_id: child.value.band_id,
-      bus_id: busIdToSave,
+      bus_id: data.busId,
       type: 1 // Präsenz
     })
 
     // Modal schließen
-    if (presenceModal) {
-      presenceModal.hide()
-    }
+    showPresenceModal.value = false
 
     // Success-Nachricht
     let message = `✅ Präsenz für ${child.value.name} registriert`
-    if (busIdToSave) {
-      message += ` (Bus #${busIdToSave})`
+    if (data.busId) {
+      message += ` (Bus #${data.busId})`
     }
     successMessage.value = message
 
@@ -408,11 +280,16 @@ async function confirmPresence() {
     setTimeout(() => {
       successMessage.value = null
     }, 3000)
+
   } catch (err) {
     console.error('Fehler beim Registrieren der Präsenz:', err)
-    error.value = err.message || 'Fehler beim Registrieren der Präsenz'
-  } finally {
-    isMarkingPresence.value = false
+
+    // Show error in modal
+    if (presenceModalRef.value) {
+      presenceModalRef.value.setError(err.message || 'Fehler beim Registrieren der Präsenz')
+    } else {
+      error.value = err.message || 'Fehler beim Registrieren der Präsenz'
+    }
   }
 }
 
@@ -487,33 +364,6 @@ function goBack() {
   background-color: #fff3cd;
   border-color: #ffeaa7;
   color: #856404;
-}
-
-.modal-content {
-  border-radius: 12px;
-  border: none;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
-}
-
-.modal-header {
-  background-color: #f8f9fa;
-  border-bottom: 1px solid #dee2e6;
-  border-radius: 12px 12px 0 0;
-}
-
-.modal-title {
-  color: #198754;
-  font-weight: 600;
-}
-
-.form-check-input:checked {
-  background-color: #198754;
-  border-color: #198754;
-}
-
-.form-select:focus {
-  border-color: #198754;
-  box-shadow: 0 0 0 0.25rem rgba(25, 135, 84, 0.25);
 }
 
 @media (max-width: 576px) {
