@@ -158,7 +158,7 @@ async function checkAuth() {
  * Navigation methods
  */
 function goToMyGroup() {
-  router.push(`/group-edit/${userStore.userInfo.group_id}`)
+  router.push(`/group-edit`)
 }
 
 function goToAdminOverview() {

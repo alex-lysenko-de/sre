@@ -60,7 +60,7 @@ const routes = [
         meta: { requiresAuth: false }
     },
     {
-        path: '/group-edit/:id',
+        path: '/group-edit/:id?',
         name: 'GroupEdit',
         component: GroupEditView,
         meta: { requiresAuth: true, requiresAdmin: false }

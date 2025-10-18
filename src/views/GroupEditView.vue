@@ -3,7 +3,7 @@
     <div class="card">
       <div class="card-header">
         <h3 class="mb-0">
-          <font-awesome-icon :icon="['fas', 'children']" />
+          <font-awesome-icon :icon="['fas', 'children']"/>
           Gruppe {{ groupNumber }}. Kinder
         </h3>
       </div>
@@ -18,7 +18,7 @@
         </div>
 
         <div v-else-if="!isConfigLoaded" class="text-center py-5">
-          <font-awesome-icon :icon="['fas', 'exclamation-triangle']" />
+          <font-awesome-icon :icon="['fas', 'exclamation-triangle']"/>
           <h5 class="text-muted">Konfiguration konnte nicht geladen werden.</h5>
           <p class="text-muted">Bitte gehen Sie zur Anmeldeseite zurück, um die Konfiguration zu laden.</p>
         </div>
@@ -35,17 +35,18 @@
                 <span class="badge" :class="getSwimBadgeClass(child.schwimmer)">
                   {{ getSwimLevel(child.schwimmer) }}
                 </span>
-                <p v-if="child.notes && child.notes.trim() !== '\u0022\u0022' && child.notes.trim().length > 0" class="text-muted mb-0 mt-1" style="font-size: 0.9em;">
+                <p v-if="child.notes && child.notes.trim() !== '\u0022\u0022' && child.notes.trim().length > 0" class="text-muted mb-0 mt-1"
+                   style="font-size: 0.9em;">
                   Notizen: {{ child.notes }}
                 </p>
               </div>
 
               <div class="d-flex">
                 <button class="btn btn-outline-primary btn-sm me-2" @click="editChild(child)" title="Kind bearbeiten">
-                  <font-awesome-icon :icon="['fas', 'edit']" />
+                  <font-awesome-icon :icon="['fas', 'edit']"/>
                 </button>
                 <button class="btn btn-outline-danger btn-sm" @click="removeChild(child.id, child.name)" title="Kind entfernen">
-                  <font-awesome-icon :icon="['fas', 'trash-alt']" />
+                  <font-awesome-icon :icon="['fas', 'trash-alt']"/>
                 </button>
               </div>
             </li>
@@ -53,12 +54,12 @@
 
           <div class="d-grid gap-2 mt-4">
             <button class="btn btn-success btn-lg" @click="openAddChildModal">
-              <font-awesome-icon :icon="['fas', 'plus']" />
+              <font-awesome-icon :icon="['fas', 'plus']"/>
               Neues Kind hinzufügen
             </button>
 
             <button class="btn btn-secondary btn-lg" @click="goBack">
-              <font-awesome-icon :icon="['fas', 'arrow-left']" />
+              <font-awesome-icon :icon="['fas', 'arrow-left']"/>
               Zurück zur Auswahl
             </button>
           </div>
@@ -78,51 +79,71 @@
 </template>
 
 <script>
-import { useChildren } from '@/composables/useChildren'
+import {useChildren} from '@/composables/useChildren'
 import AddEditChildModal from '@/components/AddEditChildModal.vue'
+// import stores/user
+import {useUserStore} from '@/stores/user'
 import Utils from '@/utils/utils'
 
 export default {
-  name: 'GroupEditView',
-  components: {
+  name : 'GroupEditView',
+  components : {
     AddEditChildModal
   },
   setup() {
+    const userStore = useUserStore()
     const { fetchChildrenList, deleteChild } = useChildren()
-    return { fetchChildrenList, deleteChild }
+    return { userStore, fetchChildrenList, deleteChild }
   },
 
   data() {
     return {
-      isConfigLoaded: true,
-      loadingInitialData: true,
-      groupNumber: '1', // Wird in created() aus route.params gesetzt
-      formattedCurrentDate: '',
-      allChildrenData: [],
+      isConfigLoaded : true,
+      loadingInitialData : true,
+      groupNumber : '1', // Wird in created() aus route.params gesetzt
+      formattedCurrentDate : '',
+      allChildrenData : [],
 
       // Modal state
-      showChildModal: false,
-      selectedChild: null
+      showChildModal : false,
+      selectedChild : null
     }
   },
-  computed: {
+  computed : {
     children() {
       const groupID = parseInt(this.groupNumber)
       return (this.allChildrenData || []).filter(child => child.group_id === groupID)
     }
   },
+  watch : {
+    'userStore.userInfo.group_id'(newGroupId) {
+      if (!this.$route.params.id && newGroupId) {
+        this.groupNumber = newGroupId
+        this.loadInitialData()
+      }
+    }
+  },
   async created() {
     this.formattedCurrentDate = Utils.formatDateForDisplay(Utils.getCurrentDateString())
 
-    // Получаем ID группы из route params (вместо query)
-    this.groupNumber = this.$route.params.id || '1'
+    let groupId = this.$route.params.id
+    if (!groupId) {
+      // make sure user info is loaded
+      if (!this.userStore.userInfo.user_id) {
+        await this.userStore.loadUser()
+      }
+      // set groupId = current user's group_id
+      groupId = this.userStore.userInfo.group_id
+    }
+
+    this.groupNumber = groupId
 
     await this.loadInitialData()
   },
-  methods: {
-    getSwimLevel: Utils.getSwimLevel,
-    getSwimBadgeClass: Utils.getSwimBadgeClass,
-    showAlert: Utils.showAlert,
+  methods : {
+    getSwimLevel : Utils.getSwimLevel,
+    getSwimBadgeClass : Utils.getSwimBadgeClass,
+    showAlert : Utils.showAlert,
 
     async loadInitialData() {
       this.loadingInitialData = true
