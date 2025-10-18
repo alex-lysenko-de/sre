@@ -1,9 +1,6 @@
 // src/stores/user.js
 import { defineStore } from 'pinia'
-import { supabase } from '@/supabase'
-
-const USER_CACHE_KEY = 'user_info_cache'
-const CACHE_TTL =  60 * 1000 // 1 minutes
+import { useUser } from '@/composables/useUser'
 
 export const useUserStore = defineStore('user', {
     state: () => ({
@@ -23,7 +20,8 @@ export const useUserStore = defineStore('user', {
             description: null      // optional note
         },
         loading: false,
-        error: null
+        error: null,
+        userStatusChannel: null    // Realtime subscription channel
     }),
 
     getters: {
@@ -38,129 +36,41 @@ export const useUserStore = defineStore('user', {
          * Get today's date in YYYY-MM-DD format
          */
         getTodayDate() {
-            return new Date().toISOString().split('T')[0]
+            const user = useUser()
+            return user.getTodayDate()
         },
 
         /**
          * Load cached user data from localStorage
          */
         loadFromCache() {
-            try {
-                const cached = localStorage.getItem(USER_CACHE_KEY)
-                if (!cached) return null
-
-                const { timestamp, data } = JSON.parse(cached)
-                const now = Date.now()
-
-                if (now - timestamp < CACHE_TTL) {
-                    return data
-                }
-
-                return null
-            } catch (err) {
-                console.error('Error loading cache:', err)
-                return null
-            }
+            const user = useUser()
+            return user.loadFromCache()
         },
 
         /**
          * Save user data to localStorage cache
          */
         saveToCache(data) {
-            try {
-                const cacheData = {
-                    timestamp: Date.now(),
-                    data
-                }
-                localStorage.setItem(USER_CACHE_KEY, JSON.stringify(cacheData))
-            } catch (err) {
-                console.error('Error saving cache:', err)
-            }
+            const user = useUser()
+            user.saveToCache(data)
         },
 
         /**
          * Clear user cache from localStorage
          */
         clearUserCache() {
-            try {
-                localStorage.removeItem(USER_CACHE_KEY)
-                this.$reset() // Reset store state to initial values
-            } catch (err) {
-                console.error('Error clearing cache:', err)
-            }
+            const user = useUser()
+            user.clearCache()
+            this.$reset() // Reset store state to initial values
         },
 
         /**
          * Fetch user data from Supabase
          */
         async fetchUserFromSupabase() {
-            try {
-                // Get current auth user
-                const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-
-                if (sessionError) throw sessionError
-                if (!session) throw new Error('No active session')
-
-                const authUserId = session.user.id
-
-                // Fetch user data from users table
-                const { data: userData, error: userError } = await supabase
-                    .from('users')
-                    .select('id, user_id, email, display_name, role, phone')
-                    .eq('user_id', authUserId)
-                    .single()
-
-                if (userError) throw userError
-                if (!userData) throw new Error('User not found in database')
-
-                // Fetch today's schedule from user_group_day
-                const today = this.getTodayDate()
-                const { data: scheduleData, error: scheduleError } = await supabase
-                    .from('user_group_day')
-                    .select('group_id, bus_id, bMustWorkToday, isPresentToday, description')
-                    .eq('user_id', userData.id)
-                    .eq('day', today)
-                    .maybeSingle()
-
-                if (scheduleError && scheduleError.code !== 'PGRST116') {
-                    console.error('Error fetching schedule:', scheduleError)
-                }
-
-                // If no record for today, try to get last known group/bus for pre-filling
-                let lastKnownGroup = null
-                let lastKnownBus = null
-
-                if (!scheduleData) {
-                    const { data: lastRecord } = await supabase
-                        .from('user_group_day')
-                        .select('group_id, bus_id')
-                        .eq('user_id', userData.id)
-                        .order('day', { ascending: false })
-                        .limit(1)
-                        .maybeSingle()
-
-                    if (lastRecord) {
-                        lastKnownGroup = lastRecord.group_id
-                        lastKnownBus = lastRecord.bus_id
-                        console.log(`📋 Pre-filling from last record: Group ${lastKnownGroup}, Bus ${lastKnownBus}`)
-                    }
-                }
-
-                // Combine data
-                const combinedData = {
-                    ...userData,
-                    group_id: scheduleData?.group_id || lastKnownGroup,
-                    bus_id: scheduleData?.bus_id || lastKnownBus,
-                    bMustWorkToday: scheduleData?.bMustWorkToday === 1 || false,
-                    isPresentToday: scheduleData?.isPresentToday === 1 || false,
-                    description: scheduleData?.description || null
-                }
-
-                return combinedData
-            } catch (err) {
-                console.error('Error fetching user from Supabase:', err)
-                throw err
-            }
+            const user = useUser()
+            return await user.fetchUserFromSupabase()
         },
 
         /**
@@ -173,10 +83,12 @@ export const useUserStore = defineStore('user', {
             this.loading = true
             this.error = null
 
+            const user = useUser()
+
             try {
                 // Try cache first if not forced
                 if (!force) {
-                    const cached = this.loadFromCache()
+                    const cached = user.loadFromCache()
                     if (cached) {
                         this.userInfo = cached
                         console.log('✅ User data loaded from cache')
@@ -185,12 +97,12 @@ export const useUserStore = defineStore('user', {
                 }
 
                 // Fetch from database
-                const data = await this.fetchUserFromSupabase()
+                const data = await user.fetchUserFromSupabase()
                 this.userInfo = data
-                this.saveToCache(data)
+                user.saveToCache(data)
                 console.log('✅ User data loaded from Supabase')
 
-                // if admin, subscribe to realtime updates
+                // If admin, subscribe to realtime updates
                 if (this.userInfo.role === 'admin') {
                     await this.subscribeToUserStatus()
                 }
@@ -209,56 +121,22 @@ export const useUserStore = defineStore('user', {
          * @param {string} date - Date in YYYY-MM-DD format (default: today)
          */
         async assignUserToGroup(groupId, date = null) {
-            const targetDate = date || this.getTodayDate()
+            const user = useUser()
+            const targetDate = date || user.getTodayDate()
 
             try {
                 if (!this.userInfo.id) {
                     throw new Error('User not loaded')
                 }
 
-                // Check if record exists
-                const { data: existing, error: fetchError } = await supabase
-                    .from('user_group_day')
-                    .select('id')
-                    .eq('user_id', this.userInfo.id)
-                    .eq('day', targetDate)
-                    .maybeSingle()
-
-                if (fetchError && fetchError.code !== 'PGRST116') {
-                    throw fetchError
-                }
-
-                if (existing) {
-                    // Update existing record
-                    const { error: updateError } = await supabase
-                        .from('user_group_day')
-                        .update({
-                            group_id: groupId,
-                            updated_at: new Date().toISOString()
-                        })
-                        .eq('id', existing.id)
-
-                    if (updateError) throw updateError
-                } else {
-                    // Create new record
-                    const { error: insertError } = await supabase
-                        .from('user_group_day')
-                        .insert({
-                            user_id: this.userInfo.id,
-                            day: targetDate,
-                            group_id: groupId,
-                            bMustWorkToday: 0,
-                            isPresentToday: 0,
-                            created_at: new Date().toISOString()
-                        })
-
-                    if (insertError) throw insertError
-                }
+                await user.upsertScheduleField(this.userInfo.id, targetDate, {
+                    group_id: groupId
+                })
 
                 // Update local state if it's today
-                if (targetDate === this.getTodayDate()) {
+                if (targetDate === user.getTodayDate()) {
                     this.userInfo.group_id = groupId
-                    this.saveToCache(this.userInfo)
+                    user.saveToCache(this.userInfo)
                 }
 
                 console.log(`✅ User assigned to group ${groupId} for ${targetDate}`)
@@ -274,56 +152,22 @@ export const useUserStore = defineStore('user', {
          * @param {string} date - Date in YYYY-MM-DD format (default: today)
          */
         async assignUserToBus(busId, date = null) {
-            const targetDate = date || this.getTodayDate()
+            const user = useUser()
+            const targetDate = date || user.getTodayDate()
 
             try {
                 if (!this.userInfo.id) {
                     throw new Error('User not loaded')
                 }
 
-                // Check if record exists
-                const { data: existing, error: fetchError } = await supabase
-                    .from('user_group_day')
-                    .select('id')
-                    .eq('user_id', this.userInfo.id)
-                    .eq('day', targetDate)
-                    .maybeSingle()
-
-                if (fetchError && fetchError.code !== 'PGRST116') {
-                    throw fetchError
-                }
-
-                if (existing) {
-                    // Update existing record
-                    const { error: updateError } = await supabase
-                        .from('user_group_day')
-                        .update({
-                            bus_id: busId,
-                            updated_at: new Date().toISOString()
-                        })
-                        .eq('id', existing.id)
-
-                    if (updateError) throw updateError
-                } else {
-                    // Create new record
-                    const { error: insertError } = await supabase
-                        .from('user_group_day')
-                        .insert({
-                            user_id: this.userInfo.id,
-                            day: targetDate,
-                            bus_id: busId,
-                            bMustWorkToday: 0,
-                            isPresentToday: 0,
-                            created_at: new Date().toISOString()
-                        })
-
-                    if (insertError) throw insertError
-                }
+                await user.upsertScheduleField(this.userInfo.id, targetDate, {
+                    bus_id: busId
+                })
 
                 // Update local state if it's today
-                if (targetDate === this.getTodayDate()) {
+                if (targetDate === user.getTodayDate()) {
                     this.userInfo.bus_id = busId
-                    this.saveToCache(this.userInfo)
+                    user.saveToCache(this.userInfo)
                 }
 
                 console.log(`✅ User assigned to bus ${busId} for ${targetDate}`)
@@ -339,7 +183,8 @@ export const useUserStore = defineStore('user', {
          * @param {string} date - Date in YYYY-MM-DD format (default: today)
          */
         async updateUserPresence(status, date = null) {
-            const targetDate = date || this.getTodayDate()
+            const user = useUser()
+            const targetDate = date || user.getTodayDate()
 
             try {
                 if (!this.userInfo.id) {
@@ -348,48 +193,14 @@ export const useUserStore = defineStore('user', {
 
                 const isPresentValue = status === 1 ? 1 : 0
 
-                // Check if record exists
-                const { data: existing, error: fetchError } = await supabase
-                    .from('user_group_day')
-                    .select('id')
-                    .eq('user_id', this.userInfo.id)
-                    .eq('day', targetDate)
-                    .maybeSingle()
-
-                if (fetchError && fetchError.code !== 'PGRST116') {
-                    throw fetchError
-                }
-
-                if (existing) {
-                    // Update existing record
-                    const { error: updateError } = await supabase
-                        .from('user_group_day')
-                        .update({
-                            isPresentToday: isPresentValue,
-                            updated_at: new Date().toISOString()
-                        })
-                        .eq('id', existing.id)
-
-                    if (updateError) throw updateError
-                } else {
-                    // Create new record
-                    const { error: insertError } = await supabase
-                        .from('user_group_day')
-                        .insert({
-                            user_id: this.userInfo.id,
-                            day: targetDate,
-                            isPresentToday: isPresentValue,
-                            bMustWorkToday: 0,
-                            created_at: new Date().toISOString()
-                        })
-
-                    if (insertError) throw insertError
-                }
+                await user.upsertScheduleField(this.userInfo.id, targetDate, {
+                    isPresentToday: isPresentValue
+                })
 
                 // Update local state if it's today
-                if (targetDate === this.getTodayDate()) {
+                if (targetDate === user.getTodayDate()) {
                     this.userInfo.isPresentToday = isPresentValue === 1
-                    this.saveToCache(this.userInfo)
+                    user.saveToCache(this.userInfo)
                 }
 
                 console.log(`✅ User presence updated to ${isPresentValue} for ${targetDate}`)
@@ -400,44 +211,35 @@ export const useUserStore = defineStore('user', {
         },
 
         /**
-         * subscribe to Realtime updates for user status (admin only)
+         * Subscribe to Realtime updates for user status (admin only)
          * @returns {Promise<void>}
          */
         async subscribeToUserStatus() {
+            const user = useUser()
+
             try {
-                const { data: { user } } = await supabase.auth.getUser()
-                if (!user) return
+                const authUser = await user.getAuthUser()
+                if (!authUser) return
 
-                // subscribe only if admin
+                // Subscribe only if admin
                 if (this.userInfo.role !== 'admin') return
-
-                console.log('📡 Realtime: Admin is subscribing to user status changes')
 
                 // Unsubscribe previous if any
                 if (this.userStatusChannel) {
-                    await supabase.removeChannel(this.userStatusChannel)
+                    await user.removeRealtimeSubscription(this.userStatusChannel)
                 }
 
-                this.userStatusChannel = supabase
-                    .channel(`user_status_admin_${user.id}`)
-                    .on(
-                        'postgres_changes',
-                        { event: 'UPDATE', schema: 'public', table: 'users' },
-                        async (payload) => {
-                            const updated = payload.new
-                            const previous = payload.old
-
-                            if (previous.active === true && updated.active === false) {
-                                console.log(`⛔ User ${updated.email}  was deactivated`)
-                            }
-                        }
-                    )
-                    .subscribe((status) => console.log('Realtime channel status:', status))
+                this.userStatusChannel = await user.createRealtimeSubscription(
+                    authUser.id,
+                    (payload) => {
+                        // Handle realtime updates here if needed
+                        // This is where you can add custom logic for realtime events
+                    }
+                )
             } catch (err) {
-                console.error('Error while subscribe to Realtime:', err)
+                console.error('Error while subscribing to Realtime:', err)
             }
         },
-
 
         /**
          * Get user's schedule info for a specific date
@@ -445,23 +247,15 @@ export const useUserStore = defineStore('user', {
          * @returns {Object} { group_id, bus_id, bMustWorkToday, isPresentToday, description }
          */
         async getUserDayInfo(date = null) {
-            const targetDate = date || this.getTodayDate()
+            const user = useUser()
+            const targetDate = date || user.getTodayDate()
 
             try {
                 if (!this.userInfo.id) {
                     throw new Error('User not loaded')
                 }
 
-                const { data, error } = await supabase
-                    .from('user_group_day')
-                    .select('group_id, bus_id, bMustWorkToday, isPresentToday, description')
-                    .eq('user_id', this.userInfo.id)
-                    .eq('day', targetDate)
-                    .maybeSingle()
-
-                if (error && error.code !== 'PGRST116') {
-                    throw error
-                }
+                const data = await user.fetchScheduleForDate(this.userInfo.id, targetDate)
 
                 return data || {
                     group_id: null,
