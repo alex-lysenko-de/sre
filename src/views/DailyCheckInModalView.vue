@@ -1,5 +1,4 @@
-// src/components/DailyCheckInModal.vue
-// TODO: bugfix: the number of groups is not taken from config store (config.value.total_groups is not defined)
+// src/components/DailyCheckInModalView.vue
 
 <template>
   <div
@@ -16,7 +15,7 @@
             <font-awesome-icon :icon="['fas', 'calendar-check']" class="me-2" />
             {{ formattedDate }}
           </h5>
-          <button type-button class="btn-close btn-close-white" @click="closeModal" aria-label="Schließen"></button>
+          <button type="button" class="btn-close btn-close-white" @click="closeModal" aria-label="Schließen"></button>
         </div>
 
         <div class="modal-body p-4">
@@ -34,7 +33,7 @@
               >
                 <option :value="null">Keine Gruppe</option>
                 <option
-                    v-for="n in totalGroups"
+                    v-for="n in configStore.totalGroups"
                     :key="n"
                     :value="n"
                 >
@@ -58,7 +57,7 @@
               >
                 <option :value="null" disabled>Wählen Sie einen Bus</option>
                 <option
-                    v-for="n in totalBuses"
+                    v-for="n in configStore.totalBuses"
                     :key="n"
                     :value="n"
                 >
@@ -89,9 +88,8 @@
   </div>
 </template>
 
-
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useUserStore } from '@/stores/user'
 import { useConfigStore } from '@/stores/config'
@@ -114,7 +112,6 @@ const configStore = useConfigStore()
 
 // Get reactive state from stores
 const { userInfo } = storeToRefs(userStore)
-const { config } = storeToRefs(configStore)
 
 // Local state
 const selectedGroup = ref(null)
@@ -123,9 +120,6 @@ const loading = ref(false)
 const error = ref(null)
 
 // Computed properties
-const totalGroups = computed(() => parseInt(config.value.total_groups) || 15)
-const totalBuses = computed(() => parseInt(config.value.total_buses) || 3)
-
 const formattedDate = computed(() => {
   const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }
   return new Date().toLocaleDateString('de-DE', options)
