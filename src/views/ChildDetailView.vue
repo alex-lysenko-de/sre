@@ -1,4 +1,3 @@
-<!-- vue -->
 <!-- src/views/ChildDetailView.vue -->
 <template>
   <div class="child-detail-container">
@@ -27,7 +26,25 @@
               {{ child.name }}
             </h2>
           </div>
+        </div>
 
+        <!-- Presence status banner -->
+        <div v-if="presenceInfo.isPresent" class="alert alert-success mb-4" role="alert">
+          <div class="d-flex align-items-center">
+            <i class="fas fa-check-circle me-2 fs-5"></i>
+            <div>
+              <strong>✅ Heute anwesend</strong>
+              <div v-if="presenceInfo.busId" class="mt-1">
+                <i class="fas fa-bus me-1"></i>
+                <span>Fährt in Bus <strong>#{{ presenceInfo.busId }}</strong></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div v-else class="alert alert-warning mb-4" role="alert">
+          <i class="fas fa-exclamation-triangle me-2"></i>
+          <strong>Heute noch nicht anwesend</strong>
         </div>
 
         <!-- Child info grid -->
@@ -56,7 +73,7 @@
           </div>
           <div class="col-md-6 mb-3">
             <div class="info-block">
-              <span class="info-label">📍 Armband</span>
+              <span class="info-label">🏷️ Armband</span>
               <span class="info-value">
                 <span v-if="child.band_id" class="badge bg-info">
                   {{ child.band_id }}
@@ -81,10 +98,13 @@
         <div class="d-grid gap-2 mb-3">
           <button
               @click="markPresence"
-              :disabled="isMarkingPresence"
+              :disabled="isMarkingPresence || presenceInfo.isPresent"
               class="btn btn-success btn-lg"
           >
-            <span v-if="!isMarkingPresence">✅ Anwesend markieren</span>
+            <span v-if="!isMarkingPresence">
+              <span v-if="presenceInfo.isPresent">✅ Bereits anwesend</span>
+              <span v-else>✅ Anwesend markieren</span>
+            </span>
             <span v-else>
               <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
               Wird registriert...
@@ -121,13 +141,14 @@ import { ref, onMounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { useArmband } from '@/composables/useArmband'
+import { useScan } from '@/composables/useScan'
 import Utils from '@/utils/utils'
-
 
 const router = useRouter()
 const route = useRoute()
 const userStore = useUserStore()
 const armbandComposable = useArmband()
+const scanComposable = useScan()
 
 const childId = computed(() => route.params.id)
 
@@ -136,13 +157,18 @@ const isMarkingPresence = ref(false)
 const error = ref(null)
 const successMessage = ref(null)
 const child = ref(null)
+const presenceInfo = ref({
+  isPresent: false,
+  busId: null
+})
 
 onMounted(async () => {
   await loadChildDetails()
+  await loadPresenceInfo()
 })
 
 /**
- * Загрузить детали ребенка
+ * Lädt Kinderdaten
  */
 async function loadChildDetails() {
   try {
@@ -165,7 +191,30 @@ async function loadChildDetails() {
 }
 
 /**
- * Отметить присутствие ребенка
+ * Lädt Anwesenheitsinformationen für heute
+ */
+async function loadPresenceInfo() {
+  try {
+    const isPresent = await scanComposable.isChildPresentToday(childId.value)
+    let busId = null
+
+    if (isPresent) {
+      busId = await scanComposable.getChildBusForToday(childId.value)
+    }
+
+    presenceInfo.value = {
+      isPresent,
+      busId
+    }
+
+    console.log(`📊 Anwesenheit: ${isPresent}, Bus: ${busId || 'nicht zugewiesen'}`)
+  } catch (err) {
+    console.error('Fehler beim Laden der Anwesenheitsinformationen:', err)
+  }
+}
+
+/**
+ * Markiert Kind als anwesend
  */
 async function markPresence() {
   try {
@@ -173,29 +222,33 @@ async function markPresence() {
     error.value = null
     successMessage.value = null
 
-    // Проверяем, есть ли данные пользователя и ребенка
     if (!userStore.userInfo.id) {
       throw new Error('Benutzer nicht authentifiziert')
     }
 
     if (!child.value.id) {
-      throw new Error('Kind-ID nicht найден')
+      throw new Error('Kind-ID nicht gefunden')
     }
 
     if (!child.value.band_id) {
       throw new Error('Armband für dieses Kind nicht zugeordnet')
     }
 
-    // Регистрируем присутствие
-    await armbandComposable.recordChildPresence(
-        userStore.userInfo.id,
-        child.value.id,
-        child.value.band_id
-    )
+    // Erstelle Scan-Eintrag
+    await scanComposable.createScan({
+      user_id: userStore.userInfo.id,
+      child_id: child.value.id,
+      band_id: child.value.band_id,
+      bus_id: userStore.userInfo.bus_id || null,
+      type: 1 // Präsenz
+    })
 
     successMessage.value = `✅ Präsenz für ${child.value.name} registriert`
 
-    // Скрываем сообщение через 3 секунды
+    // Aktualisiere Anwesenheitsinformationen
+    await loadPresenceInfo()
+
+    // Verstecke Nachricht nach 3 Sekunden
     setTimeout(() => {
       successMessage.value = null
     }, 3000)
@@ -208,7 +261,7 @@ async function markPresence() {
 }
 
 /**
- * Редактировать ребенка
+ * Bearbeitet Kinderdaten
  */
 function editChild() {
   if (child.value?.id) {
@@ -217,13 +270,11 @@ function editChild() {
 }
 
 /**
- * Вернуться назад
+ * Zurück zur Hauptseite
  */
 function goBack() {
-  //router.back()
   router.push('/main')
 }
-
 </script>
 
 <style scoped>
@@ -268,6 +319,18 @@ function goBack() {
 
 .alert {
   border-radius: 8px;
+}
+
+.alert-success {
+  background-color: #d4edda;
+  border-color: #c3e6cb;
+  color: #155724;
+}
+
+.alert-warning {
+  background-color: #fff3cd;
+  border-color: #ffeaa7;
+  color: #856404;
 }
 
 @media (max-width: 576px) {
