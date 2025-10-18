@@ -1,13 +1,11 @@
 // src/composables/useUser.js
 // Business logic layer - handles caching, validation, orchestration
-import { useUserStore } from '@/stores/user'
 import { useSupabaseUser } from './useSupabaseUser'
 
-const CACHE_KEY = 'user_info_cache'
-const CACHE_TTL = 5 * 60 * 1000 // 5 minutes (increased from 1)
+const USER_CACHE_KEY = 'user_info_cache'
+const CACHE_TTL = 60 * 1000 // 1 minute
 
 export function useUser() {
-    const userStore = useUserStore()
     const supabaseUser = useSupabaseUser()
 
     /**
@@ -18,249 +16,190 @@ export function useUser() {
     }
 
     /**
-     * Load user from cache
+     * Load cached user data from localStorage
      */
     const loadFromCache = () => {
         try {
-            const cached = localStorage.getItem(CACHE_KEY)
+            const cached = localStorage.getItem(USER_CACHE_KEY)
             if (!cached) return null
 
             const { timestamp, data } = JSON.parse(cached)
             const now = Date.now()
 
             if (now - timestamp < CACHE_TTL) {
-                console.log('✅ User loaded from cache')
                 return data
             }
 
             return null
         } catch (err) {
-            console.error('Cache load error:', err)
+            console.error('Error loading cache:', err)
             return null
         }
     }
 
     /**
-     * Save user to cache
+     * Save user data to localStorage cache
      */
     const saveToCache = (data) => {
         try {
-            localStorage.setItem(CACHE_KEY, JSON.stringify({
+            const cacheData = {
                 timestamp: Date.now(),
                 data
-            }))
+            }
+            localStorage.setItem(USER_CACHE_KEY, JSON.stringify(cacheData))
         } catch (err) {
-            console.error('Cache save error:', err)
+            console.error('Error saving cache:', err)
         }
     }
 
     /**
-     * Clear cache
+     * Clear user cache from localStorage
      */
     const clearCache = () => {
         try {
-            localStorage.removeItem(CACHE_KEY)
+            localStorage.removeItem(USER_CACHE_KEY)
         } catch (err) {
-            console.error('Cache clear error:', err)
+            console.error('Error clearing cache:', err)
         }
     }
 
     /**
-     * Load user data with caching
-     * @param {boolean} force - Force reload, ignore cache
+     * Fetch complete user data from Supabase
+     * Combines user info + today's schedule + fallback data
      */
-    const loadUser = async (force = false) => {
-        if (userStore.loading) return
-
-        userStore.setLoading(true)
-        userStore.setError(null)
-
+    const fetchUserFromSupabase = async () => {
         try {
-            // Try cache first
-            if (!force) {
-                const cached = loadFromCache()
-                if (cached) {
-                    userStore.setUser(cached)
-                    return cached
+            // Get current session
+            const session = await supabaseUser.getSession()
+            const authUserId = session.user.id
+
+            // Fetch user data
+            const userData = await supabaseUser.fetchUserFromDB(authUserId)
+
+            // Fetch today's schedule
+            const today = getTodayDate()
+            const scheduleData = await supabaseUser.fetchScheduleForDate(userData.id, today)
+
+            // If no schedule for today, try to get last known values
+            let lastKnownGroup = null
+            let lastKnownBus = null
+
+            if (!scheduleData) {
+                const lastRecord = await supabaseUser.fetchLastKnownSchedule(userData.id)
+                if (lastRecord) {
+                    lastKnownGroup = lastRecord.group_id
+                    lastKnownBus = lastRecord.bus_id
+                    console.log(`📋 Pre-filling from last record: Group ${lastKnownGroup}, Bus ${lastKnownBus}`)
                 }
             }
 
-            // Fetch from database
-            const userData = await supabaseUser.fetchUserData()
-
-            if (!userData) {
-                throw new Error('User not found')
+            // Combine all data
+            const combinedData = {
+                ...userData,
+                group_id: scheduleData?.group_id || lastKnownGroup,
+                bus_id: scheduleData?.bus_id || lastKnownBus,
+                bMustWorkToday: scheduleData?.bMustWorkToday === 1 || false,
+                isPresentToday: scheduleData?.isPresentToday === 1 || false,
+                description: scheduleData?.description || null
             }
 
-            // Update store and cache
-            userStore.setUser(userData)
-            saveToCache(userData)
-
-            console.log('✅ User loaded from database')
-
-            // Subscribe to realtime if admin
-            if (userData.role === 'admin') {
-                await subscribeToRealtime()
-            }
-
-            return userData
-
+            return combinedData
         } catch (err) {
-            console.error('❌ Load user error:', err)
-            userStore.setError(err)
-            throw err
-        } finally {
-            userStore.setLoading(false)
-        }
-    }
-
-    /**
-     * Update user schedule field (generic method)
-     * @param {string} field - 'group_id' | 'bus_id' | 'isPresentToday'
-     * @param {*} value - New value
-     * @param {string} date - Target date (default: today)
-     */
-    const updateScheduleField = async (field, value, date = null) => {
-        const targetDate = date || getTodayDate()
-
-        try {
-            if (!userStore.userId) {
-                throw new Error('User not loaded')
-            }
-
-            // Validate field
-            const validFields = ['group_id', 'bus_id', 'isPresentToday', 'bMustWorkToday']
-            if (!validFields.includes(field)) {
-                throw new Error(`Invalid field: ${field}`)
-            }
-
-            // Update in database
-            await supabaseUser.updateUserSchedule(
-                userStore.userId,
-                targetDate,
-                { [field]: value }
-            )
-
-            // Update store if today
-            if (targetDate === getTodayDate()) {
-                userStore.updateSchedule({ [field]: value })
-                saveToCache(userStore.userInfo)
-            }
-
-            console.log(`✅ ${field} updated to ${value}`)
-        } catch (err) {
-            console.error(`Error updating ${field}:`, err)
+            console.error('Error fetching user from Supabase:', err)
             throw err
         }
     }
 
     /**
-     * Assign user to group
+     * Upsert schedule field for a specific date
+     * @param {number} userId - User ID
+     * @param {string} date - Date in YYYY-MM-DD format
+     * @param {Object} updates - Fields to update
      */
-    const assignToGroup = async (groupId, date = null) => {
-        return updateScheduleField('group_id', groupId, date)
-    }
-
-    /**
-     * Assign user to bus
-     */
-    const assignToBus = async (busId, date = null) => {
-        return updateScheduleField('bus_id', busId, date)
-    }
-
-    /**
-     * Update presence status
-     */
-    const updatePresence = async (isPresent, date = null) => {
-        const value = isPresent ? 1 : 0
-        return updateScheduleField('isPresentToday', value, date)
-    }
-
-    /**
-     * Subscribe to realtime updates (admin only)
-     */
-    const subscribeToRealtime = async () => {
-        if (userStore.realtimeSubscription) {
-            console.log('⚠️ Already subscribed to realtime')
-            return
-        }
-
-        if (!userStore.isAdmin) {
-            console.log('⚠️ Not admin, skipping realtime subscription')
-            return
-        }
-
+    const upsertScheduleField = async (userId, date, updates) => {
         try {
-            const subscription = await supabaseUser.subscribeToUserChanges((payload) => {
-                console.log('📡 Realtime update received:', payload)
-                // Handle realtime updates here
-            })
+            // Check if record exists
+            const existing = await supabaseUser.checkScheduleExists(userId, date)
 
-            userStore.setRealtimeSubscription(subscription)
-            console.log('✅ Subscribed to realtime updates')
+            if (existing) {
+                // Update existing
+                await supabaseUser.updateScheduleRecord(existing.id, updates)
+            } else {
+                // Insert new
+                await supabaseUser.insertScheduleRecord(userId, date, updates)
+            }
         } catch (err) {
-            console.error('Realtime subscription error:', err)
+            console.error('Error upserting schedule field:', err)
+            throw err
         }
     }
 
     /**
-     * Unsubscribe from realtime
+     * Create realtime subscription for admin users
+     * @param {string} userId - Auth user ID
+     * @param {Function} onUpdate - Callback for user updates
      */
-    const unsubscribeFromRealtime = async () => {
-        if (!userStore.realtimeSubscription) return
-
+    const createRealtimeSubscription = async (userId, onUpdate) => {
         try {
-            await supabaseUser.unsubscribeFromChanges(userStore.realtimeSubscription)
-            userStore.clearRealtimeSubscription()
-            console.log('✅ Unsubscribed from realtime')
+            const channelName = `user_status_admin_${userId}`
+
+            const handleUpdate = (payload) => {
+                const updated = payload.new
+                const previous = payload.old
+
+                if (previous.active === true && updated.active === false) {
+                    console.log(`⛔ User ${updated.email} was deactivated`)
+                }
+
+                if (onUpdate) {
+                    onUpdate(payload)
+                }
+            }
+
+            console.log('📡 Realtime: Admin is subscribing to user status changes')
+
+            const channel = supabaseUser.subscribeToUsersTable(channelName, handleUpdate)
+            return channel
         } catch (err) {
-            console.error('Unsubscribe error:', err)
+            console.error('Error creating realtime subscription:', err)
+            throw err
         }
     }
 
     /**
-     * Logout user
+     * Remove realtime subscription
+     * @param {Object} channel - Supabase channel
      */
-    const logout = async () => {
+    const removeRealtimeSubscription = async (channel) => {
         try {
-            // Unsubscribe from realtime
-            await unsubscribeFromRealtime()
-
-            // Clear cache
-            clearCache()
-
-            // Reset store
-            userStore.resetUser()
-
-            // Sign out from Supabase
-            await supabaseUser.signOut()
-
-            console.log('✅ Logged out successfully')
+            await supabaseUser.removeChannel(channel)
         } catch (err) {
-            console.error('Logout error:', err)
+            console.error('Error removing realtime subscription:', err)
             throw err
         }
     }
 
     return {
-        // State (from store)
-        userInfo: () => userStore.userInfo,
-        loading: () => userStore.loading,
-        error: () => userStore.error,
-
-        // Getters
-        isAdmin: () => userStore.isAdmin,
-        needsCheckIn: () => userStore.needsCheckIn,
-
-        // Actions
-        loadUser,
-        assignToGroup,
-        assignToBus,
-        updatePresence,
-        logout,
+        // Cache operations
+        loadFromCache,
+        saveToCache,
         clearCache,
 
+        // User data operations
+        fetchUserFromSupabase,
+        upsertScheduleField,
+
+        // Realtime operations
+        createRealtimeSubscription,
+        removeRealtimeSubscription,
+
         // Utilities
-        getTodayDate
+        getTodayDate,
+
+        // Direct Supabase operations (for store)
+        getSession: supabaseUser.getSession,
+        getAuthUser: supabaseUser.getAuthUser,
+        fetchScheduleForDate: supabaseUser.fetchScheduleForDate,
+        signOut: supabaseUser.signOut
     }
 }
