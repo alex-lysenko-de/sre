@@ -42,6 +42,23 @@
           <!-- Admin Overview Button -->
           <button
               v-if="userStore.isAdmin"
+              @click="goToAdminBus"
+              class="btn btn-warning btn-lg d-flex align-items-center justify-content-between"
+          >
+            <span class="d-flex align-items-center">
+              <font-awesome-icon :icon="['fas', 'bus']" class="me-3" size="2x" />
+              <span>
+                <div class="fw-bold text-start">Busse</div>
+                <small class="opacity-75">Alle Busse verwalten</small>
+              </span>
+            </span>
+            <font-awesome-icon :icon="['fas', 'arrow-right']" />
+          </button>
+
+
+          <!-- Admin Overview Button -->
+          <button
+              v-if="userStore.isAdmin"
               @click="goToAdminOverview"
               class="btn btn-warning btn-lg d-flex align-items-center justify-content-between"
           >
@@ -159,6 +176,10 @@ async function checkAuth() {
  */
 function goToMyGroup() {
   router.push(`/group-edit`)
+}
+
+function goToAdminBus() {
+  router.push('/admin-busses')
 }
 
 function goToAdminOverview() {

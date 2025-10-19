@@ -71,7 +71,8 @@ create table public.reset_events (
   constraint reset_events_pkey primary key (id)
 ) TABLESPACE pg_default;
 
-Here event_type = [0 ,1]
-"0" => "error reset_event" when ein kind gescannt by mistake. 
-"1" => "success reset_event" 
+Here event_type = [0 ,1, 2]
+"0" => "total reset_event" (close the day). make system ready for next day. 
+"1" => "normal reset_event" (open the day) store _now counters in _today counters 
+"2" => "soft reset" reset _now counters only
 

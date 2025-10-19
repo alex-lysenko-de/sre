@@ -16,6 +16,7 @@ import SelectChildView from "@/views/SelectChildView.vue"
 import ChildDetailView from "@/views/ChildDetailView.vue"
 import ChildEditView from "@/views/ChildEditView.vue"
 import MainView from "@/views/MainView.vue"
+import AdminBusView from "@/views/AdminBusView.vue";
 
 // Define routes
 const routes = [
@@ -41,6 +42,13 @@ const routes = [
         component: MainView,
         meta: { requiresAuth: false }
     },
+    {
+        path: '/admin-busses',
+        name: 'AdminBus',
+        component: AdminBusView,
+        meta: { requiresAuth: true, requiresAdmin: true}
+    },
+
     {
         path: '/children',
         name: 'Children',
