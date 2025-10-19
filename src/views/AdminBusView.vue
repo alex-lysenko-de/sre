@@ -216,6 +216,7 @@ import { useConfigStore } from '@/stores/config'
 import { useBusData } from '@/composables/useBusData'
 import BusDetailModal from '@/components/BusDetailModal.vue'
 import ResetHistoryPanel from '@/components/ResetHistoryPanel.vue'
+import {useDays} from "@/composables/useDays.js";
 
 export default {
   name: 'AdminBusView',
@@ -230,7 +231,8 @@ export default {
     // STORES & COMPOSABLES
     // ============================================================================
     const configStore = useConfigStore()
-    const { fetchBusData, startNewDay, softReset } = useBusData()
+    const { fetchBusData } = useBusData()
+    const { startNewDay, softReset } = useDays()
 
     // ============================================================================
     // STATE

@@ -134,118 +134,7 @@ export function useBusData() {
         }
     }
 
-    /**
-     * Neuen Tag starten - erstellt Eintrag in reset_events mit event_type = 1
-     * Triggert Neuberechnung in der DB (siehe triggers.md)
-     *
-     * @param {string} date - Datum im Format YYYY-MM-DD
-     * @returns {Promise<Object>} Ergebnis der Operation
-     */
-    async function startNewDay(date) {
-        try {
-            // Aktuellen Benutzer holen
-            const currentUser = await getCurrentUser()
 
-            // Eintrag in reset_events erstellen
-            const { data, error } = await supabase
-                .from('reset_events')
-                .insert([
-                    {
-                        day: date,
-                        user_id: currentUser.id, // Numerische ID aus users Tabelle
-                        event_type: 1 // Normal reset - Tag öffnen
-                    }
-                ])
-                .select()
-                .single()
-
-            if (error) {
-                console.error('Fehler beim Erstellen des Reset-Events:', error)
-                throw error
-            }
-
-            console.log('✅ Tag erfolgreich gestartet:', data)
-            return data
-
-        } catch (error) {
-            console.error('Fehler in startNewDay:', error)
-            throw error
-        }
-    }
-
-    /**
-     * Soft Reset - setzt nur presence_now zurück (event_type = 2)
-     * Verwendet für Zwischenprüfungen während des Tages
-     *
-     * @param {string} date - Datum im Format YYYY-MM-DD
-     * @returns {Promise<Object>} Ergebnis der Operation
-     */
-    async function softReset(date) {
-        try {
-            const currentUser = await getCurrentUser()
-
-            const { data, error } = await supabase
-                .from('reset_events')
-                .insert([
-                    {
-                        day: date,
-                        user_id: currentUser.id,
-                        event_type: 2 // Soft reset
-                    }
-                ])
-                .select()
-                .single()
-
-            if (error) {
-                console.error('Fehler beim Soft Reset:', error)
-                throw error
-            }
-
-            console.log('✅ Soft Reset durchgeführt:', data)
-            return data
-
-        } catch (error) {
-            console.error('Fehler in softReset:', error)
-            throw error
-        }
-    }
-
-    /**
-     * Total Reset - löscht alle Tagesdaten komplett (event_type = 0)
-     * Verwendet zum Abschließen des Tages und Vorbereitung auf den nächsten
-     *
-     * @param {string} date - Datum im Format YYYY-MM-DD
-     * @returns {Promise<Object>} Ergebnis der Operation
-     */
-    async function totalReset(date) {
-        try {
-            const currentUser = await getCurrentUser()
-
-            const { data, error } = await supabase
-                .from('reset_events')
-                .insert([
-                    {
-                        day: date,
-                        user_id: currentUser.id,
-                        event_type: 0 // Total reset - Tag geschlossen
-                    }
-                ])
-                .select()
-                .single()
-
-            if (error) {
-                console.error('Fehler beim Total Reset:', error)
-                throw error
-            }
-
-            console.log('✅ Total Reset durchgeführt - Tag geschlossen:', data)
-            return data
-
-        } catch (error) {
-            console.error('Fehler in totalReset:', error)
-            throw error
-        }
-    }
 
     /**
      * Daten für einen bestimmten Bus abrufen
@@ -449,7 +338,7 @@ export function useBusData() {
         // Reset-Funktionen
         startNewDay,
         softReset,
-        totalReset,
+        totalReset : closeDay,
         getResetHistory,
 
         // Utilities

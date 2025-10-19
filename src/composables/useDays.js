@@ -1,5 +1,5 @@
 // src/composables/useDays.js
-import { supabase } from '@/supabase'; // Import Supabase client
+import {supabase} from '@/supabase'; // Import Supabase client
 
 export function useDays() {
 
@@ -45,7 +45,7 @@ export function useDays() {
         const { id, ...payload } = dayData;
 
         // Authorization check:
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        const { data : { user }, error : authError } = await supabase.auth.getUser();
         if (authError || !user) {
             throw new Error("Authorization error: You must be logged in. The RLS policy requires 'authenticated' status."); // Message translated
         }
@@ -53,9 +53,9 @@ export function useDays() {
         // Data normalization
         const finalPayload = {
             ...payload,
-            abfahrt: payload.abfahrt || null,
-            ankommen: payload.ankommen || null,
-            description: payload.description && payload.description.trim() !== '' ? payload.description.trim() : null,
+            abfahrt : payload.abfahrt || null,
+            ankommen : payload.ankommen || null,
+            description : payload.description && payload.description.trim() !== '' ? payload.description.trim() : null,
         };
 
         let query;
@@ -97,9 +97,188 @@ export function useDays() {
         }
 
         // Return the first element (for INSERT it is always data[0], for UPDATE - data[0])
-        return { data: Array.isArray(data) ? data[0] : data, message : successMessage };
+        return { data : Array.isArray(data) ? data[ 0 ] : data, message : successMessage };
     };
 
+    /**
+     * Prüfen, ob der Tag bereits gestartet wurde
+     * (Tag wurde gestartet, wenn mindestens ein child in der tabelle presence_now hat)
+     * @param date
+     * @returns {Promise<void>}
+     */
+    async function isDayStarted(date) {
+        try {
+            const { data, error } = await supabase
+                .from('children_today')
+                .select('id')
+                .gt('presence_now', 0)
+                .limit(1)
+
+            if (error) {
+                console.error('Fehler beim Prüfen, ob der Tag gestartet wurde:', error)
+                throw error
+            }
+
+            return (data && data.length > 0)
+
+        } catch (error) {
+            console.error('Fehler in isDayStarted:', error)
+            throw error
+        }
+    }
+
+    /**
+     * Prüfen, ob der Tag bereits geschlossen wurde
+     * (Tag wurde geschlossen, wenn ein reset_event mit event_type = 0 in today existiert and CLOSE_EVENT.id > OPEN_EVENT.id)
+     * @param date = ISO Datum im Format YYYY-MM-DD
+     * @returns {Promise<void>}
+     */
+    async function isDayClosed(date) {
+        try {
+            const { data, error } = await supabase
+                .from('reset_events')
+                .select('id, event_type')
+                .eq('day', date)
+                .in('event_type', [0, 1])
+                .order('id', { ascending : false })
+                .limit(1)
+
+            if (error) {
+                console.error('Fehler beim Prüfen, ob der Tag geschlossen wurde:', error)
+                throw error
+            }
+
+            if (data && data.length > 0) {
+                return data[ 0 ].event_type === 0
+            } else {
+                return false
+            }
+        } catch (error) {
+            console.error('Fehler in isDayClosed:', error)
+            throw error
+
+        }
+    }
+
+    /**
+     * Neuen Tag starten - erstellt Eintrag in reset_events mit event_type = 1
+     * Triggert Neuberechnung in der DB (siehe triggers.md)
+     *
+     * @param {string} date - Datum im Format YYYY-MM-DD
+     * @returns {Promise<Object>} Ergebnis der Operation
+     */
+    async function startNewDay(date) {
+        try {
+            // Aktuellen Benutzer holen
+            const currentUser = await getCurrentUser()
+
+            // Eintrag in reset_events erstellen
+            const { data, error } = await supabase
+                .from('reset_events')
+                .insert([
+                    {
+                        day: date,
+                        user_id: currentUser.id, // Numerische ID aus users Tabelle
+                        event_type: 1 // Normal reset - Tag öffnen
+                    }
+                ])
+                .select()
+                .single()
+
+            if (error) {
+                console.error('Fehler beim Erstellen des Reset-Events:', error)
+                throw error
+            }
+
+            console.log('✅ Tag erfolgreich gestartet:', data)
+            return data
+
+        } catch (error) {
+            console.error('Fehler in startNewDay:', error)
+            throw error
+        }
+    }
+
+
+    /**
+     * Soft Reset - setzt nur presence_now zurück (event_type = 2)
+     * Verwendet für Zwischenprüfungen während des Tages
+     *
+     * @param {string} date - Datum im Format YYYY-MM-DD
+     * @returns {Promise<Object>} Ergebnis der Operation
+     */
+    async function softReset(date) {
+        try {
+            if (!date) {
+                date = new Date().toISOString().split('T')[0]
+            }
+            const currentUser = await getCurrentUser()
+
+            const { data, error } = await supabase
+                .from('reset_events')
+                .insert([
+                    {
+                        day: date,
+                        user_id: currentUser.id,
+                        event_type: 2 // Soft reset
+                    }
+                ])
+                .select()
+                .single()
+
+            if (error) {
+                console.error('Fehler beim Soft Reset:', error)
+                throw error
+            }
+
+            console.log('✅ Soft Reset durchgeführt:', data)
+            return data
+
+        } catch (error) {
+            console.error('Fehler in softReset:', error)
+            throw error
+        }
+    }
+
+    /**
+     * Total Reset - löscht alle Tagesdaten komplett (event_type = 0)
+     * Verwendet zum Abschließen des Tages und Vorbereitung auf den nächsten
+     *
+     * @param {string} date - Datum im Format YYYY-MM-DD
+     * @returns {Promise<Object>} Ergebnis der Operation
+     */
+    async function closeDay(date) {
+        try {
+            if (!date) {
+                date = new Date().toISOString().split('T')[0]
+            }
+            const currentUser = await getCurrentUser()
+
+            const { data, error } = await supabase
+                .from('reset_events')
+                .insert([
+                    {
+                        day: date,
+                        user_id: currentUser.id,
+                        event_type: 0 // Total reset - Tag geschlossen
+                    }
+                ])
+                .select()
+                .single()
+
+            if (error) {
+                console.error('Fehler beim Total Reset:', error)
+                throw error
+            }
+
+            console.log('✅ Total Reset durchgeführt - Tag geschlossen:', data)
+            return data
+
+        } catch (error) {
+            console.error('Fehler in totalReset:', error)
+            throw error
+        }
+    }
 
     return {
         fetchDaysList,
