@@ -100,15 +100,17 @@ export function useDays() {
 
     /**
      * Prüfen, ob der Tag bereits gestartet wurde
+     * Checking if reset_events has an OPEN event (event_type = 1) for the date
      * @param {string} date - Datum im Format YYYY-MM-DD
      * @returns {Promise<boolean>}
      */
     async function isDayStarted(date) {
         try {
             const { data, error } = await supabase
-                .from('children_today')
-                .select('id')
-                .gt('presence_now', 0)
+                .from('reset_events')
+                .select('id, event_type')
+                .eq('day', date)
+                .eq('event_type', 1)
                 .limit(1)
 
             if (error) {

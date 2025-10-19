@@ -47,7 +47,24 @@
           <strong>Heute noch nicht anwesend</strong>
         </div>
 
-        <!-- Child info grid -->
+        <!-- Action buttons -->
+        <div class="d-grid gap-2 mb-3">
+          <button
+              @click="openPresenceModal"
+              class="btn btn-success btn-lg"
+          >
+            ✅ Präsenz registrieren
+          </button>
+          <!-- Back to group button -->
+          <button
+              @click="goBack"
+              class="btn btn-outline-secondary w-100"
+          >
+            ↩️ Zurück
+          </button>
+        </div>
+
+          <!-- Child info grid -->
         <div class="row mb-4">
           <div class="col-md-6 mb-3">
             <div class="info-block">
@@ -94,15 +111,7 @@
           </div>
         </div>
 
-        <!-- Action buttons -->
         <div class="d-grid gap-2 mb-3">
-          <button
-              @click="openPresenceModal"
-              class="btn btn-success btn-lg"
-          >
-            ✅ Präsenz registrieren
-          </button>
-
           <button
               @click="editChild"
               class="btn btn-outline-primary btn-lg"
@@ -111,13 +120,6 @@
           </button>
         </div>
 
-        <!-- Back to group button -->
-        <button
-            @click="goBack"
-            class="btn btn-outline-secondary w-100"
-        >
-          ↩️ Zurück
-        </button>
 
         <!-- Success message -->
         <div v-if="successMessage" class="alert alert-success mt-3" role="alert">

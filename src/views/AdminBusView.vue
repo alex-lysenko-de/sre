@@ -57,7 +57,7 @@
 
     <!-- Action Buttons -->
     <div class="row mb-3 g-2">
-      <div class="col-md-4">
+      <div :class="dayStarted ? 'col-md-6' : 'col-md-4'">
         <button
             class="btn btn-primary w-100"
             @click="loadBusData"
@@ -68,7 +68,7 @@
           {{ loading ? 'Laden...' : 'Aktualisieren' }}
         </button>
       </div>
-      <div class="col-md-4">
+      <div class="col-md-4" v-if="!dayStarted">
         <button
             class="btn btn-success w-100"
             @click="startDay"
@@ -79,7 +79,7 @@
           {{ startingDay ? 'Starte Tag...' : 'Tag starten' }}
         </button>
       </div>
-      <div class="col-md-4">
+      <div :class="dayStarted ? 'col-md-6' : 'col-md-4'">
         <button
             class="btn btn-warning w-100"
             @click="performSoftReset"
@@ -250,7 +250,7 @@ export default {
     // ============================================================================
     const configStore = useConfigStore()
     const { fetchBusData } = useBusData()
-    const { startNewDay, softReset } = useDays()
+    const { startNewDay, softReset, isDayStarted } = useDays()
 
     // ============================================================================
     // STATE
@@ -264,6 +264,7 @@ export default {
     const error = ref(null)
     const success = ref(null)
     const realtimeStatus = ref('disconnected') // 'disconnected' | 'connecting' | 'connected'
+    const dayStarted = ref(false) // Track if day has been started
 
     // Bus data structure: { busNumber: { kinder_count, betreuer_count, betreuer_names } }
     const busesData = ref({})
@@ -374,6 +375,9 @@ export default {
         busesData.value = data
         lastUpdateTime.value = getCurrentTimeForDisplay()
 
+        // Check if day has been started
+        dayStarted.value = await isDayStarted(today)
+
         // Show success message only if manually triggered
         if (!reloadDebounceTimer) {
           success.value = 'Bus-Daten erfolgreich aktualisiert!'
@@ -401,6 +405,9 @@ export default {
 
         success.value = 'Tag erfolgreich gestartet! Die Anwesenheitsdaten wurden zurückgesetzt.'
         setTimeout(() => { success.value = null }, 5000)
+
+        // Update dayStarted flag
+        dayStarted.value = true
 
         // Reload data after starting day
         await loadBusData()
@@ -505,6 +512,19 @@ export default {
                 debouncedReload()
               }
           )
+          .on(
+              'postgres_changes',
+              {
+                event: 'INSERT',
+                schema: 'public',
+                table: 'reset_events',
+                filter: `day=eq.${currentDate.value}`
+              },
+              (payload) => {
+                console.log('🔄 Reset event detected:', payload)
+                debouncedReload()
+              }
+          )
           .subscribe((status) => {
             console.log('📡 Realtime subscription status:', status)
             if (status === 'SUBSCRIBED') {
@@ -573,6 +593,7 @@ export default {
       showBusModal,
       selectedBusNumber,
       realtimeStatus,
+      dayStarted,
 
       // Computed
       totalBusCount,
