@@ -6,38 +6,10 @@
  */
 
 import { supabase } from '@/supabase'
+import { useSupabaseUser } from './useSupabaseUser'
 
 export function useBusData() {
-    /**
-     * Aktuellen Benutzer aus der users Tabelle holen
-     * @returns {Promise<Object>} User-Daten mit id
-     */
-    async function getCurrentUser() {
-        try {
-            // 1. Auth User holen
-            const { data: { user }, error: authError } = await supabase.auth.getUser()
-
-            if (authError || !user) {
-                throw new Error('Benutzer nicht authentifiziert')
-            }
-
-            // 2. User aus users Tabelle holen (um die numerische id zu bekommen)
-            const { data: userData, error: userError } = await supabase
-                .from('users')
-                .select('id, user_id, email, display_name, role')
-                .eq('user_id', user.id)
-                .single()
-
-            if (userError || !userData) {
-                throw new Error('Benutzer-Daten konnten nicht geladen werden')
-            }
-
-            return userData
-        } catch (error) {
-            console.error('Fehler beim Laden des aktuellen Benutzers:', error)
-            throw error
-        }
-    }
+    const { getCurrentUser } = useSupabaseUser()
 
     /**
      * Bus-Daten für ein bestimmtes Datum abrufen
@@ -133,8 +105,6 @@ export function useBusData() {
             throw error
         }
     }
-
-
 
     /**
      * Daten für einen bestimmten Bus abrufen
@@ -338,7 +308,7 @@ export function useBusData() {
         // Reset-Funktionen
         getResetHistory,
 
-        // Utilities
-        getCurrentUser
+        // User utilities
+        getCurrentUser // Re-export for convenience
     }
 }

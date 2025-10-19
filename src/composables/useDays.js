@@ -1,7 +1,9 @@
 // src/composables/useDays.js
-import {supabase} from '@/supabase'; // Import Supabase client
+import { supabase } from '@/supabase'
+import { useSupabaseUser } from './useSupabaseUser'
 
 export function useDays() {
+    const { getCurrentUser } = useSupabaseUser()
 
     /**
      * Retrieves a list of all days, sorted by date.
@@ -10,15 +12,14 @@ export function useDays() {
         const { data, error } = await supabase
             .from('days')
             .select('id, date, name, abfahrt, ankommen, description')
-            .order('date', { ascending : true });
+            .order('date', { ascending: true })
 
         if (error) {
-            console.error('Error fetching days list:', error); // Comment translated
-            throw new Error(error.message);
+            console.error('Error fetching days list:', error)
+            throw new Error(error.message)
         }
-        return data;
-    };
-
+        return data
+    }
 
     /**
      * Deletes a day by ID.
@@ -28,38 +29,38 @@ export function useDays() {
         const { error } = await supabase
             .from('days')
             .delete()
-            .eq('id', dayId);
+            .eq('id', dayId)
 
         if (error) {
-            console.error('Error deleting day:', error); // Comment translated
-            throw new Error(error.message);
+            console.error('Error deleting day:', error)
+            throw new Error(error.message)
         }
-        return true;
-    };
+        return true
+    }
 
     /**
      * Saves (creates or updates) the day data.
      * @param {object} dayData - The day data. May contain 'id'.
      */
     const saveDay = async (dayData) => {
-        const { id, ...payload } = dayData;
+        const { id, ...payload } = dayData
 
         // Authorization check:
-        const { data : { user }, error : authError } = await supabase.auth.getUser();
+        const { data: { user }, error: authError } = await supabase.auth.getUser()
         if (authError || !user) {
-            throw new Error("Authorization error: You must be logged in. The RLS policy requires 'authenticated' status."); // Message translated
+            throw new Error("Authorization error: You must be logged in. The RLS policy requires 'authenticated' status.")
         }
 
         // Data normalization
         const finalPayload = {
             ...payload,
-            abfahrt : payload.abfahrt || null,
-            ankommen : payload.ankommen || null,
-            description : payload.description && payload.description.trim() !== '' ? payload.description.trim() : null,
-        };
+            abfahrt: payload.abfahrt || null,
+            ankommen: payload.ankommen || null,
+            description: payload.description && payload.description.trim() !== '' ? payload.description.trim() : null,
+        }
 
-        let query;
-        let successMessage;
+        let query
+        let successMessage
 
         if (id) {
             // UPDATE (Editing)
@@ -67,44 +68,40 @@ export function useDays() {
                 .from('days')
                 .update(finalPayload)
                 .eq('id', id)
-                .select(); // <--- REMOVED .single()
-                           // to avoid PGRST116 if RLS blocks the update
-            successMessage = `Day "${payload.date}" updated.`; // Message translated
+                .select()
+            successMessage = `Day "${payload.date}" updated.`
         } else {
             // INSERT (Creation)
             query = supabase
                 .from('days')
-                .insert({ ...finalPayload, created_at : new Date().toISOString() })
+                .insert({ ...finalPayload, created_at: new Date().toISOString() })
                 .select()
-                .single(); // <--- .single() remains for INSERT, as we expect one inserted row
-            successMessage = `Day "${payload.date}" successfully created.`; // Message translated
+                .single()
+            successMessage = `Day "${payload.date}" successfully created.`
         }
 
-        const { data, error } = await query;
+        const { data, error } = await query
 
         if (error) {
-            console.error('Error saving day data:', error); // Comment translated
+            console.error('Error saving day data:', error)
             if (error.message.includes('violates row-level security policy')) {
-                throw new Error(`RLS error: Access denied. Ensure the RLS policy for INSERT/UPDATE on table 'days' is set to 'WITH CHECK (true)' for 'authenticated' users.`); // Message translated
+                throw new Error(`RLS error: Access denied. Ensure the RLS policy for INSERT/UPDATE on table 'days' is set to 'WITH CHECK (true)' for 'authenticated' users.`)
             }
-            throw new Error(`Save error: ${error.message}`); // Message translated
+            throw new Error(`Save error: ${error.message}`)
         }
 
         // ADDITIONAL CHECK FOR UPDATE:
-        // If it was an UPDATE, and there is no data (data.length === 0), then RLS blocked it.
         if (id && (!data || data.length === 0)) {
-            throw new Error(`RLS error: Update not performed. The security policy does not allow you to modify record with ID ${id}.`); // Message translated
+            throw new Error(`RLS error: Update not performed. The security policy does not allow you to modify record with ID ${id}.`)
         }
 
-        // Return the first element (for INSERT it is always data[0], for UPDATE - data[0])
-        return { data : Array.isArray(data) ? data[ 0 ] : data, message : successMessage };
-    };
+        return { data: Array.isArray(data) ? data[0] : data, message: successMessage }
+    }
 
     /**
      * Prüfen, ob der Tag bereits gestartet wurde
-     * (Tag wurde gestartet, wenn mindestens ein child in der tabelle presence_now hat)
-     * @param date
-     * @returns {Promise<void>}
+     * @param {string} date - Datum im Format YYYY-MM-DD
+     * @returns {Promise<boolean>}
      */
     async function isDayStarted(date) {
         try {
@@ -129,9 +126,8 @@ export function useDays() {
 
     /**
      * Prüfen, ob der Tag bereits geschlossen wurde
-     * (Tag wurde geschlossen, wenn ein reset_event mit event_type = 0 in today existiert and CLOSE_EVENT.id > OPEN_EVENT.id)
-     * @param date = ISO Datum im Format YYYY-MM-DD
-     * @returns {Promise<void>}
+     * @param {string} date - ISO Datum im Format YYYY-MM-DD
+     * @returns {Promise<boolean>}
      */
     async function isDayClosed(date) {
         try {
@@ -140,7 +136,7 @@ export function useDays() {
                 .select('id, event_type')
                 .eq('day', date)
                 .in('event_type', [0, 1])
-                .order('id', { ascending : false })
+                .order('id', { ascending: false })
                 .limit(1)
 
             if (error) {
@@ -149,23 +145,20 @@ export function useDays() {
             }
 
             if (data && data.length > 0) {
-                return data[ 0 ].event_type === 0
+                return data[0].event_type === 0
             } else {
                 return false
             }
         } catch (error) {
             console.error('Fehler in isDayClosed:', error)
             throw error
-
         }
     }
 
     /**
      * Neuen Tag starten - erstellt Eintrag in reset_events mit event_type = 1
-     * Triggert Neuberechnung in der DB (siehe triggers.md)
-     *
      * @param {string} date - Datum im Format YYYY-MM-DD
-     * @returns {Promise<Object>} Ergebnis der Operation
+     * @returns {Promise<Object>}
      */
     async function startNewDay(date) {
         try {
@@ -178,7 +171,7 @@ export function useDays() {
                 .insert([
                     {
                         day: date,
-                        user_id: currentUser.id, // Numerische ID aus users Tabelle
+                        user_id: currentUser.id,
                         event_type: 1 // Normal reset - Tag öffnen
                     }
                 ])
@@ -199,13 +192,10 @@ export function useDays() {
         }
     }
 
-
     /**
      * Soft Reset - setzt nur presence_now zurück (event_type = 2)
-     * Verwendet für Zwischenprüfungen während des Tages
-     *
      * @param {string} date - Datum im Format YYYY-MM-DD
-     * @returns {Promise<Object>} Ergebnis der Operation
+     * @returns {Promise<Object>}
      */
     async function softReset(date) {
         try {
@@ -242,10 +232,8 @@ export function useDays() {
 
     /**
      * Total Reset - löscht alle Tagesdaten komplett (event_type = 0)
-     * Verwendet zum Abschließen des Tages und Vorbereitung auf den nächsten
-     *
      * @param {string} date - Datum im Format YYYY-MM-DD
-     * @returns {Promise<Object>} Ergebnis der Operation
+     * @returns {Promise<Object>}
      */
     async function closeDay(date) {
         try {
@@ -287,5 +275,9 @@ export function useDays() {
         softReset,
         closeDay,
         deleteDay,
-    };
+        isDayStarted,
+        isDayClosed,
+        // User utilities
+        getCurrentUser // Re-export for convenience
+    }
 }
