@@ -196,9 +196,26 @@
     </button>
 
     <!-- Last Update Time -->
-    <div class="text-center mt-3 text-muted">
-      <i class="fas fa-sync-alt me-1"></i>
-      Letzte Aktualisierung: {{ lastUpdateTime || '-' }}
+    <div class="text-center mt-3 text-muted d-flex justify-content-center align-items-center gap-3">
+      <div>
+        <i class="fas fa-sync-alt me-1"></i>
+        Letzte Aktualisierung: {{ lastUpdateTime || '-' }}
+      </div>
+      <div class="realtime-status">
+        <span
+            class="status-dot"
+            :class="{
+            'status-connected': realtimeStatus === 'connected',
+            'status-connecting': realtimeStatus === 'connecting',
+            'status-disconnected': realtimeStatus === 'disconnected'
+          }"
+        ></span>
+        <span class="status-text">
+          {{ realtimeStatus === 'connected' ? 'Live' :
+            realtimeStatus === 'connecting' ? 'Verbinde...' :
+                'Offline' }}
+        </span>
+      </div>
     </div>
 
     <!-- Bus Detail Modal -->
@@ -216,7 +233,8 @@ import { useConfigStore } from '@/stores/config'
 import { useBusData } from '@/composables/useBusData'
 import BusDetailModal from '@/components/BusDetailModal.vue'
 import ResetHistoryPanel from '@/components/ResetHistoryPanel.vue'
-import {useDays} from "@/composables/useDays.js";
+import { useDays } from "@/composables/useDays.js"
+import { supabase } from '@/supabase'
 
 export default {
   name: 'AdminBusView',
@@ -245,6 +263,7 @@ export default {
     const currentDate = ref(getCurrentDateString())
     const error = ref(null)
     const success = ref(null)
+    const realtimeStatus = ref('disconnected') // 'disconnected' | 'connecting' | 'connected'
 
     // Bus data structure: { busNumber: { kinder_count, betreuer_count, betreuer_names } }
     const busesData = ref({})
@@ -253,8 +272,9 @@ export default {
     const showBusModal = ref(false)
     const selectedBusNumber = ref(null)
 
-    // Auto-refresh interval
-    let refreshInterval = null
+    // Realtime subscription channel
+    let realtimeChannel = null
+    let reloadDebounceTimer = null
 
     // ============================================================================
     // COMPUTED PROPERTIES
@@ -355,7 +375,7 @@ export default {
         lastUpdateTime.value = getCurrentTimeForDisplay()
 
         // Show success message only if manually triggered
-        if (!refreshInterval) {
+        if (!reloadDebounceTimer) {
           success.value = 'Bus-Daten erfolgreich aktualisiert!'
           setTimeout(() => { success.value = null }, 3000)
         }
@@ -437,80 +457,143 @@ export default {
       selectedBusNumber.value = null
     }
 
+    /**
+     * Debounced reload function to prevent multiple rapid reloads
+     */
+    function debouncedReload() {
+      if (reloadDebounceTimer) {
+        clearTimeout(reloadDebounceTimer)
+      }
 
-  function setupAutoRefresh() {
-  // Auto-refresh every 30 seconds
-  refreshInterval = setInterval(() => {
-    loadBusData()
-  }, 30000)
-}
+      reloadDebounceTimer = setTimeout(() => {
+        console.log('🔄 Reloading bus data after changes...')
+        loadBusData()
+      }, 1000) // Wait 1 second after last change
+    }
 
-function clearAutoRefresh() {
-  if (refreshInterval) {
-    clearInterval(refreshInterval)
-    refreshInterval = null
+    /**
+     * Setup Realtime subscription for bus data changes
+     */
+    function setupRealtimeSubscription() {
+      realtimeStatus.value = 'connecting'
+
+      // Subscribe to changes in children_today and user_group_day tables
+      realtimeChannel = supabase
+          .channel('bus-data-changes')
+          .on(
+              'postgres_changes',
+              {
+                event: '*',
+                schema: 'public',
+                table: 'children_today'
+              },
+              (payload) => {
+                console.log('🔄 Children data changed:', payload)
+                debouncedReload()
+              }
+          )
+          .on(
+              'postgres_changes',
+              {
+                event: '*',
+                schema: 'public',
+                table: 'user_group_day',
+                filter: `day=eq.${currentDate.value}`
+              },
+              (payload) => {
+                console.log('🔄 Betreuer data changed:', payload)
+                debouncedReload()
+              }
+          )
+          .subscribe((status) => {
+            console.log('📡 Realtime subscription status:', status)
+            if (status === 'SUBSCRIBED') {
+              realtimeStatus.value = 'connected'
+              console.log('✅ Successfully subscribed to bus data updates')
+            } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+              realtimeStatus.value = 'disconnected'
+              console.warn('⚠️ Realtime connection lost')
+            }
+          })
+    }
+
+    /**
+     * Clear Realtime subscription
+     */
+    function clearRealtimeSubscription() {
+      if (reloadDebounceTimer) {
+        clearTimeout(reloadDebounceTimer)
+        reloadDebounceTimer = null
+      }
+
+      if (realtimeChannel) {
+        supabase.removeChannel(realtimeChannel)
+        realtimeChannel = null
+        realtimeStatus.value = 'disconnected'
+        console.log('🔌 Realtime subscription removed')
+      }
+    }
+
+    // ============================================================================
+    // LIFECYCLE
+    // ============================================================================
+    onMounted(async () => {
+      // Load config if not already loaded
+      if (!configStore.isConfigLoaded()) {
+        await configStore.loadConfig()
+      }
+
+      // Initial data load
+      await loadBusData()
+
+      // Hide header info after 3 seconds
+      setTimeout(() => {
+        showHeaderInfo.value = false
+      }, 3000)
+
+      // Setup Realtime subscription
+      setupRealtimeSubscription()
+    })
+
+    onUnmounted(() => {
+      clearRealtimeSubscription()
+    })
+
+    return {
+      // State
+      loading,
+      startingDay,
+      resetting,
+      showHeaderInfo,
+      lastUpdateTime,
+      currentDate,
+      error,
+      success,
+      busesData,
+      showBusModal,
+      selectedBusNumber,
+      realtimeStatus,
+
+      // Computed
+      totalBusCount,
+      formattedCurrentDate,
+      totalChildren,
+      totalBetreuer,
+      activeBusesCount,
+      hasBusData,
+      totalBusRange,
+      allBusesHaveData,
+
+      // Methods
+      getBusData,
+      loadBusData,
+      startDay,
+      performSoftReset,
+      openBusDetail,
+      closeBusModal,
+      goBack
+    }
   }
-}
-
-// ============================================================================
-// LIFECYCLE
-// ============================================================================
-onMounted(async () => {
-  // Load config if not already loaded
-  if (!configStore.isConfigLoaded()) {
-    await configStore.loadConfig()
-  }
-
-  // Initial data load
-  await loadBusData()
-
-  // Hide header info after 3 seconds
-  setTimeout(() => {
-    showHeaderInfo.value = false
-  }, 3000)
-
-  // Setup auto-refresh
-  setupAutoRefresh()
-})
-
-onUnmounted(() => {
-  clearAutoRefresh()
-})
-
-return {
-  // State
-  loading,
-  startingDay,
-  resetting,
-  showHeaderInfo,
-  lastUpdateTime,
-  currentDate,
-  error,
-  success,
-  busesData,
-  showBusModal,
-  selectedBusNumber,
-
-  // Computed
-  totalBusCount,
-  formattedCurrentDate,
-  totalChildren,
-  totalBetreuer,
-  activeBusesCount,
-  hasBusData,
-  totalBusRange,
-  allBusesHaveData,
-
-  // Methods
-  getBusData,
-  loadBusData,
-  startDay,
-  performSoftReset,
-  openBusDetail,
-  closeBusModal,
-  goBack
-}
-}
 }
 </script>
 
@@ -659,5 +742,59 @@ return {
 
 .fade-enter-from, .fade-leave-to {
   opacity: 0;
+}
+
+/* Realtime Status Indicator */
+.realtime-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  transition: all 0.3s ease;
+}
+
+.status-dot.status-connected {
+  background-color: #10b981;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+  animation: pulse-green 2s infinite;
+}
+
+.status-dot.status-connecting {
+  background-color: #f59e0b;
+  animation: pulse-yellow 1s infinite;
+}
+
+.status-dot.status-disconnected {
+  background-color: #6b7280;
+}
+
+@keyframes pulse-green {
+  0%, 100% {
+    box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.1);
+  }
+}
+
+@keyframes pulse-yellow {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.status-text {
+  font-weight: 500;
+  color: #6b7280;
 }
 </style>

@@ -336,9 +336,6 @@ export function useBusData() {
         fetchBusBetreuer,
 
         // Reset-Funktionen
-        startNewDay,
-        softReset,
-        totalReset : closeDay,
         getResetHistory,
 
         // Utilities

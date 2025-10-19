@@ -23,6 +23,38 @@ export function useSupabaseUser() {
     }
 
     /**
+     * Get current user from users table
+     * Returns user data with numeric id from users table
+     * @returns {Promise<Object>} User data with id, user_id, email, display_name, role
+     */
+    const getCurrentUser = async () => {
+        try {
+            // 1. Get Auth User
+            const { data: { user }, error: authError } = await supabase.auth.getUser()
+
+            if (authError || !user) {
+                throw new Error('Benutzer nicht authentifiziert')
+            }
+
+            // 2. Get User from users table (to get the numeric id)
+            const { data: userData, error: userError } = await supabase
+                .from('users')
+                .select('id, user_id, email, display_name, role')
+                .eq('user_id', user.id)
+                .single()
+
+            if (userError || !userData) {
+                throw new Error('Benutzer-Daten konnten nicht geladen werden')
+            }
+
+            return userData
+        } catch (error) {
+            console.error('Fehler beim Laden des aktuellen Benutzers:', error)
+            throw error
+        }
+    }
+
+    /**
      * Fetch user data from users table
      * @param {string} authUserId - UUID from auth.users
      */
@@ -176,6 +208,7 @@ export function useSupabaseUser() {
     return {
         getSession,
         getAuthUser,
+        getCurrentUser, // ← NEW: Exported function
         fetchUserFromDB,
         fetchScheduleForDate,
         fetchLastKnownSchedule,

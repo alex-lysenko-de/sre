@@ -275,7 +275,7 @@ export function useDays() {
             return data
 
         } catch (error) {
-            console.error('Fehler in totalReset:', error)
+            console.error('Fehler in closeDay:', error)
             throw error
         }
     }
@@ -283,6 +283,9 @@ export function useDays() {
     return {
         fetchDaysList,
         saveDay,
+        startNewDay,
+        softReset,
+        closeDay,
         deleteDay,
     };
 }
