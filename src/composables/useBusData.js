@@ -1,6 +1,6 @@
 /**
  * Composable für die Arbeit mit Bus-Daten
- * Kombiniert Daten aus children_today und user_group_day_rows
+ * Kombiniert Daten aus children_today und user_group_day
  *
  * @file src/composables/useBusData.js
  */
@@ -59,9 +59,9 @@ export function useBusData() {
                 throw childrenError
             }
 
-            // 2. Betreuer-Daten aus user_group_day_rows abrufen
+            // 2. Betreuer-Daten aus user_group_day abrufen
             const { data: betreuerData, error: betreuerError } = await supabase
-                .from('user_group_day_rows')
+                .from('user_group_day')
                 .select(`
           bus_id,
           user_id,
@@ -363,7 +363,7 @@ export function useBusData() {
     async function fetchBusBetreuer(busNumber, date) {
         try {
             const { data, error } = await supabase
-                .from('user_group_day_rows')
+                .from('user_group_day')
                 .select(`
           user_id,
           group_id,
