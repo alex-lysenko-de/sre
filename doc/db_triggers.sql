@@ -140,13 +140,22 @@ BEGIN
     -- event_type = 1: NORMAL RESET (Tag öffnen/zwischenzählen)
     -- ========================================
     WHEN 1 THEN
-      -- Erster Reset des Tages: _now → _today speichern
-      UPDATE groups_today 
-      SET 
+      IF resets_today = 0 THEN
+        -- Erster Reset des Tages: _now → _today speichern
+        UPDATE groups_today 
+        SET 
           children_today = children_now, 
           children_now = 0;
         
-      RAISE NOTICE 'First reset of day: saved current counts to today';
+        RAISE NOTICE 'First reset of day: saved current counts to today';
+      ELSE
+        -- Weitere Resets: nur _now zurücksetzen
+        UPDATE groups_today 
+        SET children_now = 0;
+        
+        RAISE NOTICE 'Additional reset: only current counts cleared';
+      END IF;
+      
       -- In beiden Fällen: presence_now für alle Kinder auf 0
       UPDATE children_today 
       SET presence_now = 0;
