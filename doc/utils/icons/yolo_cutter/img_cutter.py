@@ -1,4 +1,5 @@
-#!/usr/bin/env python3
+
+
 """
 Object extraction and segmentation application using geometric grouping strategies.
 Extracts black objects from white background and saves them as separate PNG files.
@@ -47,8 +48,8 @@ class ObjectExtractor:
             print(f"Error: Input file '{self.input_file}' not found.", file=sys.stderr)
             return False
 
-        if self.strategy not in [1, 2]:
-            print(f"Error: Invalid strategy '{self.strategy}'. Must be 1 or 2.", 
+        if self.strategy not in [1, 2, 3]:
+            print(f"Error: Invalid strategy '{self.strategy}'. Must be 1, 2, or 3.", 
                   file=sys.stderr)
             return False
 
@@ -167,6 +168,24 @@ class ObjectExtractor:
         except Exception:
             return False
 
+
+    def hulls_intersect(self, hull_a, hull_b):
+        """Check if two convex hulls intersect."""
+        # Convert hull points to polygons
+        hull_a_points = hull_a.reshape(-1, 2).astype(float)
+        hull_b_points = hull_b.reshape(-1, 2).astype(float)
+        
+        # Check if both hulls have at least 3 points (valid polygons)
+        if len(hull_a_points) < 3 or len(hull_b_points) < 3:
+            return False
+
+        try:
+            polygon_a = Polygon(hull_a_points)
+            polygon_b = Polygon(hull_b_points)
+            return polygon_a.intersects(polygon_b)
+        except Exception:
+            return False#!/usr/bin/env python3
+
     def group_components_strategy_1(self):
         """Group components using bbox intersection strategy."""
         print(f"Applying Strategy 1: BBox Intersection (padding={self.padding})...")
@@ -202,6 +221,64 @@ class ObjectExtractor:
                             if self.boxes_intersect(
                                 self.components[idx_a]['bbox'],
                                 self.components[idx_b]['bbox']
+                            ):
+                                should_merge = True
+                                break
+                        if should_merge:
+                            break
+
+                    if should_merge:
+                        group_a = group_a.union(group_b)
+                        used.add(j)
+                        merged = True
+
+                new_groups.append(group_a)
+
+            groups = new_groups
+
+            if self.debug:
+                print(f"  Iteration {iteration}: {len(groups)} groups")
+
+        if self.debug:
+            print(f"Final groups: {len(groups)}")
+
+        return groups
+
+    def group_components_strategy_3(self):
+        """Group components using hull-hull intersection strategy."""
+        print(f"Applying Strategy 3: Hull-Hull Intersection (padding={self.padding})...")
+
+        # Initialize groups (each component is its own group)
+        groups = [set([i]) for i in range(len(self.components))]
+
+        # Iteratively merge intersecting groups
+        merged = True
+        iteration = 0
+        while merged:
+            iteration += 1
+            merged = False
+            new_groups = []
+            used = set()
+
+            for i in range(len(groups)):
+                if i in used:
+                    continue
+
+                group_a = groups[i]
+
+                for j in range(i + 1, len(groups)):
+                    if j in used:
+                        continue
+
+                    group_b = groups[j]
+
+                    # Check if any hull from A intersects with any hull from B
+                    should_merge = False
+                    for idx_a in group_a:
+                        for idx_b in group_b:
+                            if self.hulls_intersect(
+                                self.components[idx_a]['hull'],
+                                self.components[idx_b]['hull']
                             ):
                                 should_merge = True
                                 break
@@ -380,8 +457,10 @@ class ObjectExtractor:
         # Group components
         if self.strategy == 1:
             groups = self.group_components_strategy_1()
-        else:  # strategy == 2
+        elif self.strategy == 2:
             groups = self.group_components_strategy_2()
+        else:  # strategy == 3
+            groups = self.group_components_strategy_3()
 
         # Extract and save objects
         success = self.extract_objects(groups)
@@ -416,8 +495,8 @@ Examples:
         "--strategy", "-s",
         type=int,
         default=1,
-        choices=[1, 2],
-        help="Grouping strategy: 1=BBox Intersection, 2=BBox-Hull Intersection (default: 1)"
+        choices=[1, 2, 3],
+        help="Grouping strategy: 1=BBox Intersection, 2=BBox-Hull Intersection, 3=Hull-Hull Intersection (default: 1)"
     )
 
     parser.add_argument(
