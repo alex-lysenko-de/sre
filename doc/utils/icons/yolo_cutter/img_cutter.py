@@ -1,0 +1,446 @@
+#!/usr/bin/env python3
+"""
+Object extraction and segmentation application using geometric grouping strategies.
+Extracts black objects from white background and saves them as separate PNG files.
+"""
+
+import argparse
+import sys
+import os
+from pathlib import Path
+import numpy as np
+import cv2
+from shapely.geometry import Polygon, box
+
+
+# Configuration constants
+THRESHOLD_VALUE = 128
+MIN_OBJECT_AREA = 50  # Minimum area to consider as object
+
+
+class ObjectExtractor:
+    """Handles extraction and segmentation of objects from images."""
+
+    def __init__(self, input_file, strategy=1, padding=10, debug=False):
+        """
+        Initialize the extractor.
+        
+        Args:
+            input_file: Path to input image
+            strategy: Grouping strategy (1 or 2)
+            padding: Expansion of bounding boxes
+            debug: Enable debug output
+        """
+        self.input_file = input_file
+        self.strategy = strategy
+        self.padding = padding
+        self.debug = debug
+        self.image = None
+        self.gray = None
+        self.binary = None
+        self.output_dir = None
+        self.components = []
+
+    def validate_input(self):
+        """Validate input file exists and strategy is valid."""
+        if not os.path.isfile(self.input_file):
+            print(f"Error: Input file '{self.input_file}' not found.", file=sys.stderr)
+            return False
+
+        if self.strategy not in [1, 2]:
+            print(f"Error: Invalid strategy '{self.strategy}'. Must be 1 or 2.", 
+                  file=sys.stderr)
+            return False
+
+        if self.padding < 0:
+            print(f"Error: Padding must be non-negative.", file=sys.stderr)
+            return False
+
+        return True
+
+    def create_output_directory(self):
+        """Create output directory based on input filename."""
+        base_name = Path(self.input_file).stem
+        self.output_dir = Path(base_name)
+        self.output_dir.mkdir(exist_ok=True)
+        print(f"Output directory: {self.output_dir}")
+
+    def preprocess(self):
+        """Load and preprocess the image."""
+        print("Reading image...")
+        self.image = cv2.imread(self.input_file)
+        
+        if self.image is None:
+            print(f"Error: Failed to read image '{self.input_file}'.", file=sys.stderr)
+            return False
+
+        print(f"Image size: {self.image.shape}")
+
+        print("Converting to grayscale...")
+        self.gray = cv2.cvtColor(self.image, cv2.COLOR_BGR2GRAY)
+
+        print("Binarizing...")
+        _, self.binary = cv2.threshold(self.gray, THRESHOLD_VALUE, 255, 
+                                       cv2.THRESH_BINARY_INV)
+
+        return True
+
+    def find_components(self):
+        """Find connected components and extract geometric data."""
+        print("Finding connected components...")
+        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(
+            self.binary, connectivity=8
+        )
+
+        self.components = []
+
+        # Process each component (skip background at index 0)
+        for i in range(1, num_labels):
+            x, y, w, h, area = stats[i]
+
+            # Filter small components
+            if area < MIN_OBJECT_AREA:
+                continue
+
+            # Create mask for this component
+            mask = (labels == i).astype(np.uint8) * 255
+
+            # Find contours
+            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, 
+                                          cv2.CHAIN_APPROX_SIMPLE)
+
+            if len(contours) == 0:
+                continue
+
+            # Get convex hull
+            try:
+                hull = cv2.convexHull(contours[0])
+            except cv2.error:
+                continue
+
+            self.components.append({
+                'id': i,
+                'bbox': (x, y, w, h),
+                'area': area,
+                'mask': mask,
+                'hull': hull,
+                'centroid': centroids[i]
+            })
+
+        if self.debug:
+            print(f"Found {len(self.components)} components")
+
+        return len(self.components) > 0
+
+    def expand_bbox(self, bbox):
+        """Expand bounding box by padding."""
+        x, y, w, h = bbox
+        x_pad = max(0, x - self.padding)
+        y_pad = max(0, y - self.padding)
+        w_pad = w + 2 * self.padding
+        h_pad = h + 2 * self.padding
+        return (x_pad, y_pad, w_pad, h_pad)
+
+    def boxes_intersect(self, bbox_a, bbox_b):
+        """Check if two bounding boxes intersect."""
+        x1, y1, w1, h1 = self.expand_bbox(bbox_a)
+        x2, y2, w2, h2 = self.expand_bbox(bbox_b)
+
+        return not (x1 + w1 < x2 or x2 + w2 < x1 or 
+                   y1 + h1 < y2 or y2 + h2 < y1)
+
+    def bbox_intersects_hull(self, bbox_a, hull_b):
+        """Check if expanded bbox of A intersects with convex hull of B."""
+        x, y, w, h = self.expand_bbox(bbox_a)
+        rect = box(x, y, x + w, y + h)
+
+        # Convert hull points to polygon
+        hull_points = hull_b.reshape(-1, 2).astype(float)
+        
+        # Check if hull has at least 3 points (valid polygon)
+        if len(hull_points) < 3:
+            return False
+
+        try:
+            hull_polygon = Polygon(hull_points)
+            return rect.intersects(hull_polygon)
+        except Exception:
+            return False
+
+    def group_components_strategy_1(self):
+        """Group components using bbox intersection strategy."""
+        print(f"Applying Strategy 1: BBox Intersection (padding={self.padding})...")
+
+        # Initialize groups (each component is its own group)
+        groups = [set([i]) for i in range(len(self.components))]
+
+        # Iteratively merge intersecting groups
+        merged = True
+        iteration = 0
+        while merged:
+            iteration += 1
+            merged = False
+            new_groups = []
+            used = set()
+
+            for i in range(len(groups)):
+                if i in used:
+                    continue
+
+                group_a = groups[i]
+
+                for j in range(i + 1, len(groups)):
+                    if j in used:
+                        continue
+
+                    group_b = groups[j]
+
+                    # Check if any component from A intersects with any from B
+                    should_merge = False
+                    for idx_a in group_a:
+                        for idx_b in group_b:
+                            if self.boxes_intersect(
+                                self.components[idx_a]['bbox'],
+                                self.components[idx_b]['bbox']
+                            ):
+                                should_merge = True
+                                break
+                        if should_merge:
+                            break
+
+                    if should_merge:
+                        group_a = group_a.union(group_b)
+                        used.add(j)
+                        merged = True
+
+                new_groups.append(group_a)
+
+            groups = new_groups
+
+            if self.debug:
+                print(f"  Iteration {iteration}: {len(groups)} groups")
+
+        if self.debug:
+            print(f"Final groups: {len(groups)}")
+
+        return groups
+
+    def group_components_strategy_2(self):
+        """Group components using bbox-hull intersection strategy."""
+        print(f"Applying Strategy 2: BBox-Hull Intersection (padding={self.padding})...")
+
+        # Initialize groups (each component is its own group)
+        groups = [set([i]) for i in range(len(self.components))]
+
+        # Iteratively merge intersecting groups
+        merged = True
+        iteration = 0
+        while merged:
+            iteration += 1
+            merged = False
+            new_groups = []
+            used = set()
+
+            for i in range(len(groups)):
+                if i in used:
+                    continue
+
+                group_a = groups[i]
+
+                for j in range(i + 1, len(groups)):
+                    if j in used:
+                        continue
+
+                    group_b = groups[j]
+
+                    # Check if any bbox from A intersects with any hull from B
+                    should_merge = False
+                    for idx_a in group_a:
+                        for idx_b in group_b:
+                            # Check bbox_a with hull_b
+                            if self.bbox_intersects_hull(
+                                self.components[idx_a]['bbox'],
+                                self.components[idx_b]['hull']
+                            ):
+                                should_merge = True
+                                break
+                            # Also check bbox_b with hull_a
+                            if self.bbox_intersects_hull(
+                                self.components[idx_b]['bbox'],
+                                self.components[idx_a]['hull']
+                            ):
+                                should_merge = True
+                                break
+                        if should_merge:
+                            break
+
+                    if should_merge:
+                        group_a = group_a.union(group_b)
+                        used.add(j)
+                        merged = True
+
+                new_groups.append(group_a)
+
+            groups = new_groups
+
+            if self.debug:
+                print(f"  Iteration {iteration}: {len(groups)} groups")
+
+        if self.debug:
+            print(f"Final groups: {len(groups)}")
+
+        return groups
+
+    def get_group_bbox(self, group_indices):
+        """Get bounding box for a group of components."""
+        xs = [self.components[i]['bbox'][0] for i in group_indices]
+        ys = [self.components[i]['bbox'][1] for i in group_indices]
+        ws = [self.components[i]['bbox'][2] for i in group_indices]
+        hs = [self.components[i]['bbox'][3] for i in group_indices]
+
+        x = min(xs)
+        y = min(ys)
+        x_max = max([xs[idx] + ws[idx] for idx in range(len(group_indices))])
+        y_max = max([ys[idx] + hs[idx] for idx in range(len(group_indices))])
+        w = x_max - x
+        h = y_max - y
+
+        return x, y, w, h
+
+    def extract_objects(self, groups):
+        """Extract and save objects from groups."""
+        if not groups:
+            print("Warning: No objects found.", file=sys.stderr)
+            return False
+
+        print(f"Found {len(groups)} object(s). Extracting...")
+
+        for group_num, group_indices in enumerate(groups, 1):
+            x, y, w, h = self.get_group_bbox(list(group_indices))
+
+            # Ensure valid bounds
+            if w <= 0 or h <= 0:
+                continue
+
+            # Ensure bounds are within image
+            x = max(0, x)
+            y = max(0, y)
+            w = min(w, self.image.shape[1] - x)
+            h = min(h, self.image.shape[0] - y)
+
+            if w <= 0 or h <= 0:
+                continue
+
+            # Extract region from original image
+            cropped = self.image[y:y+h, x:x+w]
+
+            # Create mask from binary image
+            mask = self.binary[y:y+h, x:x+w]
+
+            # Convert to RGBA
+            rgba = cv2.cvtColor(cropped, cv2.COLOR_BGR2BGRA)
+            rgba[:, :, 3] = mask
+
+            # Save PNG
+            output_file = self.output_dir / f"object_{group_num:03d}.png"
+            cv2.imwrite(str(output_file), rgba)
+            
+            if self.debug:
+                print(f"  Saved: {output_file} (components: {len(group_indices)})")
+            else:
+                print(f"  Saved: {output_file}")
+
+        return True
+
+    def run(self):
+        """Execute the full extraction pipeline."""
+        print("=" * 60)
+        print("Object Extraction and Segmentation Tool (Geometric Grouping)")
+        print(f"Strategy: {self.strategy} | Padding: {self.padding}")
+        if self.debug:
+            print("Debug mode: ON")
+        print("=" * 60)
+
+        # Validate input
+        if not self.validate_input():
+            return False
+
+        # Create output directory
+        self.create_output_directory()
+
+        # Preprocess image
+        if not self.preprocess():
+            return False
+
+        # Find components
+        if not self.find_components():
+            print("Warning: No components found.", file=sys.stderr)
+            return False
+
+        # Group components
+        if self.strategy == 1:
+            groups = self.group_components_strategy_1()
+        else:  # strategy == 2
+            groups = self.group_components_strategy_2()
+
+        # Extract and save objects
+        success = self.extract_objects(groups)
+
+        if success:
+            print("=" * 60)
+            print("Done!")
+            print("=" * 60)
+
+        return success
+
+
+def main():
+    """Main entry point."""
+    parser = argparse.ArgumentParser(
+        description="Extract and segment black objects from white background images using geometric grouping.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python extract_objects.py source.png
+  python extract_objects.py source.png --strategy 2 --padding 15
+  python extract_objects.py image.jpg -s 2 -p 20 --debug
+        """
+    )
+
+    parser.add_argument(
+        "input_file",
+        help="Path to input image file"
+    )
+
+    parser.add_argument(
+        "--strategy", "-s",
+        type=int,
+        default=1,
+        choices=[1, 2],
+        help="Grouping strategy: 1=BBox Intersection, 2=BBox-Hull Intersection (default: 1)"
+    )
+
+    parser.add_argument(
+        "--padding", "-p",
+        type=int,
+        default=10,
+        help="Padding for bounding box expansion in pixels (default: 10)"
+    )
+
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug output"
+    )
+
+    args = parser.parse_args()
+
+    # Create extractor and run
+    extractor = ObjectExtractor(args.input_file, args.strategy, args.padding, args.debug)
+    success = extractor.run()
+
+    sys.exit(0 if success else 1)
+
+
+if __name__ == "__main__":
+    main()
