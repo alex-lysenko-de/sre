@@ -1,5 +1,3 @@
-     
-        
 """
 Object extraction and segmentation application using geometric grouping strategies.
 Extracts black objects from white background and saves them as separate PNG files.
@@ -25,7 +23,7 @@ class ObjectExtractor:
     def __init__(self, input_file, strategy=1, padding=10, debug=False):
         """
         Initialize the extractor.
-        
+
         Args:
             input_file: Path to input image
             strategy: Grouping strategy (0, 1, 2, )
@@ -70,7 +68,7 @@ class ObjectExtractor:
         """Load and preprocess the image."""
         print("Reading image...")
         self.image = cv2.imread(self.input_file)
-        
+
         if self.image is None:
             print(f"Error: Failed to read image '{self.input_file}'.", file=sys.stderr)
             return False
@@ -81,7 +79,7 @@ class ObjectExtractor:
         self.gray = cv2.cvtColor(self.image, cv2.COLOR_BGR2GRAY)
 
         print("Binarizing...")
-        _, self.binary = cv2.threshold(self.gray, THRESHOLD_VALUE, 255, 
+        _, self.binary = cv2.threshold(self.gray, THRESHOLD_VALUE, 255,
                                        cv2.THRESH_BINARY_INV)
 
         return True
@@ -106,21 +104,21 @@ class ObjectExtractor:
             # Create mask for this component (full image size)
             full_mask = (labels == i).astype(np.uint8) * 255
 
-            # --- ИСПРАВЛЕНИЕ: Обрезаем маску до BBox компонента ---
+            # --- FIX: Crop the mask to the component's BBox ---
             mask = full_mask[y:y + h, x:x + w]
 
             non_zero_pixels = cv2.countNonZero(mask)
             if self.debug:
                 print(f"  Component {i}: Area={area}, BBox=({x}, {y}, {w}, {h}), Non-Zero={non_zero_pixels}")
 
-            # Проверка, что маска не пуста после обрезки (хотя не должна)
+            # Check that the mask is not empty after cropping (although it shouldn't be)
             if non_zero_pixels == 0:
                 if self.debug:
                     print(f"    WARNING: Component {i} skipped: Non-zero area is 0 after BBox crop.")
                 continue
 
             # Find contours
-            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL,  # ! Важно: теперь ищем контуры в обрезанной маске!
+            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL,  # ! Important: now finding contours in the cropped mask!
                                            cv2.CHAIN_APPROX_SIMPLE)
 
             if len(contours) == 0:
@@ -130,12 +128,12 @@ class ObjectExtractor:
 
             # Get convex hull
             try:
-                # !!! ПРИМЕЧАНИЕ: Контуры теперь имеют локальные координаты,
-                # но для hull, который используется в геометрических проверках,
-                # нужны глобальные координаты. Вернем глобальные координаты для hull.
+                # !!! NOTE: Contours now have local coordinates,
+                # but for hull, which is used in geometric checks,
+                # global coordinates are needed. Restore global coordinates for hull.
                 hull = cv2.convexHull(contours[0])
-                hull[:, 0, 0] += x  # Сдвиг X
-                hull[:, 0, 1] += y  # Сдвиг Y
+                hull[:, 0, 0] += x  # Shift X
+                hull[:, 0, 1] += y  # Shift Y
             except cv2.error:
                 continue
 
@@ -143,8 +141,8 @@ class ObjectExtractor:
                 'id': i,
                 'bbox': (x, y, w, h),
                 'area': area,
-                'mask': mask,  # <-- Теперь это обрезанная маска (w x h)
-                'hull': hull,  # <-- Теперь это hull в глобальных координатах
+                'mask': mask,  # <-- Now this is the cropped mask (w x h)
+                'hull': hull,  # <-- Now this is the hull in global coordinates
                 'centroid': centroids[i]
             })
 
@@ -167,7 +165,7 @@ class ObjectExtractor:
         x1, y1, w1, h1 = self.expand_bbox(bbox_a)
         x2, y2, w2, h2 = bbox_b
 
-        return not (x1 + w1 < x2 or x2 + w2 < x1 or 
+        return not (x1 + w1 < x2 or x2 + w2 < x1 or
                    y1 + h1 < y2 or y2 + h2 < y1)
 
     def bbox_intersects_hull(self, bbox_a, hull_b):
@@ -177,7 +175,7 @@ class ObjectExtractor:
 
         # Convert hull points to polygon
         hull_points = hull_b.reshape(-1, 2).astype(float)
-        
+
         # Check if hull has at least 3 points (valid polygon)
         if len(hull_points) < 3:
             return False
@@ -194,7 +192,7 @@ class ObjectExtractor:
         # Convert hull points to polygons
         hull_a_points = hull_a.reshape(-1, 2).astype(float)
         hull_b_points = hull_b.reshape(-1, 2).astype(float)
-        
+
         # Check if both hulls have at least 3 points (valid polygons)
         if len(hull_a_points) < 3 or len(hull_b_points) < 3:
             return False
@@ -202,10 +200,10 @@ class ObjectExtractor:
         try:
             polygon_a = Polygon(hull_a_points)
             polygon_b = Polygon(hull_b_points)
-            
+
             # Expand polygon A by padding
             expanded_a = polygon_a.buffer(self.padding)
-            
+
             return expanded_a.intersects(polygon_b)
         except Exception:
             return False
@@ -415,26 +413,26 @@ class ObjectExtractor:
 
         for idx in group_indices:
             comp = self.components[idx]
-            comp_mask = comp['mask']  # Это маска размером w_comp x h_comp
+            comp_mask = comp['mask']  # This is the mask of size w_comp x h_comp
             comp_x, comp_y, comp_w, comp_h = comp['bbox']
 
-            # Определяем область назначения (DST) внутри маски группы (mask)
-            # x/y - начало BBox группы
-            # comp_x/comp_y - начало BBox компонента
+            # Define the destination (DST) region inside the group mask (mask)
+            # x/y - start of the group BBox
+            # comp_x/comp_y - start of the component BBox
 
-            # Начало компонента в маске группы (dst - destination)
+            # Start of the component in the group mask (dst - destination)
             dst_x_start = comp_x - x
             dst_y_start = comp_y - y
 
-            # Конец компонента в маске группы (dst)
+            # End of the component in the group mask (dst)
             dst_x_end = dst_x_start + comp_w
             dst_y_end = dst_y_start + comp_h
 
-            # Поскольку BBox группы (x, y, w, h) объединяет все BBox компонентов,
-            # мы знаем, что компонент полностью попадает в маску группы,
-            # и никаких дополнительных обрезок не требуется!
+            # Since the group BBox (x, y, w, h) combines all component BBoxes,
+            # we know that the component fits entirely within the group mask,
+            # and no additional cropping is needed!
 
-            # Копируем маску компонента в маску группы, используя побитовое ИЛИ
+            # Copy the component mask into the group mask, using bitwise OR
             mask[dst_y_start:dst_y_end, dst_x_start:dst_x_end] = cv2.bitwise_or(
                 mask[dst_y_start:dst_y_end, dst_x_start:dst_x_end], comp_mask
             )
