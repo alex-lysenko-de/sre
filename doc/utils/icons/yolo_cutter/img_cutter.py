@@ -1,5 +1,5 @@
-
-
+     
+        
 """
 Object extraction and segmentation application using geometric grouping strategies.
 Extracts black objects from white background and saves them as separate PNG files.
@@ -16,7 +16,7 @@ from shapely.geometry import Polygon, box
 
 # Configuration constants
 THRESHOLD_VALUE = 128
-MIN_OBJECT_AREA = 50  # Minimum area to consider as object
+MIN_OBJECT_AREA = 20  # Minimum area to consider as object
 
 
 class ObjectExtractor:
@@ -28,7 +28,7 @@ class ObjectExtractor:
         
         Args:
             input_file: Path to input image
-            strategy: Grouping strategy (1 or 2)
+            strategy: Grouping strategy (0, 1, 2, )
             padding: Expansion of bounding boxes
             debug: Enable debug output
         """
@@ -48,8 +48,8 @@ class ObjectExtractor:
             print(f"Error: Input file '{self.input_file}' not found.", file=sys.stderr)
             return False
 
-        if self.strategy not in [1, 2, 3]:
-            print(f"Error: Invalid strategy '{self.strategy}'. Must be 1, 2, or 3.", 
+        if self.strategy not in [0, 1, 2, 3]:
+            print(f"Error: Invalid strategy '{self.strategy}'. Must be 0, 1, 2, or 3.",
                   file=sys.stderr)
             return False
 
@@ -145,7 +145,7 @@ class ObjectExtractor:
     def boxes_intersect(self, bbox_a, bbox_b):
         """Check if two bounding boxes intersect."""
         x1, y1, w1, h1 = self.expand_bbox(bbox_a)
-        x2, y2, w2, h2 = self.expand_bbox(bbox_b)
+        x2, y2, w2, h2 = bbox_b
 
         return not (x1 + w1 < x2 or x2 + w2 < x1 or 
                    y1 + h1 < y2 or y2 + h2 < y1)
@@ -170,7 +170,7 @@ class ObjectExtractor:
 
 
     def hulls_intersect(self, hull_a, hull_b):
-        """Check if two convex hulls intersect."""
+        """Check if expanded hull A intersects with hull B."""
         # Convert hull points to polygons
         hull_a_points = hull_a.reshape(-1, 2).astype(float)
         hull_b_points = hull_b.reshape(-1, 2).astype(float)
@@ -182,9 +182,13 @@ class ObjectExtractor:
         try:
             polygon_a = Polygon(hull_a_points)
             polygon_b = Polygon(hull_b_points)
-            return polygon_a.intersects(polygon_b)
+            
+            # Expand polygon A by padding
+            expanded_a = polygon_a.buffer(self.padding)
+            
+            return expanded_a.intersects(polygon_b)
         except Exception:
-            return False#!/usr/bin/env python3
+            return False
 
     def group_components_strategy_1(self):
         """Group components using bbox intersection strategy."""
@@ -384,16 +388,59 @@ class ObjectExtractor:
 
         return x, y, w, h
 
+    def get_group_mask(self, group_indices, bbox):
+        """Get combined mask for a group of components within a bounding box."""
+        x, y, w, h = bbox
+        mask = np.zeros((h, w), dtype=np.uint8)
+
+        for idx in group_indices:
+            comp = self.components[idx]
+            comp_mask = comp['mask']
+            comp_x, comp_y, comp_w, comp_h = comp['bbox']
+
+            # Calculate overlap region
+            x_start = max(x, comp_x)
+            y_start = max(y, comp_y)
+            x_end = min(x + w, comp_x + comp_w)
+            y_end = min(y + h, comp_y + comp_h)
+
+            if x_start < x_end and y_start < y_end:
+                # Region in group mask
+                mask_x_start = x_start - x
+                mask_y_start = y_start - y
+                mask_x_end = x_end - x
+                mask_y_end = y_end - y
+
+                # Region in component mask
+                comp_x_start = x_start - comp_x
+                comp_y_start = y_start - comp_y
+                comp_x_end = x_end - comp_x
+                comp_y_end = y_end - comp_y
+
+                # Combine masks
+                mask[mask_y_start:mask_y_end, mask_x_start:mask_x_end] = cv2.bitwise_or(
+                    mask[mask_y_start:mask_y_end, mask_x_start:mask_x_end],
+                    comp_mask[comp_y_start:comp_y_end, comp_x_start:comp_x_end]
+                )
+
+        return mask
+
     def extract_objects(self, groups):
-        """Extract and save objects from groups."""
+        """Extract and save objects from groups and save as PNG files."""
+        # TODO: currently the function extracts objects by rectangle bounding boxes.
+        #       Future improvement could involve using masks for more precise extraction.
+        # it is useful when objects are not rectangular and are close to each other.
         if not groups:
             print("Warning: No objects found.", file=sys.stderr)
             return False
 
         print(f"Found {len(groups)} object(s). Extracting...")
 
+        # Extract and save each group
         for group_num, group_indices in enumerate(groups, 1):
+            # get bounding box for the group
             x, y, w, h = self.get_group_bbox(list(group_indices))
+
 
             # Ensure valid bounds
             if w <= 0 or h <= 0:
@@ -408,11 +455,11 @@ class ObjectExtractor:
             if w <= 0 or h <= 0:
                 continue
 
-            # Extract region from original image
-            cropped = self.image[y:y+h, x:x+w]
+            # Crop image
+            cropped = self.image[y:y + h, x:x + w]
 
-            # Create mask from binary image
-            mask = self.binary[y:y+h, x:x+w]
+            # Create mask for the group
+            mask = self.get_group_mask(list(group_indices), (x, y, w, h))
 
             # Convert to RGBA
             rgba = cv2.cvtColor(cropped, cv2.COLOR_BGR2BGRA)
@@ -459,8 +506,10 @@ class ObjectExtractor:
             groups = self.group_components_strategy_1()
         elif self.strategy == 2:
             groups = self.group_components_strategy_2()
-        else:  # strategy == 3
+        elif self.strategy == 3:
             groups = self.group_components_strategy_3()
+        else: # strategy == 0 (no grouping)
+            groups = [{i} for i in range(len(self.components))]
 
         # Extract and save objects
         success = self.extract_objects(groups)
@@ -495,7 +544,7 @@ Examples:
         "--strategy", "-s",
         type=int,
         default=1,
-        choices=[1, 2, 3],
+        choices=[0, 1, 2, 3],
         help="Grouping strategy: 1=BBox Intersection, 2=BBox-Hull Intersection, 3=Hull-Hull Intersection (default: 1)"
     )
 
