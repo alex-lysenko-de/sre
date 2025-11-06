@@ -103,19 +103,39 @@ class ObjectExtractor:
             if area < MIN_OBJECT_AREA:
                 continue
 
-            # Create mask for this component
-            mask = (labels == i).astype(np.uint8) * 255
+            # Create mask for this component (full image size)
+            full_mask = (labels == i).astype(np.uint8) * 255
+
+            # --- ИСПРАВЛЕНИЕ: Обрезаем маску до BBox компонента ---
+            mask = full_mask[y:y + h, x:x + w]
+
+            non_zero_pixels = cv2.countNonZero(mask)
+            if self.debug:
+                print(f"  Component {i}: Area={area}, BBox=({x}, {y}, {w}, {h}), Non-Zero={non_zero_pixels}")
+
+            # Проверка, что маска не пуста после обрезки (хотя не должна)
+            if non_zero_pixels == 0:
+                if self.debug:
+                    print(f"    WARNING: Component {i} skipped: Non-zero area is 0 after BBox crop.")
+                continue
 
             # Find contours
-            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, 
-                                          cv2.CHAIN_APPROX_SIMPLE)
+            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL,  # ! Важно: теперь ищем контуры в обрезанной маске!
+                                           cv2.CHAIN_APPROX_SIMPLE)
 
             if len(contours) == 0:
+                if self.debug:
+                    print(f"    WARNING: Component {i} skipped: No contours found!")
                 continue
 
             # Get convex hull
             try:
+                # !!! ПРИМЕЧАНИЕ: Контуры теперь имеют локальные координаты,
+                # но для hull, который используется в геометрических проверках,
+                # нужны глобальные координаты. Вернем глобальные координаты для hull.
                 hull = cv2.convexHull(contours[0])
+                hull[:, 0, 0] += x  # Сдвиг X
+                hull[:, 0, 1] += y  # Сдвиг Y
             except cv2.error:
                 continue
 
@@ -123,8 +143,8 @@ class ObjectExtractor:
                 'id': i,
                 'bbox': (x, y, w, h),
                 'area': area,
-                'mask': mask,
-                'hull': hull,
+                'mask': mask,  # <-- Теперь это обрезанная маска (w x h)
+                'hull': hull,  # <-- Теперь это hull в глобальных координатах
                 'centroid': centroids[i]
             })
 
@@ -395,33 +415,29 @@ class ObjectExtractor:
 
         for idx in group_indices:
             comp = self.components[idx]
-            comp_mask = comp['mask']
+            comp_mask = comp['mask']  # Это маска размером w_comp x h_comp
             comp_x, comp_y, comp_w, comp_h = comp['bbox']
 
-            # Calculate overlap region
-            x_start = max(x, comp_x)
-            y_start = max(y, comp_y)
-            x_end = min(x + w, comp_x + comp_w)
-            y_end = min(y + h, comp_y + comp_h)
+            # Определяем область назначения (DST) внутри маски группы (mask)
+            # x/y - начало BBox группы
+            # comp_x/comp_y - начало BBox компонента
 
-            if x_start < x_end and y_start < y_end:
-                # Region in group mask
-                mask_x_start = x_start - x
-                mask_y_start = y_start - y
-                mask_x_end = x_end - x
-                mask_y_end = y_end - y
+            # Начало компонента в маске группы (dst - destination)
+            dst_x_start = comp_x - x
+            dst_y_start = comp_y - y
 
-                # Region in component mask
-                comp_x_start = x_start - comp_x
-                comp_y_start = y_start - comp_y
-                comp_x_end = x_end - comp_x
-                comp_y_end = y_end - comp_y
+            # Конец компонента в маске группы (dst)
+            dst_x_end = dst_x_start + comp_w
+            dst_y_end = dst_y_start + comp_h
 
-                # Combine masks
-                mask[mask_y_start:mask_y_end, mask_x_start:mask_x_end] = cv2.bitwise_or(
-                    mask[mask_y_start:mask_y_end, mask_x_start:mask_x_end],
-                    comp_mask[comp_y_start:comp_y_end, comp_x_start:comp_x_end]
-                )
+            # Поскольку BBox группы (x, y, w, h) объединяет все BBox компонентов,
+            # мы знаем, что компонент полностью попадает в маску группы,
+            # и никаких дополнительных обрезок не требуется!
+
+            # Копируем маску компонента в маску группы, используя побитовое ИЛИ
+            mask[dst_y_start:dst_y_end, dst_x_start:dst_x_end] = cv2.bitwise_or(
+                mask[dst_y_start:dst_y_end, dst_x_start:dst_x_end], comp_mask
+            )
 
         return mask
 
