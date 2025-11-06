@@ -580,7 +580,7 @@ Examples:
         type=int,
         default=1,
         choices=[0, 1, 2, 3],
-        help="Grouping strategy: 1=BBox Intersection, 2=BBox-Hull Intersection, 3=Hull-Hull Intersection (default: 1)"
+        help="Grouping strategy: 0=Dont group parts,  1=BBox Intersection, 2=BBox-Hull Intersection, 3=Hull-Hull Intersection (default: 1)"
     )
 
     parser.add_argument(
