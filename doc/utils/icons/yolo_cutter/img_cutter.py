@@ -426,10 +426,12 @@ class ObjectExtractor:
         return mask
 
     def extract_objects(self, groups):
-        """Extract and save objects from groups and save as PNG files."""
-        # TODO: currently the function extracts objects by rectangle bounding boxes.
-        #       Future improvement could involve using masks for more precise extraction.
-        # it is useful when objects are not rectangular and are close to each other.
+        """
+        Extract and save objects from groups using mask-based extraction.
+
+        Uses precise masks instead of just bounding boxes for proper transparency
+        handling of non-rectangular objects close to each other.
+        """
         if not groups:
             print("Warning: No objects found.", file=sys.stderr)
             return False
@@ -438,12 +440,13 @@ class ObjectExtractor:
 
         # Extract and save each group
         for group_num, group_indices in enumerate(groups, 1):
-            # get bounding box for the group
+            # Get bounding box for the group
             x, y, w, h = self.get_group_bbox(list(group_indices))
-
 
             # Ensure valid bounds
             if w <= 0 or h <= 0:
+                if self.debug:
+                    print(f"  Warning: Invalid bounds for group {group_num}, skipping.")
                 continue
 
             # Ensure bounds are within image
@@ -453,6 +456,8 @@ class ObjectExtractor:
             h = min(h, self.image.shape[0] - y)
 
             if w <= 0 or h <= 0:
+                if self.debug:
+                    print(f"  Warning: Bounds outside image for group {group_num}, skipping.")
                 continue
 
             # Crop image
@@ -461,16 +466,32 @@ class ObjectExtractor:
             # Create mask for the group
             mask = self.get_group_mask(list(group_indices), (x, y, w, h))
 
+            # Verify mask is not empty
+            if cv2.countNonZero(mask) == 0:
+                print(f"  Warning: Empty mask for group {group_num}, skipping.", file=sys.stderr)
+                continue
+
             # Convert to RGBA
             rgba = cv2.cvtColor(cropped, cv2.COLOR_BGR2BGRA)
+
+            # Apply mask to alpha channel
+            # Where mask is 255 (object), alpha is 255 (opaque)
+            # Where mask is 0 (background), alpha is 0 (transparent)
             rgba[:, :, 3] = mask
 
-            # Save PNG
+            # Save PNG with transparency
             output_file = self.output_dir / f"object_{group_num:03d}.png"
-            cv2.imwrite(str(output_file), rgba)
-            
+            success = cv2.imwrite(str(output_file), rgba)
+
+            if not success:
+                print(f"  Error saving: {output_file}", file=sys.stderr)
+                continue
+
             if self.debug:
-                print(f"  Saved: {output_file} (components: {len(group_indices)})")
+                print(f"  Saved: {output_file}")
+                print(f"    Components: {len(group_indices)}")
+                print(f"    Size: {w}x{h} pixels")
+                print(f"    Non-zero pixels in mask: {cv2.countNonZero(mask)}")
             else:
                 print(f"  Saved: {output_file}")
 
