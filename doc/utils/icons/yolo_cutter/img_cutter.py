@@ -128,7 +128,7 @@ class ObjectExtractor:
 
             # Get convex hull
             try:
-                # !!! NOTE: Contours now have local coordinates,
+                # NOTE: Contours now have local coordinates,
                 # but for hull, which is used in geometric checks,
                 # global coordinates are needed. Restore global coordinates for hull.
                 hull = cv2.convexHull(contours[0])
@@ -160,8 +160,10 @@ class ObjectExtractor:
         h_pad = h + 2 * self.padding
         return (x_pad, y_pad, w_pad, h_pad)
 
+    # --- GEOMETRIC CHECKS (UNCHANGED LOGIC) ---
     def boxes_intersect(self, bbox_a, bbox_b):
-        """Check if two bounding boxes intersect."""
+        """Check if expanded bbox of A intersects with unexpanded bbox of B (Original S1 logic)."""
+        # Original logic: check expanded BBox A against BBox B (unexpanded)
         x1, y1, w1, h1 = self.expand_bbox(bbox_a)
         x2, y2, w2, h2 = bbox_b
 
@@ -186,9 +188,8 @@ class ObjectExtractor:
         except Exception:
             return False
 
-
     def hulls_intersect(self, hull_a, hull_b):
-        """Check if expanded hull A intersects with hull B."""
+        """Check if expanded hull A intersects with hull B (Original S3 logic)."""
         # Convert hull points to polygons
         hull_a_points = hull_a.reshape(-1, 2).astype(float)
         hull_b_points = hull_b.reshape(-1, 2).astype(float)
@@ -208,9 +209,52 @@ class ObjectExtractor:
         except Exception:
             return False
 
-    def group_components_strategy_1(self):
-        """Group components using bbox intersection strategy."""
-        print(f"Applying Strategy 1: BBox Intersection (padding={self.padding})...")
+    # --- MERGE CONDITIONS (PREDICATES) FOR EACH STRATEGY ---
+
+    def _merge_condition_s1(self, idx_a, idx_b):
+        """Predicate for Strategy 1: Check if BBox_A intersects BBox_B."""
+        # Original S1 logic checked BBox A (expanded) against BBox B (unexpanded),
+        # then BBox B (expanded) against BBox A (unexpanded).
+        # We need to call the boxes_intersect with the correct order for the expansion to happen.
+        return self.boxes_intersect(self.components[idx_a]['bbox'], self.components[idx_b]['bbox']) or \
+               self.boxes_intersect(self.components[idx_b]['bbox'], self.components[idx_a]['bbox'])
+
+    def _merge_condition_s2(self, idx_a, idx_b):
+        """Predicate for Strategy 2: Check BBox-Hull or Hull-BBox intersection."""
+        comp_a = self.components[idx_a]
+        comp_b = self.components[idx_b]
+
+        # Check expanded bbox_a with hull_b
+        if self.bbox_intersects_hull(comp_a['bbox'], comp_b['hull']):
+            return True
+
+        # Also check expanded bbox_b with hull_a
+        if self.bbox_intersects_hull(comp_b['bbox'], comp_a['hull']):
+            return True
+
+        return False
+
+    def _merge_condition_s3(self, idx_a, idx_b):
+        """Predicate for Strategy 3: Check Hull-Hull intersection."""
+        # Hull-Hull intersection (S3) is symmetric, so we only check one way (Hull A expanded vs Hull B)
+        # because the internal check already performs the expansion on the first argument.
+        return self.hulls_intersect(self.components[idx_a]['hull'], self.components[idx_b]['hull'])
+
+    # --- REFACTORED CORE GROUPING METHOD ---
+
+    def group_components_by_strategy(self, strategy_name, merge_condition):
+        """
+        Groups components iteratively based on a given merge_condition function.
+
+        Args:
+            strategy_name (str): Name of the strategy for logging.
+            merge_condition (callable): A function that takes two component indices
+                                        (idx_a, idx_b) and returns True if they should merge.
+
+        Returns:
+            list[set]: A list of sets, where each set contains component indices belonging to a group.
+        """
+        print(f"Applying Strategy {self.strategy}: {strategy_name} (padding={self.padding})...")
 
         # Initialize groups (each component is its own group)
         groups = [set([i]) for i in range(len(self.components))]
@@ -236,138 +280,11 @@ class ObjectExtractor:
 
                     group_b = groups[j]
 
-                    # Check if any component from A intersects with any from B
+                    # Check if any component from A intersects with any from B using the condition
                     should_merge = False
                     for idx_a in group_a:
                         for idx_b in group_b:
-                            if self.boxes_intersect(
-                                self.components[idx_a]['bbox'],
-                                self.components[idx_b]['bbox']
-                            ):
-                                should_merge = True
-                                break
-                        if should_merge:
-                            break
-
-                    if should_merge:
-                        group_a = group_a.union(group_b)
-                        used.add(j)
-                        merged = True
-
-                new_groups.append(group_a)
-
-            groups = new_groups
-
-            if self.debug:
-                print(f"  Iteration {iteration}: {len(groups)} groups")
-
-        if self.debug:
-            print(f"Final groups: {len(groups)}")
-
-        return groups
-
-    def group_components_strategy_3(self):
-        """Group components using hull-hull intersection strategy."""
-        print(f"Applying Strategy 3: Hull-Hull Intersection (padding={self.padding})...")
-
-        # Initialize groups (each component is its own group)
-        groups = [set([i]) for i in range(len(self.components))]
-
-        # Iteratively merge intersecting groups
-        merged = True
-        iteration = 0
-        while merged:
-            iteration += 1
-            merged = False
-            new_groups = []
-            used = set()
-
-            for i in range(len(groups)):
-                if i in used:
-                    continue
-
-                group_a = groups[i]
-
-                for j in range(i + 1, len(groups)):
-                    if j in used:
-                        continue
-
-                    group_b = groups[j]
-
-                    # Check if any hull from A intersects with any hull from B
-                    should_merge = False
-                    for idx_a in group_a:
-                        for idx_b in group_b:
-                            if self.hulls_intersect(
-                                self.components[idx_a]['hull'],
-                                self.components[idx_b]['hull']
-                            ):
-                                should_merge = True
-                                break
-                        if should_merge:
-                            break
-
-                    if should_merge:
-                        group_a = group_a.union(group_b)
-                        used.add(j)
-                        merged = True
-
-                new_groups.append(group_a)
-
-            groups = new_groups
-
-            if self.debug:
-                print(f"  Iteration {iteration}: {len(groups)} groups")
-
-        if self.debug:
-            print(f"Final groups: {len(groups)}")
-
-        return groups
-
-    def group_components_strategy_2(self):
-        """Group components using bbox-hull intersection strategy."""
-        print(f"Applying Strategy 2: BBox-Hull Intersection (padding={self.padding})...")
-
-        # Initialize groups (each component is its own group)
-        groups = [set([i]) for i in range(len(self.components))]
-
-        # Iteratively merge intersecting groups
-        merged = True
-        iteration = 0
-        while merged:
-            iteration += 1
-            merged = False
-            new_groups = []
-            used = set()
-
-            for i in range(len(groups)):
-                if i in used:
-                    continue
-
-                group_a = groups[i]
-
-                for j in range(i + 1, len(groups)):
-                    if j in used:
-                        continue
-
-                    group_b = groups[j]
-
-                    # Check if any bbox from A intersects with any hull from B
-                    should_merge = False
-                    for idx_a in group_a:
-                        for idx_b in group_b:
-                            # Check bbox_a with hull_b
-                            if self.bbox_intersects_hull(
-                                self.components[idx_a]['bbox'],
-                                self.components[idx_b]['hull']
-                            ):
-                                should_merge = True
-                                break
-                            # Also check bbox_b with hull_a
-                            if self.bbox_intersects_hull(
-                                self.components[idx_b]['bbox'],
-                                self.components[idx_a]['hull']
-                            ):
+                            if merge_condition(idx_a, idx_b):
                                 should_merge = True
                                 break
                         if should_merge:
@@ -536,15 +453,16 @@ class ObjectExtractor:
             print("Warning: No components found.", file=sys.stderr)
             return False
 
-        # Group components
-        if self.strategy == 1:
-            groups = self.group_components_strategy_1()
-        elif self.strategy == 2:
-            groups = self.group_components_strategy_2()
-        elif self.strategy == 3:
-            groups = self.group_components_strategy_3()
-        else: # strategy == 0 (no grouping)
+        # --- REFACTORED GROUPING LOGIC ---
+        groups = []
+        if self.strategy == 0: # No grouping
             groups = [{i} for i in range(len(self.components))]
+        elif self.strategy == 1: # BBox Intersection (S1)
+            groups = self.group_components_by_strategy("BBox Intersection", self._merge_condition_s1)
+        elif self.strategy == 2: # BBox-Hull Intersection (S2)
+            groups = self.group_components_by_strategy("BBox-Hull Intersection", self._merge_condition_s2)
+        elif self.strategy == 3: # Hull-Hull Intersection (S3)
+            groups = self.group_components_by_strategy("Hull-Hull Intersection", self._merge_condition_s3)
 
         # Extract and save objects
         success = self.extract_objects(groups)
@@ -580,7 +498,7 @@ Examples:
         type=int,
         default=1,
         choices=[0, 1, 2, 3],
-        help="Grouping strategy: 0=Dont group parts,  1=BBox Intersection, 2=BBox-Hull Intersection, 3=Hull-Hull Intersection (default: 1)"
+        help="Grouping strategy: 0=None, 1=BBox Intersection, 2=BBox-Hull Intersection, 3=Hull-Hull Intersection (default: 1)"
     )
 
     parser.add_argument(
