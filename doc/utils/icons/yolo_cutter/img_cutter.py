@@ -14,7 +14,7 @@ from shapely.geometry import Polygon, box
 
 # Configuration constants
 THRESHOLD_VALUE = 128
-MIN_OBJECT_AREA = 20  # Minimum area to consider as object
+MIN_OBJECT_AREA = 4  # Minimum area to consider as object
 
 
 class ObjectExtractor:
