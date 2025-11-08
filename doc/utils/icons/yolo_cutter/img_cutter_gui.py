@@ -354,37 +354,15 @@ class ImageViewerWidget(QLabel):
             painter.drawRect(x1, y1, x2 - x1, y2 - y1)
 
     def mousePressEvent(self, event):
-        """Handle mouse press - start lasso or click group"""
-        if not self.pixmap():
+        """Handle mouse press - start lasso selection"""
+        if not self.pixmap() or event.button() != Qt.LeftButton:
             return
 
-        # Right click or Shift+Click starts lasso selection
-        if event.button() == Qt.RightButton or (event.modifiers() & Qt.ShiftModifier):
-            self.lasso_start = event.pos()
-            self.lasso_current = event.pos()
-            self.is_lasso_active = True
-            self.update()
-            return
-
-        # Left click - check for group click
-        if not self.groups:
-            return
-
-        # Calculate click position relative to image
-        pixmap = self.pixmap()
-        x_offset = (self.width() - pixmap.width()) // 2
-        y_offset = (self.height() - pixmap.height()) // 2
-
-        click_x = (event.x() - x_offset) / self.zoom_factor
-        click_y = (event.y() - y_offset) / self.zoom_factor
-
-        # Find clicked group (check from smallest to largest)
-        for group in reversed(self.groups):  # Reversed because sorted by area desc
-            x, y, w, h = group['bbox']
-            if x <= click_x <= x + w and y <= click_y <= y + h:
-                ctrl_pressed = event.modifiers() & Qt.ControlModifier
-                self.group_clicked.emit(group['id'], ctrl_pressed)
-                break
+        # Start lasso selection
+        self.lasso_start = event.pos()
+        self.lasso_current = event.pos()
+        self.is_lasso_active = True
+        self.update()
 
     def mouseMoveEvent(self, event):
         """Handle mouse move - update lasso"""
@@ -394,41 +372,66 @@ class ImageViewerWidget(QLabel):
 
     def mouseReleaseEvent(self, event):
         """Handle mouse release - complete lasso selection"""
-        if self.is_lasso_active:
-            self.is_lasso_active = False
+        if not self.is_lasso_active or event.button() != Qt.LeftButton:
+            return
 
-            if self.lasso_start and self.lasso_current and self.groups:
-                # Calculate lasso rectangle
-                x1 = min(self.lasso_start.x(), self.lasso_current.x())
-                y1 = min(self.lasso_start.y(), self.lasso_current.y())
-                x2 = max(self.lasso_start.x(), self.lasso_current.x())
-                y2 = max(self.lasso_start.y(), self.lasso_current.y())
+        self.is_lasso_active = False
 
-                # Convert to image coordinates
-                pixmap = self.pixmap()
-                if pixmap:
-                    x_offset = (self.width() - pixmap.width()) // 2
-                    y_offset = (self.height() - pixmap.height()) // 2
-
-                    img_x1 = (x1 - x_offset) / self.zoom_factor
-                    img_y1 = (y1 - y_offset) / self.zoom_factor
-                    img_x2 = (x2 - x_offset) / self.zoom_factor
-                    img_y2 = (y2 - y_offset) / self.zoom_factor
-
-                    # Check which groups intersect with lasso
-                    ctrl_pressed = event.modifiers() & Qt.ControlModifier
-
-                    for group in self.groups:
-                        gx, gy, gw, gh = group['bbox']
-
-                        # Check if group bbox intersects with lasso rectangle
-                        if not (gx + gw < img_x1 or gx > img_x2 or
-                                gy + gh < img_y1 or gy > img_y2):
-                            self.group_clicked.emit(group['id'], ctrl_pressed)
-
+        if not self.lasso_start or not self.lasso_current or not self.groups:
             self.lasso_start = None
             self.lasso_current = None
             self.update()
+            return
+
+        # Calculate lasso rectangle
+        x1 = min(self.lasso_start.x(), self.lasso_current.x())
+        y1 = min(self.lasso_start.y(), self.lasso_current.y())
+        x2 = max(self.lasso_start.x(), self.lasso_current.x())
+        y2 = max(self.lasso_start.y(), self.lasso_current.y())
+
+        # Check if it's a click (very small drag) or a real lasso
+        drag_distance = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
+
+        if drag_distance < 5:  # Click threshold - 5 pixels
+            # It's a click - toggle single group
+            pixmap = self.pixmap()
+            if pixmap:
+                x_offset = (self.width() - pixmap.width()) // 2
+                y_offset = (self.height() - pixmap.height()) // 2
+
+                click_x = (x1 - x_offset) / self.zoom_factor
+                click_y = (y1 - y_offset) / self.zoom_factor
+
+                # Find clicked group (check from smallest to largest)
+                for group in reversed(self.groups):
+                    gx, gy, gw, gh = group['bbox']
+                    if gx <= click_x <= gx + gw and gy <= click_y <= gy + gh:
+                        self.group_clicked.emit(group['id'], False)
+                        break
+        else:
+            # It's a lasso - select all groups in rectangle
+            pixmap = self.pixmap()
+            if pixmap:
+                x_offset = (self.width() - pixmap.width()) // 2
+                y_offset = (self.height() - pixmap.height()) // 2
+
+                img_x1 = (x1 - x_offset) / self.zoom_factor
+                img_y1 = (y1 - y_offset) / self.zoom_factor
+                img_x2 = (x2 - x_offset) / self.zoom_factor
+                img_y2 = (y2 - y_offset) / self.zoom_factor
+
+                # Select all groups that intersect with lasso
+                for group in self.groups:
+                    gx, gy, gw, gh = group['bbox']
+
+                    # Check if group bbox intersects with lasso rectangle
+                    if not (gx + gw < img_x1 or gx > img_x2 or
+                            gy + gh < img_y1 or gy > img_y2):
+                        self.group_clicked.emit(group['id'], True)  # True = add to selection
+
+        self.lasso_start = None
+        self.lasso_current = None
+        self.update()
 
 
 class MainWindow(QMainWindow):
@@ -689,12 +692,15 @@ class MainWindow(QMainWindow):
         else:
             self.log("No groups created")
 
-    def on_group_clicked(self, group_id: int, ctrl_pressed: bool):
+    def on_group_clicked(self, group_id: int, add_to_selection: bool):
         """Handle group click in viewer"""
-        if not ctrl_pressed:
-            self.controller.deselect_all_groups()
+        if add_to_selection:
+            # Add to selection (from lasso)
+            self.controller.selected_groups.add(group_id)
+        else:
+            # Toggle selection (from click)
+            self.controller.toggle_group_selection(group_id)
 
-        self.controller.toggle_group_selection(group_id)
         self.image_viewer.set_groups(self.controller.groups, self.controller.selected_groups)
 
         count = len(self.controller.selected_groups)
