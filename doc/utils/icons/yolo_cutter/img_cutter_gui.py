@@ -639,7 +639,7 @@ class MainWindow(QMainWindow):
 
         # Enable find button
         self.btn_find.setEnabled(True)
-        self.log("Click 'Поиск фрагментов' to detect components")
+        self.log("Click 'Find components' to detect components")
 
     def on_padding_changed(self, value: int):
         """Handle padding slider change"""
@@ -785,13 +785,13 @@ class MainWindow(QMainWindow):
             self.controller.groups = []
             self.image_viewer.set_groups([], set())
 
-            # Reset buttons - user needs to click "Поиск фрагментов" again
+            # Reset buttons - user needs to click "Find components" again
             self.btn_select_all.setEnabled(False)
             self.btn_deselect_all.setEnabled(False)
             self.btn_merge.setEnabled(False)
             self.btn_extract.setEnabled(False)
 
-            self.log("Click 'Поиск фрагментов' to detect remaining components")
+            self.log("Click 'Find components' to detect remaining components")
         else:
             QMessageBox.critical(self, "Error", "Extraction failed")
 
