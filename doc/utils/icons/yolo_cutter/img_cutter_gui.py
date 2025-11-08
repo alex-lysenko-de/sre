@@ -194,6 +194,54 @@ class GUIController:
         """Deselect all groups"""
         self.selected_groups.clear()
 
+    def merge_selected_groups(self) -> bool:
+        """Merge selected groups into one"""
+        if len(self.selected_groups) < 2:
+            return False
+
+        try:
+            # Get all selected groups
+            selected = [g for g in self.groups if g['id'] in self.selected_groups]
+
+            # Collect all component indices from selected groups
+            merged_indices = []
+            for group in selected:
+                merged_indices.extend(group['indices'])
+
+            # Calculate new bounding box
+            merged_bbox = self.extractor.get_group_bbox(merged_indices)
+
+            # Calculate total area
+            merged_area = sum(self.extractor.components[i]['area'] for i in merged_indices)
+
+            # Remove selected groups and add merged one
+            new_groups = [g for g in self.groups if g['id'] not in self.selected_groups]
+
+            # Create new merged group with new ID
+            new_id = max([g['id'] for g in self.groups]) + 1 if self.groups else 0
+            merged_group = {
+                'id': new_id,
+                'bbox': merged_bbox,
+                'indices': merged_indices,
+                'area': merged_area,
+                'selected': False
+            }
+
+            new_groups.append(merged_group)
+
+            # Sort by area
+            new_groups.sort(key=lambda g: g['area'], reverse=True)
+
+            # Update groups
+            self.groups = new_groups
+            self.selected_groups.clear()
+
+            return True
+
+        except Exception as e:
+            print(f"Error merging groups: {e}")
+            return False
+
 
 class ImageViewerWidget(QLabel):
     """Custom widget for image display with interaction"""
@@ -410,8 +458,13 @@ class MainWindow(QMainWindow):
         self.btn_deselect_all.clicked.connect(self.on_deselect_all)
         self.btn_deselect_all.setEnabled(False)
 
+        self.btn_merge = QPushButton("Merge Selected")
+        self.btn_merge.clicked.connect(self.on_merge_selected)
+        self.btn_merge.setEnabled(False)
+
         selection_layout.addWidget(self.btn_select_all)
         selection_layout.addWidget(self.btn_deselect_all)
+        selection_layout.addWidget(self.btn_merge)
 
         selection_group.setLayout(selection_layout)
         layout.addWidget(selection_group)
@@ -555,6 +608,7 @@ class MainWindow(QMainWindow):
             self.image_viewer.set_groups(groups, self.controller.selected_groups)
             self.btn_select_all.setEnabled(True)
             self.btn_deselect_all.setEnabled(True)
+            self.btn_merge.setEnabled(True)
             self.btn_extract.setEnabled(True)
         else:
             self.log("No groups created")
@@ -581,6 +635,30 @@ class MainWindow(QMainWindow):
         self.controller.deselect_all_groups()
         self.image_viewer.set_groups(self.controller.groups, self.controller.selected_groups)
         self.log("Deselected all groups")
+
+    def on_merge_selected(self):
+        """Handle merge selected button"""
+        if len(self.controller.selected_groups) < 2:
+            QMessageBox.warning(self, "Warning", "Select at least 2 groups to merge")
+            return
+
+        count = len(self.controller.selected_groups)
+        reply = QMessageBox.question(
+            self, "Confirm",
+            f"Merge {count} selected groups into one?",
+            QMessageBox.Yes | QMessageBox.No
+        )
+
+        if reply != QMessageBox.Yes:
+            return
+
+        self.log(f"Merging {count} groups...")
+
+        if self.controller.merge_selected_groups():
+            self.log("Groups merged successfully")
+            self.image_viewer.set_groups(self.controller.groups, self.controller.selected_groups)
+        else:
+            QMessageBox.critical(self, "Error", "Failed to merge groups")
 
     def on_extract_selected(self):
         """Handle extract button"""
@@ -614,6 +692,7 @@ class MainWindow(QMainWindow):
             self.btn_group.setEnabled(False)
             self.btn_select_all.setEnabled(False)
             self.btn_deselect_all.setEnabled(False)
+            self.btn_merge.setEnabled(False)
             self.btn_extract.setEnabled(False)
 
             self.log("Click 'Поиск фрагментов' to detect remaining components")
