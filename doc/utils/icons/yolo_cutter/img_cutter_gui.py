@@ -259,6 +259,11 @@ class ImageViewerWidget(QLabel):
         self.zoom_factor = 1.0
         self.offset = QPoint(0, 0)
 
+        # Lasso selection
+        self.lasso_start: Optional[QPoint] = None
+        self.lasso_current: Optional[QPoint] = None
+        self.is_lasso_active = False
+
     def set_image(self, image: np.ndarray):
         """Set image from numpy array"""
         height, width, channel = image.shape
@@ -299,7 +304,7 @@ class ImageViewerWidget(QLabel):
         """Custom paint event to draw groups"""
         super().paintEvent(event)
 
-        if not self.groups or not self.original_image:
+        if not self.original_image:
             return
 
         painter = QPainter(self)
@@ -307,11 +312,14 @@ class ImageViewerWidget(QLabel):
 
         # Calculate offset for centered image
         pixmap = self.pixmap()
-        if pixmap:
-            x_offset = (self.width() - pixmap.width()) // 2
-            y_offset = (self.height() - pixmap.height()) // 2
+        if not pixmap:
+            return
 
-            # Draw each group
+        x_offset = (self.width() - pixmap.width()) // 2
+        y_offset = (self.height() - pixmap.height()) // 2
+
+        # Draw groups
+        if self.groups:
             for group in self.groups:
                 x, y, w, h = group['bbox']
 
@@ -333,9 +341,33 @@ class ImageViewerWidget(QLabel):
                 painter.setPen(pen)
                 painter.drawRect(sx, sy, sw, sh)
 
+        # Draw lasso rectangle
+        if self.is_lasso_active and self.lasso_start and self.lasso_current:
+            pen = QPen(QColor(0, 255, 255), 2, Qt.DashLine)  # Cyan dashed line
+            painter.setPen(pen)
+
+            x1 = min(self.lasso_start.x(), self.lasso_current.x())
+            y1 = min(self.lasso_start.y(), self.lasso_current.y())
+            x2 = max(self.lasso_start.x(), self.lasso_current.x())
+            y2 = max(self.lasso_start.y(), self.lasso_current.y())
+
+            painter.drawRect(x1, y1, x2 - x1, y2 - y1)
+
     def mousePressEvent(self, event):
-        """Handle mouse clicks"""
-        if not self.groups or not self.pixmap():
+        """Handle mouse press - start lasso or click group"""
+        if not self.pixmap():
+            return
+
+        # Right click or Shift+Click starts lasso selection
+        if event.button() == Qt.RightButton or (event.modifiers() & Qt.ShiftModifier):
+            self.lasso_start = event.pos()
+            self.lasso_current = event.pos()
+            self.is_lasso_active = True
+            self.update()
+            return
+
+        # Left click - check for group click
+        if not self.groups:
             return
 
         # Calculate click position relative to image
@@ -353,6 +385,50 @@ class ImageViewerWidget(QLabel):
                 ctrl_pressed = event.modifiers() & Qt.ControlModifier
                 self.group_clicked.emit(group['id'], ctrl_pressed)
                 break
+
+    def mouseMoveEvent(self, event):
+        """Handle mouse move - update lasso"""
+        if self.is_lasso_active:
+            self.lasso_current = event.pos()
+            self.update()
+
+    def mouseReleaseEvent(self, event):
+        """Handle mouse release - complete lasso selection"""
+        if self.is_lasso_active:
+            self.is_lasso_active = False
+
+            if self.lasso_start and self.lasso_current and self.groups:
+                # Calculate lasso rectangle
+                x1 = min(self.lasso_start.x(), self.lasso_current.x())
+                y1 = min(self.lasso_start.y(), self.lasso_current.y())
+                x2 = max(self.lasso_start.x(), self.lasso_current.x())
+                y2 = max(self.lasso_start.y(), self.lasso_current.y())
+
+                # Convert to image coordinates
+                pixmap = self.pixmap()
+                if pixmap:
+                    x_offset = (self.width() - pixmap.width()) // 2
+                    y_offset = (self.height() - pixmap.height()) // 2
+
+                    img_x1 = (x1 - x_offset) / self.zoom_factor
+                    img_y1 = (y1 - y_offset) / self.zoom_factor
+                    img_x2 = (x2 - x_offset) / self.zoom_factor
+                    img_y2 = (y2 - y_offset) / self.zoom_factor
+
+                    # Check which groups intersect with lasso
+                    ctrl_pressed = event.modifiers() & Qt.ControlModifier
+
+                    for group in self.groups:
+                        gx, gy, gw, gh = group['bbox']
+
+                        # Check if group bbox intersects with lasso rectangle
+                        if not (gx + gw < img_x1 or gx > img_x2 or
+                                gy + gh < img_y1 or gy > img_y2):
+                            self.group_clicked.emit(group['id'], ctrl_pressed)
+
+            self.lasso_start = None
+            self.lasso_current = None
+            self.update()
 
 
 class MainWindow(QMainWindow):
