@@ -7,6 +7,7 @@ import argparse
 import sys
 import os
 from pathlib import Path
+from typing import Callable, List, Set
 import numpy as np
 import cv2
 from shapely.geometry import Polygon, box
@@ -26,8 +27,8 @@ class ObjectExtractor:
 
         Args:
             input_file: Path to input image
-            strategy: Grouping strategy (0, 1, 2, )
-            padding: Expansion of bounding boxes
+            strategy: Grouping strategy (0, 1, 2, 3, 4)
+            padding: Expansion of bounding boxes/masks
             debug: Enable debug output
         """
         self.input_file = input_file
@@ -39,6 +40,8 @@ class ObjectExtractor:
         self.binary = None
         self.output_dir = None
         self.components = []
+        # Store full mask for each component (for S4)
+        self._full_masks = {}
 
     def validate_input(self):
         """Validate input file exists and strategy is valid."""
@@ -46,8 +49,9 @@ class ObjectExtractor:
             print(f"Error: Input file '{self.input_file}' not found.", file=sys.stderr)
             return False
 
-        if self.strategy not in [0, 1, 2, 3]:
-            print(f"Error: Invalid strategy '{self.strategy}'. Must be 0, 1, 2, or 3.",
+        # Обновлено: добавлена стратегия 4
+        if self.strategy not in [0, 1, 2, 3, 4]:
+            print(f"Error: Invalid strategy '{self.strategy}'. Must be 0, 1, 2, 3, or 4.",
                   file=sys.stderr)
             return False
 
@@ -82,6 +86,9 @@ class ObjectExtractor:
         _, self.binary = cv2.threshold(self.gray, THRESHOLD_VALUE, 255,
                                        cv2.THRESH_BINARY_INV)
 
+        # Очистка кэша масок при новой предобработке
+        self._full_masks = {}
+
         return True
 
     def find_components(self):
@@ -92,6 +99,7 @@ class ObjectExtractor:
         )
 
         self.components = []
+        self._full_masks = {} # Очистка кэша масок
 
         # Process each component (skip background at index 0)
         for i in range(1, num_labels):
@@ -101,8 +109,9 @@ class ObjectExtractor:
             if area < MIN_OBJECT_AREA:
                 continue
 
-            # Create mask for this component (full image size)
+            # Create full mask for this component (full image size)
             full_mask = (labels == i).astype(np.uint8) * 255
+            self._full_masks[len(self.components)] = full_mask # Кэшируем полную маску
 
             # --- FIX: Crop the mask to the component's BBox ---
             mask = full_mask[y:y + h, x:x + w]
@@ -115,15 +124,17 @@ class ObjectExtractor:
             if non_zero_pixels == 0:
                 if self.debug:
                     print(f"    WARNING: Component {i} skipped: Non-zero area is 0 after BBox crop.")
+                del self._full_masks[len(self.components)] # Удаляем, если компонент пропущен
                 continue
 
             # Find contours
-            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL,  # ! Important: now finding contours in the cropped mask!
+            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL,
                                            cv2.CHAIN_APPROX_SIMPLE)
 
             if len(contours) == 0:
                 if self.debug:
                     print(f"    WARNING: Component {i} skipped: No contours found!")
+                del self._full_masks[len(self.components)]
                 continue
 
             # Get convex hull
@@ -141,8 +152,8 @@ class ObjectExtractor:
                 'id': i,
                 'bbox': (x, y, w, h),
                 'area': area,
-                'mask': mask,  # <-- Now this is the cropped mask (w x h)
-                'hull': hull,  # <-- Now this is the hull in global coordinates
+                'mask': mask,  # Cropped mask (w x h)
+                'hull': hull,  # Hull in global coordinates
                 'centroid': centroids[i]
             })
 
@@ -211,15 +222,12 @@ class ObjectExtractor:
 
     # --- MERGE CONDITIONS (PREDICATES) FOR EACH STRATEGY ---
 
-    def _merge_condition_s1(self, idx_a, idx_b):
+    def _merge_condition_s1(self, idx_a, idx_b, padding=0): # padding добавлен для унификации
         """Predicate for Strategy 1: Check if BBox_A intersects BBox_B."""
-        # Original S1 logic checked BBox A (expanded) against BBox B (unexpanded),
-        # then BBox B (expanded) against BBox A (unexpanded).
-        # We need to call the boxes_intersect with the correct order for the expansion to happen.
         return self.boxes_intersect(self.components[idx_a]['bbox'], self.components[idx_b]['bbox']) or \
                self.boxes_intersect(self.components[idx_b]['bbox'], self.components[idx_a]['bbox'])
 
-    def _merge_condition_s2(self, idx_a, idx_b):
+    def _merge_condition_s2(self, idx_a, idx_b, padding=0): # padding добавлен для унификации
         """Predicate for Strategy 2: Check BBox-Hull or Hull-BBox intersection."""
         comp_a = self.components[idx_a]
         comp_b = self.components[idx_b]
@@ -234,22 +242,84 @@ class ObjectExtractor:
 
         return False
 
-    def _merge_condition_s3(self, idx_a, idx_b):
+    def _merge_condition_s3(self, idx_a, idx_b, padding=0): # padding добавлен для унификации
         """Predicate for Strategy 3: Check Hull-Hull intersection."""
         # Hull-Hull intersection (S3) is symmetric, so we only check one way (Hull A expanded vs Hull B)
-        # because the internal check already performs the expansion on the first argument.
         return self.hulls_intersect(self.components[idx_a]['hull'], self.components[idx_b]['hull'])
 
-    # --- REFACTORED CORE GROUPING METHOD ---
+    # ----------------------------------------------------------------------
+    # НОВЫЙ ВСПОМОГАТЕЛЬНЫЙ МЕТОД: Получение полной маски компонента
+    # ----------------------------------------------------------------------
+    def get_component_mask_full(self, comp_idx: int) -> np.ndarray:
+        """
+        Возвращает полную бинарную маску компонента в размере исходного изображения.
 
-    def group_components_by_strategy(self, strategy_name, merge_condition):
+        Используется кэш self._full_masks для повышения производительности.
+        """
+        # Индекс компонента соответствует порядку его добавления в self.components
+        if comp_idx in self._full_masks:
+            return self._full_masks[comp_idx]
+
+        # Если маска не кэширована, восстанавливаем (что не должно происходить после find_components)
+        print(f"Warning: Full mask for component {comp_idx} not cached. Recreating.")
+        comp = self.components[comp_idx]
+        x, y, w, h = comp['bbox']
+
+        full_mask = np.zeros_like(self.binary)
+
+        # Размещаем обрезанную маску обратно в полную маску (для случаев, когда маски не кэшированы)
+        full_mask[y:y + h, x:x + w] = comp['mask']
+
+        self._full_masks[comp_idx] = full_mask
+        return full_mask
+
+    # ----------------------------------------------------------------------
+    # НОВЫЙ МЕТОД: Условие слияния для Стратегии 4 (Dilated Mask Intersection)
+    # ----------------------------------------------------------------------
+    def _merge_condition_s4(self, idx_a: int, idx_b: int, padding: int) -> bool:
+        """
+        Predicate for Strategy 4: Check if Dilated Mask A intersects Dilated Mask B.
+
+        Использует дилатацию (cv2.dilate) для увеличения области маски.
+        """
+        if padding <= 0:
+            # При нулевом паддинге проверяем обычное пересечение масок (по сути, S1/S3 в идеале)
+            mask_a = self.get_component_mask_full(idx_a)
+            mask_b = self.get_component_mask_full(idx_b)
+            intersection = cv2.bitwise_and(mask_a, mask_b)
+            return np.sum(intersection) > 0
+
+        # 1. Получить полные маски
+        mask_a = self.get_component_mask_full(idx_a)
+        mask_b = self.get_component_mask_full(idx_b)
+
+        # 2. Создать ядро для дилатации
+        # Размер ядра: (2*padding + 1)x(2*padding + 1) для круговой дилатации на 'padding' пикселей
+        kernel_size = 2 * padding + 1
+        # Круглое ядро (эллипс), чтобы дилатация была более равномерной
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
+
+        # 3. Дилатировать обе маски
+        dilated_mask_a = cv2.dilate(mask_a, kernel, iterations=1)
+        dilated_mask_b = cv2.dilate(mask_b, kernel, iterations=1)
+
+        # 4. Проверить пересечение дилатированных масок
+        intersection = cv2.bitwise_and(dilated_mask_a, dilated_mask_b)
+
+        # 5. Вернуть True, если есть любое пересечение (сумма пикселей > 0)
+        return np.sum(intersection) > 0
+
+    # --- REFACTORED CORE GROUPING METHOD (Обновлено для приема padding) ---
+
+    def group_components_by_strategy(self, strategy_name: str, merge_condition: Callable, padding: int = 0) -> List[Set[int]]:
         """
         Groups components iteratively based on a given merge_condition function.
 
         Args:
             strategy_name (str): Name of the strategy for logging.
             merge_condition (callable): A function that takes two component indices
-                                        (idx_a, idx_b) and returns True if they should merge.
+                                        (idx_a, idx_b) and the padding, and returns True if they should merge.
+            padding (int): The padding value (used by S4).
 
         Returns:
             list[set]: A list of sets, where each set contains component indices belonging to a group.
@@ -257,7 +327,7 @@ class ObjectExtractor:
         print(f"Applying Strategy {self.strategy}: {strategy_name} (padding={self.padding})...")
 
         # Initialize groups (each component is its own group)
-        groups = [set([i]) for i in range(len(self.components))]
+        groups: List[Set[int]] = [set([i]) for i in range(len(self.components))]
 
         # Iteratively merge intersecting groups
         merged = True
@@ -265,7 +335,7 @@ class ObjectExtractor:
         while merged:
             iteration += 1
             merged = False
-            new_groups = []
+            new_groups: List[Set[int]] = []
             used = set()
 
             for i in range(len(groups)):
@@ -284,7 +354,8 @@ class ObjectExtractor:
                     should_merge = False
                     for idx_a in group_a:
                         for idx_b in group_b:
-                            if merge_condition(idx_a, idx_b):
+                            # ! ВАЖНОЕ ИЗМЕНЕНИЕ: Передача padding в merge_condition
+                            if merge_condition(idx_a, idx_b, self.padding):
                                 should_merge = True
                                 break
                         if should_merge:
@@ -309,6 +380,8 @@ class ObjectExtractor:
 
     def get_group_bbox(self, group_indices):
         """Get bounding box for a group of components."""
+        # Логика get_group_bbox остается неизменной
+        # ... (код) ...
         xs = [self.components[i]['bbox'][0] for i in group_indices]
         ys = [self.components[i]['bbox'][1] for i in group_indices]
         ws = [self.components[i]['bbox'][2] for i in group_indices]
@@ -325,31 +398,21 @@ class ObjectExtractor:
 
     def get_group_mask(self, group_indices, bbox):
         """Get combined mask for a group of components within a bounding box."""
+        # Логика get_group_mask остается неизменной
+        # ... (код) ...
         x, y, w, h = bbox
         mask = np.zeros((h, w), dtype=np.uint8)
 
         for idx in group_indices:
             comp = self.components[idx]
-            comp_mask = comp['mask']  # This is the mask of size w_comp x h_comp
+            comp_mask = comp['mask']
             comp_x, comp_y, comp_w, comp_h = comp['bbox']
 
-            # Define the destination (DST) region inside the group mask (mask)
-            # x/y - start of the group BBox
-            # comp_x/comp_y - start of the component BBox
-
-            # Start of the component in the group mask (dst - destination)
             dst_x_start = comp_x - x
             dst_y_start = comp_y - y
-
-            # End of the component in the group mask (dst)
             dst_x_end = dst_x_start + comp_w
             dst_y_end = dst_y_start + comp_h
 
-            # Since the group BBox (x, y, w, h) combines all component BBoxes,
-            # we know that the component fits entirely within the group mask,
-            # and no additional cropping is needed!
-
-            # Copy the component mask into the group mask, using bitwise OR
             mask[dst_y_start:dst_y_end, dst_x_start:dst_x_end] = cv2.bitwise_or(
                 mask[dst_y_start:dst_y_end, dst_x_start:dst_x_end], comp_mask
             )
@@ -359,10 +422,9 @@ class ObjectExtractor:
     def extract_objects(self, groups):
         """
         Extract and save objects from groups using mask-based extraction.
-
-        Uses precise masks instead of just bounding boxes for proper transparency
-        handling of non-rectangular objects close to each other.
         """
+        # Логика extract_objects остается неизменной
+        # ... (код) ...
         if not groups:
             print("Warning: No objects found.", file=sys.stderr)
             return False
@@ -406,8 +468,6 @@ class ObjectExtractor:
             rgba = cv2.cvtColor(cropped, cv2.COLOR_BGR2BGRA)
 
             # Apply mask to alpha channel
-            # Where mask is 255 (object), alpha is 255 (opaque)
-            # Where mask is 0 (background), alpha is 0 (transparent)
             rgba[:, :, 3] = mask
 
             # Save PNG with transparency
@@ -453,16 +513,18 @@ class ObjectExtractor:
             print("Warning: No components found.", file=sys.stderr)
             return False
 
-        # --- REFACTORED GROUPING LOGIC ---
+        # --- ОБНОВЛЕННАЯ ЛОГИКА ГРУППИРОВКИ ---
         groups = []
         if self.strategy == 0: # No grouping
             groups = [{i} for i in range(len(self.components))]
         elif self.strategy == 1: # BBox Intersection (S1)
-            groups = self.group_components_by_strategy("BBox Intersection", self._merge_condition_s1)
+            groups = self.group_components_by_strategy("BBox Intersection", self._merge_condition_s1, self.padding)
         elif self.strategy == 2: # BBox-Hull Intersection (S2)
-            groups = self.group_components_by_strategy("BBox-Hull Intersection", self._merge_condition_s2)
+            groups = self.group_components_by_strategy("BBox-Hull Intersection", self._merge_condition_s2, self.padding)
         elif self.strategy == 3: # Hull-Hull Intersection (S3)
-            groups = self.group_components_by_strategy("Hull-Hull Intersection", self._merge_condition_s3)
+            groups = self.group_components_by_strategy("Hull-Hull Intersection", self._merge_condition_s3, self.padding)
+        elif self.strategy == 4: # Dilated Mask Intersection (S4)
+            groups = self.group_components_by_strategy("Dilated Mask Intersection", self._merge_condition_s4, self.padding)
 
         # Extract and save objects
         success = self.extract_objects(groups)
@@ -484,7 +546,7 @@ def main():
 Examples:
   python extract_objects.py source.png
   python extract_objects.py source.png --strategy 2 --padding 15
-  python extract_objects.py image.jpg -s 2 -p 20 --debug
+  python extract_objects.py image.jpg -s 4 -p 10 --debug  # <-- NEW STRATEGY 4
         """
     )
 
@@ -497,15 +559,15 @@ Examples:
         "--strategy", "-s",
         type=int,
         default=1,
-        choices=[0, 1, 2, 3],
-        help="Grouping strategy: 0=None, 1=BBox Intersection, 2=BBox-Hull Intersection, 3=Hull-Hull Intersection (default: 1)"
+        choices=[0, 1, 2, 3, 4], # Обновлено
+        help="Grouping strategy: 0=None, 1=BBox Intersection, 2=BBox-Hull Intersection, 3=Hull-Hull Intersection, 4=Dilated Mask Intersection (default: 1)"
     )
 
     parser.add_argument(
         "--padding", "-p",
         type=int,
         default=10,
-        help="Padding for bounding box expansion in pixels (default: 10)"
+        help="Padding for bounding box/mask expansion in pixels (default: 10)"
     )
 
     parser.add_argument(
