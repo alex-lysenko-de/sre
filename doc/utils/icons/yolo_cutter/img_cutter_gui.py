@@ -618,6 +618,21 @@ class MainWindow(QMainWindow):
 
         self.log(f"Loading: {file_path}")
 
+        # CRITICAL: Clear all previous data before loading new image
+        self.controller.groups = []
+        self.controller.selected_groups.clear()
+
+        # Clear viewer
+        self.image_viewer.set_groups([], set())
+
+        # Reset all buttons to initial state
+        self.btn_find.setEnabled(False)
+        self.btn_group.setEnabled(False)
+        self.btn_select_all.setEnabled(False)
+        self.btn_deselect_all.setEnabled(False)
+        self.btn_merge.setEnabled(False)
+        self.btn_extract.setEnabled(False)
+
         if not self.controller.load_image(file_path):
             QMessageBox.critical(self, "Error", "Failed to load image")
             return
