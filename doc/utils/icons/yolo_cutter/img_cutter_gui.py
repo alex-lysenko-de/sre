@@ -1,493 +1,492 @@
 """
-Графический интерфейс для интерактивного извлечения объектов из изображения.
-GUI for img_cutter.py with interactive object extraction and grouping.
+Interactive GUI for object extraction and segmentation.
+Built with PySide6, integrates ObjectExtractor from img_cutter.py
 """
 
 import sys
 import os
+import io
+import threading
 from pathlib import Path
+from typing import List, Set, Optional, Tuple
+from dataclasses import dataclass
+
 import numpy as np
 import cv2
-from PyQt5.QtWidgets import (
+from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLabel, QSlider, QComboBox, QFileDialog,
-    QGraphicsView, QGraphicsScene, QGraphicsPixmapItem, QTextEdit,
-    QGraphicsRectItem, QGraphicsPolygonItem
+    QPushButton, QComboBox, QSlider, QLabel, QFileDialog, QGraphicsView,
+    QGraphicsScene, QGraphicsItem, QGraphicsRectItem, QGraphicsPolygonItem,
+    QProgressDialog, QTextEdit, QSplitter, QGridLayout, QScrollArea,
+    QCheckBox, QMessageBox
 )
-from PyQt5.QtCore import Qt, QRectF, QPointF, pyqtSignal
-from PyQt5.QtGui import QPixmap, QImage, QPen, QColor, QBrush, QPolygonF, QPainter
+from PySide6.QtCore import Qt, QSize, QRect, QTimer, Signal, QObject, QPointF
+from PySide6.QtGui import (
+    QPixmap, QImage, QPainter, QPen, QColor, QBrush, QFont,
+    QPolygonF, QTransform
+)
+from PySide6.QtWidgets import QGroupBox
+
 from img_cutter import ObjectExtractor
 
 
-class InteractiveGraphicsView(QGraphicsView):
-    """Custom QGraphicsView with selection support."""
+@dataclass
+class GroupData:
+    """Data structure for a group of components."""
+    group_id: int
+    component_indices: Set[int]
+    bbox: Tuple[int, int, int, int]
+    is_selected: bool = False
+    color: QColor = None
 
-    selectionChanged = pyqtSignal()
 
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setDragMode(QGraphicsView.RubberBandDrag)
-        self.setRenderHint(QPainter.Antialiasing)
-        self.setRenderHint(QPainter.SmoothPixmapTransform)
-        self.selection_start = None
-        self.selection_rect = None
-        self.groups_items = []  # List of (group_indices, graphics_item)
+class WorkerThread(QObject):
+    """Worker thread for long-running operations."""
+    finished = Signal()
+    error = Signal(str)
+
+    def __init__(self, task_func):
+        super().__init__()
+        self.task_func = task_func
+
+    def run(self):
+        try:
+            self.task_func()
+            self.finished.emit()
+        except Exception as e:
+            self.error.emit(str(e))
+
+
+class GroupGraphicsItem(QGraphicsItem):
+    """Visual representation of a group."""
+
+    def __init__(self, group_data: GroupData, extractor: ObjectExtractor, color: QColor):
+        super().__init__()
+        self.group_data = group_data
+        self.extractor = extractor
+        self.color = color
+        self.setAcceptHoverEvents(True)
+        self.setZValue(-group_data.bbox[2] * group_data.bbox[3])  # Smaller on top
+
+    def boundingRect(self):
+        x, y, w, h = self.group_data.bbox
+        return QRect(x, y, w, h)
+
+    def paint(self, painter, option, widget=None):
+        x, y, w, h = self.group_data.bbox
+        rect = QRect(0, 0, w, h)
+
+        if self.group_data.is_selected:
+            pen = QPen(QColor(255, 0, 0), 3)
+        else:
+            pen = QPen(self.color, 2)
+
+        painter.setPen(pen)
+        painter.drawRect(rect)
+
+        # Draw label
+        font = QFont()
+        font.setPointSize(8)
+        painter.setFont(font)
+        painter.setPen(QColor(0, 0, 0))
+        painter.drawText(rect.adjusted(2, 2, 0, 0), f"G{self.group_data.group_id}")
 
     def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            scene_pos = self.mapToScene(event.pos())
+        self.group_data.is_selected = not self.group_data.is_selected
+        self.update()
 
-            # Check if clicked on a group
-            clicked_group = None
-            for group_indices, item in self.groups_items:
-                if item.contains(item.mapFromScene(scene_pos)):
-                    clicked_group = group_indices
-                    break
 
-            if clicked_group is not None:
-                # Toggle selection for this group
-                if clicked_group in self.scene().selected_groups:
-                    self.scene().selected_groups.remove(clicked_group)
-                else:
-                    self.scene().selected_groups.add(clicked_group)
-                self.selectionChanged.emit()
-                return
+class ImageGraphicsView(QGraphicsView):
+    """Custom graphics view for image display and interaction."""
 
-            # Start rubber band selection
-            self.selection_start = scene_pos
+    group_selected = Signal(int, bool)  # group_id, is_selected
 
-        super().mousePressEvent(event)
+    def __init__(self, scene: QGraphicsScene):
+        super().__init__(scene)
+        self.groups: List[GroupData] = []
+        self.lasso_start = None
+        self.lasso_rect = None
+        self.setDragMode(QGraphicsView.ScrollHandDrag)
+        self.setRenderHint(QPainter.Antialiasing)
+
+    def wheelEvent(self, event):
+        """Zoom with mouse wheel."""
+        factor = 1.1 if event.angleDelta().y() > 0 else 0.9
+        self.scale(factor, factor)
+
+    def mousePressEvent(self, event):
+        if event.modifiers() & Qt.ControlModifier:
+            self.lasso_start = self.mapToScene(event.pos())
+        else:
+            super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self.lasso_start:
+            pos = self.mapToScene(event.pos())
+            if self.lasso_rect:
+                self.scene().removeItem(self.lasso_rect)
+            x1, y1 = self.lasso_start.x(), self.lasso_start.y()
+            x2, y2 = pos.x(), pos.y()
+            self.lasso_rect = self.scene().addRect(
+                min(x1, x2), min(y1, y2), abs(x2 - x1), abs(y2 - y1),
+                QPen(QColor(0, 255, 0), 1)
+            )
+        else:
+            super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
-        if event.button() == Qt.LeftButton and self.selection_start is not None:
-            scene_end = self.mapToScene(event.pos())
-            selection_rect = QRectF(self.selection_start, scene_end).normalized()
+        if self.lasso_start:
+            if self.lasso_rect:
+                self.scene().removeItem(self.lasso_rect)
+            pos = self.mapToScene(event.pos())
+            lasso_rect = QRect(
+                int(self.lasso_start.x()), int(self.lasso_start.y()),
+                int(pos.x() - self.lasso_start.x()), int(pos.y() - self.lasso_start.y())
+            )
+            for group in self.groups:
+                gx, gy, gw, gh = group.bbox
+                if lasso_rect.intersects(QRect(gx, gy, gw, gh)):
+                    group.is_selected = not group.is_selected
+            self.lasso_start = None
+            self.lasso_rect = None
+            self.redraw_groups()
+        else:
+            super().mouseReleaseEvent(event)
 
-            # Toggle selection for all groups intersecting with selection rect
-            for group_indices, item in self.groups_items:
-                if item.sceneBoundingRect().intersects(selection_rect):
-                    if group_indices in self.scene().selected_groups:
-                        self.scene().selected_groups.remove(group_indices)
-                    else:
-                        self.scene().selected_groups.add(group_indices)
-
-            self.selection_start = None
-            self.selectionChanged.emit()
-
-        super().mouseReleaseEvent(event)
+    def redraw_groups(self):
+        """Redraw all group items."""
+        for item in self.scene().items():
+            if isinstance(item, GroupGraphicsItem):
+                item.update()
 
 
-class ImageScene(QGraphicsScene):
-    """Custom scene to hold image and groups."""
-
-    def __init__(self):
-        super().__init__()
-        self.selected_groups = set()  # Set of frozensets
-
-
-class MainWindow(QMainWindow):
+class ObjectExtractorGUI(QMainWindow):
     """Main application window."""
 
     def __init__(self):
         super().__init__()
-        self.extractor = None
-        self.image_path = None
-        self.groups = []
-        self.group_graphics = []
+        self.setWindowTitle("Object Extraction Tool")
+        self.setGeometry(100, 100, 1400, 900)
+
+        self.extractor: Optional[ObjectExtractor] = None
+        self.current_image = None
+        self.groups: List[GroupData] = []
+        self.log_messages = []
 
         self.init_ui()
 
     def init_ui(self):
         """Initialize user interface."""
-        self.setWindowTitle("Object Extractor - Interactive GUI")
-        self.setGeometry(100, 100, 1400, 900)
-
-        # Central widget
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-
-        # Main layout
-        main_layout = QHBoxLayout(central_widget)
+        main_widget = QWidget()
+        main_layout = QHBoxLayout()
 
         # Left panel - controls
         left_panel = QWidget()
-        left_layout = QVBoxLayout(left_panel)
-        left_panel.setMaximumWidth(300)
+        left_layout = QVBoxLayout()
 
-        # Open file button
-        self.btn_open = QPushButton("Открыть изображение")
-        self.btn_open.clicked.connect(self.open_image)
-        left_layout.addWidget(self.btn_open)
+        # Load image
+        load_btn = QPushButton("Load Image")
+        load_btn.clicked.connect(self.load_image)
+        left_layout.addWidget(load_btn)
 
-        # Strategy selector
-        left_layout.addWidget(QLabel("Стратегия группировки:"))
-        self.combo_strategy = QComboBox()
-        self.combo_strategy.addItems([
-            "0 — Без группировки",
-            "1 — BBox Intersection",
-            "2 — BBox-Hull Intersection",
-            "3 — Hull-Hull Intersection"
+        # Strategy selection
+        left_layout.addWidget(QLabel("Grouping Strategy:"))
+        self.strategy_combo = QComboBox()
+        self.strategy_combo.addItems([
+            "0 - No Grouping",
+            "1 - BBox Intersection",
+            "2 - BBox-Hull Intersection",
+            "3 - Hull-Hull Intersection"
         ])
-        self.combo_strategy.setCurrentIndex(1)
-        self.combo_strategy.currentIndexChanged.connect(self.on_strategy_changed)
-        left_layout.addWidget(self.combo_strategy)
+        self.strategy_combo.setCurrentIndex(1)
+        left_layout.addWidget(self.strategy_combo)
 
         # Padding slider
-        left_layout.addWidget(QLabel("Padding:"))
-        self.slider_padding = QSlider(Qt.Horizontal)
-        self.slider_padding.setMinimum(0)
-        self.slider_padding.setMaximum(100)
-        self.slider_padding.setValue(50)  # Middle = 10 (default)
-        self.slider_padding.valueChanged.connect(self.on_padding_changed)
-        left_layout.addWidget(self.slider_padding)
+        left_layout.addWidget(QLabel("Padding (0-100):"))
+        self.padding_slider = QSlider(Qt.Horizontal)
+        self.padding_slider.setRange(0, 100)
+        self.padding_slider.setValue(10)
+        self.padding_slider.setTickPosition(QSlider.TicksBelow)
+        self.padding_label = QLabel("10")
+        left_layout.addWidget(self.padding_slider)
+        left_layout.addWidget(self.padding_label)
+        self.padding_slider.sliderMoved.connect(self.update_padding_label)
 
-        self.label_padding = QLabel("Padding: 10")
-        left_layout.addWidget(self.label_padding)
+        # Dilation slider
+        left_layout.addWidget(QLabel("Mask Dilation (0-5 px):"))
+        self.dilation_slider = QSlider(Qt.Horizontal)
+        self.dilation_slider.setRange(0, 5)
+        self.dilation_slider.setValue(1)
+        left_layout.addWidget(self.dilation_slider)
 
         # Group button
-        self.btn_group = QPushButton("Группировать")
-        self.btn_group.clicked.connect(self.apply_grouping)
-        self.btn_group.setEnabled(False)
-        left_layout.addWidget(self.btn_group)
+        group_btn = QPushButton("Group Components")
+        group_btn.clicked.connect(self.group_components)
+        left_layout.addWidget(group_btn)
 
         # Extract button
-        self.btn_extract = QPushButton("Извлечь картинки")
-        self.btn_extract.clicked.connect(self.extract_selected)
-        self.btn_extract.setEnabled(False)
-        left_layout.addWidget(self.btn_extract)
+        extract_btn = QPushButton("Extract Selected")
+        extract_btn.clicked.connect(self.extract_selected)
+        left_layout.addWidget(extract_btn)
 
-        # Stats label
-        self.label_stats = QLabel("Загрузите изображение")
-        self.label_stats.setWordWrap(True)
-        left_layout.addWidget(self.label_stats)
+        # Selection controls
+        left_layout.addWidget(QLabel("\nSelection:"))
+        select_all_btn = QPushButton("Select All")
+        select_all_btn.clicked.connect(self.select_all_groups)
+        left_layout.addWidget(select_all_btn)
+
+        deselect_all_btn = QPushButton("Deselect All")
+        deselect_all_btn.clicked.connect(self.deselect_all_groups)
+        left_layout.addWidget(deselect_all_btn)
+
+        merge_btn = QPushButton("Merge Selected Groups")
+        merge_btn.clicked.connect(self.merge_selected_groups)
+        left_layout.addWidget(merge_btn)
 
         left_layout.addStretch()
 
-        # Right side - view and log
-        right_widget = QWidget()
-        right_layout = QVBoxLayout(right_widget)
+        left_panel.setLayout(left_layout)
+        left_panel.setMaximumWidth(250)
+
+        # Right panel - graphics view and log
+        right_layout = QVBoxLayout()
 
         # Graphics view
-        self.scene = ImageScene()
-        self.view = InteractiveGraphicsView()
-        self.view.setScene(self.scene)
-        self.view.selectionChanged.connect(self.update_visualization)
-        right_layout.addWidget(self.view, stretch=3)
+        self.scene = QGraphicsScene()
+        self.graphics_view = ImageGraphicsView(self.scene)
+        right_layout.addWidget(self.graphics_view)
 
-        # Log console
-        log_label = QLabel("Консоль:")
+        # Log panel
+        log_label = QLabel("Log:")
+        self.log_text = QTextEdit()
+        self.log_text.setReadOnly(True)
+        self.log_text.setMaximumHeight(150)
         right_layout.addWidget(log_label)
+        right_layout.addWidget(self.log_text)
 
-        self.log_console = QTextEdit()
-        self.log_console.setReadOnly(True)
-        self.log_console.setMaximumHeight(150)
-        right_layout.addWidget(self.log_console)
+        right_widget = QWidget()
+        right_widget.setLayout(right_layout)
 
-        # Add panels to main layout
         main_layout.addWidget(left_panel)
-        main_layout.addWidget(right_widget, stretch=1)
+        main_layout.addWidget(right_widget, 1)
 
-        self.log("Приложение запущено. Откройте изображение для начала работы.")
+        main_widget.setLayout(main_layout)
+        self.setCentralWidget(main_widget)
 
-    def log(self, message):
-        """Add message to log console."""
-        self.log_console.append(message)
-
-    def padding_value_from_slider(self, slider_val):
-        """Convert slider value (0-100) to padding using logarithmic scale."""
-        if slider_val == 0:
-            return 0
-        # Logarithmic scale: 0-100 -> 0-100 with emphasis on small values
-        # Formula: padding = 10^(slider_val/50) - 1
-        # This gives: 0->0, 50->9, 100->99
-        padding = int(10 ** (slider_val / 50.0) - 1)
-        return max(0, min(100, padding))
-
-    def open_image(self):
-        """Open image file dialog."""
+    def load_image(self):
+        """Load image file."""
         file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Выберите изображение",
-            "",
-            "Images (*.png *.jpg *.jpeg *.bmp)"
+            self, "Select Image", "", "Images (*.png *.jpg *.jpeg *.bmp)"
         )
-
         if not file_path:
             return
 
-        self.image_path = file_path
-        self.log(f"Загружено: {file_path}")
+        try:
+            self.extractor = ObjectExtractor(file_path, strategy=1, padding=10, debug=False)
+            if not self.extractor.validate_input():
+                QMessageBox.critical(self, "Error", "Failed to validate input")
+                return
 
-        # Create extractor
-        strategy = self.combo_strategy.currentIndex()
-        padding = self.padding_value_from_slider(self.slider_padding.value())
+            self.extractor.create_output_directory()
+            if not self.extractor.preprocess():
+                QMessageBox.critical(self, "Error", "Failed to preprocess image")
+                return
 
-        self.extractor = ObjectExtractor(file_path, strategy, padding, debug=True)
+            self.current_image = self.extractor.image.copy()
+            self.display_image()
 
-        # Preprocess
-        if not self.extractor.preprocess():
-            self.log("ОШИБКА: Не удалось обработать изображение")
-            return
+            self.log_message("Image loaded successfully")
 
-        # Create output directory
-        self.extractor.create_output_directory()
+            # Auto-find components
+            if self.extractor.find_components():
+                self.log_message(f"Found {len(self.extractor.components)} components")
+                # Auto-group
+                self.group_components()
+            else:
+                self.log_message("No components found")
 
-        # Find components
-        self.log("Поиск фрагментов...")
-        if not self.extractor.find_components():
-            self.log("ВНИМАНИЕ: Компоненты не найдены")
-            return
-
-        self.log(f"Найдено компонентов: {len(self.extractor.components)}")
-
-        # Display image
-        self.display_image()
-
-        # Auto-group with default settings
-        self.apply_grouping()
-
-        # Enable controls
-        self.btn_group.setEnabled(True)
-        self.btn_extract.setEnabled(True)
+        except Exception as e:
+            self.log_message(f"ERROR: {str(e)}")
+            QMessageBox.critical(self, "Error", f"Failed to load image: {str(e)}")
 
     def display_image(self):
-        """Display image in graphics view."""
-        if self.extractor is None or self.extractor.image is None:
+        """Display current image in graphics view."""
+        if self.current_image is None:
             return
 
-        # Convert OpenCV BGR to RGB
-        image_rgb = cv2.cvtColor(self.extractor.image, cv2.COLOR_BGR2RGB)
-        h, w, ch = image_rgb.shape
-        bytes_per_line = ch * w
+        h, w = self.current_image.shape[:2]
+        bgr = self.current_image
+        rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+        h, w, ch = rgb.shape
+        bytes_per_line = 3 * w
+        qt_image = QImage(rgb.data, w, h, bytes_per_line, QImage.Format_RGB888)
+        pixmap = QPixmap.fromImage(qt_image)
 
-        q_image = QImage(image_rgb.data, w, h, bytes_per_line, QImage.Format_RGB888)
-        pixmap = QPixmap.fromImage(q_image)
-
-        # Clear graphics items first
-        self.group_graphics.clear()
-        self.view.groups_items.clear()
-
-        # Clear and reset scene
         self.scene.clear()
-        self.scene.selected_groups = set()
         self.scene.addPixmap(pixmap)
-        self.scene.setSceneRect(0, 0, w, h)
 
-        self.view.fitInView(self.scene.sceneRect(), Qt.KeepAspectRatio)
+    def update_padding_label(self):
+        """Update padding label."""
+        self.padding_label.setText(str(self.padding_slider.value()))
 
-    def on_strategy_changed(self, index):
-        """Handle strategy change."""
-        if self.extractor is not None:
-            self.log(f"Изменена стратегия: {self.combo_strategy.currentText()}")
+    def group_components(self):
+        """Group components by selected strategy."""
+        if self.extractor is None or len(self.extractor.components) == 0:
+            QMessageBox.warning(self, "Warning", "No components to group")
+            return
 
-    def on_padding_changed(self, value):
-        """Handle padding slider change."""
-        padding = self.padding_value_from_slider(value)
-        self.label_padding.setText(f"Padding: {padding}")
+        strategy = self.strategy_combo.currentIndex()
+        padding = self.padding_slider.value()
 
-        if self.extractor is not None:
+        self.log_message(f"Grouping with strategy {strategy}, padding {padding}...")
+
+        try:
+            self.extractor.strategy = strategy
             self.extractor.padding = padding
 
-    def apply_grouping(self):
-        """Apply current grouping strategy."""
-        if self.extractor is None:
-            return
+            groups = []
+            if strategy == 0:
+                groups = [set([i]) for i in range(len(self.extractor.components))]
+            elif strategy == 1:
+                groups = self.extractor.group_components_by_strategy(
+                    "BBox Intersection", self.extractor._merge_condition_s1
+                )
+            elif strategy == 2:
+                groups = self.extractor.group_components_by_strategy(
+                    "BBox-Hull Intersection", self.extractor._merge_condition_s2
+                )
+            elif strategy == 3:
+                groups = self.extractor.group_components_by_strategy(
+                    "Hull-Hull Intersection", self.extractor._merge_condition_s3
+                )
 
-        strategy = self.combo_strategy.currentIndex()
-        padding = self.padding_value_from_slider(self.slider_padding.value())
+            self.groups = []
+            colors = [
+                QColor(255, 255, 0), QColor(0, 255, 255), QColor(255, 0, 255),
+                QColor(0, 255, 0), QColor(255, 165, 0), QColor(100, 200, 255)
+            ]
 
-        self.extractor.strategy = strategy
-        self.extractor.padding = padding
+            for i, group_indices in enumerate(groups):
+                bbox = self.extractor.get_group_bbox(list(group_indices))
+                group_data = GroupData(
+                    group_id=i + 1,
+                    component_indices=group_indices,
+                    bbox=bbox,
+                    color=colors[i % len(colors)]
+                )
+                self.groups.append(group_data)
 
-        self.log(f"Группировка: Стратегия {strategy}, Padding {padding}")
+            self.visualize_groups()
+            self.log_message(f"Grouped into {len(self.groups)} group(s)")
 
-        # Apply grouping
-        if strategy == 0:
-            self.groups = [{i} for i in range(len(self.extractor.components))]
-        elif strategy == 1:
-            self.groups = self.extractor.group_components_by_strategy(
-                "BBox Intersection", self.extractor._merge_condition_s1
-            )
-        elif strategy == 2:
-            self.groups = self.extractor.group_components_by_strategy(
-                "BBox-Hull Intersection", self.extractor._merge_condition_s2
-            )
-        elif strategy == 3:
-            self.groups = self.extractor.group_components_by_strategy(
-                "Hull-Hull Intersection", self.extractor._merge_condition_s3
-            )
-
-        self.log(f"Создано групп: {len(self.groups)}")
-
-        # Select all groups by default
-        self.scene.selected_groups = set(frozenset(g) for g in self.groups)
-
-        # Visualize
-        self.visualize_groups()
-
-        self.update_stats()
+        except Exception as e:
+            self.log_message(f"ERROR during grouping: {str(e)}")
+            QMessageBox.critical(self, "Error", f"Grouping failed: {str(e)}")
 
     def visualize_groups(self):
-        """Draw group boundaries on image."""
-        # Clear old graphics references (scene.clear() already removed them)
-        self.group_graphics.clear()
-        self.view.groups_items.clear()
+        """Draw groups on the graphics view."""
+        self.display_image()
+        for group in self.groups:
+            item = GroupGraphicsItem(group, self.extractor, group.color)
+            item.setPos(group.bbox[0], group.bbox[1])
+            self.scene.addItem(item)
+        self.graphics_view.groups = self.groups
 
-        if not self.groups:
+    def select_all_groups(self):
+        """Select all groups."""
+        for group in self.groups:
+            group.is_selected = True
+        self.visualize_groups()
+
+    def deselect_all_groups(self):
+        """Deselect all groups."""
+        for group in self.groups:
+            group.is_selected = False
+        self.visualize_groups()
+
+    def merge_selected_groups(self):
+        """Merge selected groups into one."""
+        selected = [g for g in self.groups if g.is_selected]
+        if len(selected) < 2:
+            QMessageBox.warning(self, "Warning", "Select at least 2 groups to merge")
             return
 
-        strategy = self.combo_strategy.currentIndex()
+        merged_indices = set()
+        for g in selected:
+            merged_indices.update(g.component_indices)
 
-        for group_indices in self.groups:
-            group_list = list(group_indices)
-            is_single = len(group_list) == 1
+        for g in selected:
+            self.groups.remove(g)
 
-            # Determine shape based on strategy
-            use_hull = False
-            if strategy == 0:  # No grouping
-                use_hull = True
-            elif strategy == 1:  # BBox
-                use_hull = False
-            elif strategy == 2:  # BBox-Hull
-                use_hull = is_single  # Hull for single objects
-            elif strategy == 3:  # Hull-Hull
-                use_hull = True
-
-            frozen_group = frozenset(group_indices)
-            is_selected = frozen_group in self.scene.selected_groups
-
-            if use_hull and len(group_list) == 1:
-                # Draw convex hull
-                comp = self.extractor.components[group_list[0]]
-                hull = comp['hull']
-
-                points = [QPointF(float(p[0][0]), float(p[0][1])) for p in hull]
-                polygon = QPolygonF(points)
-
-                item = self.scene.addPolygon(
-                    polygon,
-                    pen=QPen(QColor(255, 255, 0) if is_selected else Qt.transparent, 2),
-                    brush=QBrush(Qt.transparent)
-                )
-            else:
-                # Draw bounding box
-                x, y, w, h = self.extractor.get_group_bbox(group_list)
-
-                item = self.scene.addRect(
-                    x, y, w, h,
-                    pen=QPen(QColor(255, 255, 0) if is_selected else Qt.transparent, 2),
-                    brush=QBrush(Qt.transparent)
-                )
-
-            self.group_graphics.append(item)
-            self.view.groups_items.append((frozen_group, item))
-
-    def update_visualization(self):
-        """Update visualization after selection change."""
-        strategy = self.combo_strategy.currentIndex()
-
-        for i, (frozen_group, item) in enumerate(self.view.groups_items):
-            is_selected = frozen_group in self.scene.selected_groups
-
-            # Update pen color
-            if is_selected:
-                pen = QPen(QColor(255, 255, 0), 2)
-            else:
-                pen = QPen(Qt.transparent, 2)
-
-            if isinstance(item, QGraphicsRectItem):
-                item.setPen(pen)
-            elif isinstance(item, QGraphicsPolygonItem):
-                item.setPen(pen)
-
-        self.update_stats()
-
-    def update_stats(self):
-        """Update statistics label."""
-        if not self.groups:
-            self.label_stats.setText("Нет групп")
-            return
-
-        selected_count = len(self.scene.selected_groups)
-        total_count = len(self.groups)
-
-        self.label_stats.setText(
-            f"Групп: {total_count}\n"
-            f"Выделено: {selected_count}"
+        new_group = GroupData(
+            group_id=max(g.group_id for g in self.groups) + 1 if self.groups else 1,
+            component_indices=merged_indices,
+            bbox=self.extractor.get_group_bbox(list(merged_indices)),
+            color=QColor(255, 0, 0)
         )
+        self.groups.append(new_group)
+        self.visualize_groups()
+        self.log_message(f"Merged {len(selected)} groups")
 
     def extract_selected(self):
-        """Extract selected groups to files."""
-        if not self.scene.selected_groups:
-            self.log("ВНИМАНИЕ: Не выбрано ни одной группы")
+        """Extract selected groups."""
+        selected = [g for g in self.groups if g.is_selected]
+        if not selected:
+            QMessageBox.warning(self, "Warning", "Select at least one group to extract")
             return
 
-        # Get list of selected groups
-        selected_groups = [list(g) for g in self.scene.selected_groups]
+        try:
+            dilation = self.dilation_slider.value()
+            self.log_message(f"Extracting {len(selected)} group(s) with dilation {dilation}...")
 
-        self.log(f"Извлечение {len(selected_groups)} групп...")
+            for group in selected:
+                indices = list(group.component_indices)
+                x, y, w, h = self.extractor.get_group_bbox(indices)
 
-        # Find next available file number
-        existing_files = list(self.extractor.output_dir.glob("object_*.png"))
-        start_num = len(existing_files) + 1
+                if w <= 0 or h <= 0:
+                    continue
 
-        # Extract each selected group
-        saved_count = 0
-        for group_indices in selected_groups:
-            x, y, w, h = self.extractor.get_group_bbox(group_indices)
+                mask = self.extractor.get_group_mask(indices, (x, y, w, h))
 
-            if w <= 0 or h <= 0:
-                continue
+                if dilation > 0:
+                    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (dilation * 2 + 1, dilation * 2 + 1))
+                    mask = cv2.dilate(mask, kernel, iterations=1)
 
-            # Ensure bounds
-            x = max(0, x)
-            y = max(0, y)
-            w = min(w, self.extractor.image.shape[1] - x)
-            h = min(h, self.extractor.image.shape[0] - y)
+                cropped = self.current_image[y:y + h, x:x + w]
+                rgba = cv2.cvtColor(cropped, cv2.COLOR_BGR2BGRA)
+                rgba[:, :, 3] = mask
 
-            if w <= 0 or h <= 0:
-                continue
+                output_file = self.extractor.output_dir / f"object_{len(selected):03d}.png"
+                cv2.imwrite(str(output_file), rgba)
 
-            # Crop image
-            cropped = self.extractor.image[y:y + h, x:x + w]
+                # Remove from current image
+                self.current_image[y:y + h, x:x + w] = 255
 
-            # Create mask
-            mask = self.extractor.get_group_mask(group_indices, (x, y, w, h))
+            self.display_image()
+            self.groups = [g for g in self.groups if not g.is_selected]
+            self.visualize_groups()
 
-            if cv2.countNonZero(mask) == 0:
-                continue
+            # Re-find components
+            if self.extractor.find_components():
+                self.log_message(f"Updated: {len(self.extractor.components)} components remaining")
+            else:
+                self.log_message("No components remaining")
 
-            # Convert to RGBA
-            rgba = cv2.cvtColor(cropped, cv2.COLOR_BGR2BGRA)
-            rgba[:, :, 3] = mask
+        except Exception as e:
+            self.log_message(f"ERROR during extraction: {str(e)}")
+            QMessageBox.critical(self, "Error", f"Extraction failed: {str(e)}")
 
-            # Save
-            output_file = self.extractor.output_dir / f"object_{start_num + saved_count:03d}.png"
-            if cv2.imwrite(str(output_file), rgba):
-                self.log(f"  Сохранено: {output_file.name}")
-                saved_count += 1
-
-                # Remove from image (make transparent)
-                self.extractor.image[y:y + h, x:x + w][mask > 0] = [255, 255, 255]
-
-        self.log(f"Извлечено объектов: {saved_count}")
-
-        # Remove extracted groups
-        self.groups = [g for g in self.groups if frozenset(g) not in self.scene.selected_groups]
-        self.scene.selected_groups.clear()
-
-        # Redisplay image
-        self.display_image()
-        self.visualize_groups()
-        self.update_stats()
+    def log_message(self, message: str):
+        """Add message to log."""
+        self.log_messages.append(message)
+        self.log_text.append(message)
 
 
 def main():
-    """Main entry point."""
     app = QApplication(sys.argv)
-    window = MainWindow()
-    window.show()
-    sys.exit(app.exec_())
+    gui = ObjectExtractorGUI()
+    gui.show()
+    sys.exit(app.exec())
 
 
 if __name__ == "__main__":
