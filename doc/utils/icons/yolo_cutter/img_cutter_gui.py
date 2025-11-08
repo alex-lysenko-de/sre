@@ -158,8 +158,17 @@ class GUIController:
                 # Remove from current image (fill with white)
                 self.current_image[y:y + h, x:x + w][mask > 0] = [255, 255, 255]
 
-            # Update extractor's image
+            # Update extractor's image and reprocess
             self.extractor.image = self.current_image.copy()
+
+            # CRITICAL: Regenerate grayscale and binary from updated image
+            self.extractor.gray = cv2.cvtColor(self.extractor.image, cv2.COLOR_BGR2GRAY)
+            _, self.extractor.binary = cv2.threshold(
+                self.extractor.gray, 128, 255, cv2.THRESH_BINARY_INV
+            )
+
+            # Clear components list - they're now invalid
+            self.extractor.components = []
 
             # Clear selection
             self.selected_groups.clear()
@@ -597,29 +606,17 @@ class MainWindow(QMainWindow):
             # Update display
             self.image_viewer.set_image(self.controller.current_image)
 
-            # Re-find components
-            self.log("Re-analyzing image...")
-            if self.controller.find_components():
-                self.log(f"Found {len(self.controller.extractor.components)} remaining components")
+            # Clear current groups visualization
+            self.controller.groups = []
+            self.image_viewer.set_groups([], set())
 
-                # Show components (not grouped yet)
-                temp_groups = []
-                for idx, comp in enumerate(self.controller.extractor.components):
-                    temp_groups.append({
-                        'id': idx,
-                        'bbox': comp['bbox'],
-                        'indices': [idx],
-                        'area': comp['area'],
-                        'selected': False
-                    })
+            # Reset buttons - user needs to click "Поиск фрагментов" again
+            self.btn_group.setEnabled(False)
+            self.btn_select_all.setEnabled(False)
+            self.btn_deselect_all.setEnabled(False)
+            self.btn_extract.setEnabled(False)
 
-                self.image_viewer.set_groups(temp_groups, set())
-                self.log("Click 'Group Components' to regroup remaining objects")
-            else:
-                self.log("No components remaining")
-                self.controller.groups = []
-                self.image_viewer.set_groups([], set())
-                self.btn_group.setEnabled(False)
+            self.log("Click 'Поиск фрагментов' to detect remaining components")
         else:
             QMessageBox.critical(self, "Error", "Extraction failed")
 
