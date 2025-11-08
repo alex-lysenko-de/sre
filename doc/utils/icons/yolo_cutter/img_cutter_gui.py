@@ -140,7 +140,7 @@ class GUIController:
 
                 # Get mask and crop image
                 mask = self.extractor.get_group_mask(group_indices, (x, y, w, h))
-                cropped = self.current_image[y:y+h, x:x+w]
+                cropped = self.current_image[y:y + h, x:x + w]
 
                 # Dilate mask if needed
                 if dilation > 0:
@@ -156,7 +156,7 @@ class GUIController:
                 cv2.imwrite(str(output_file), rgba)
 
                 # Remove from current image (fill with white)
-                self.current_image[y:y+h, x:x+w][mask > 0] = [255, 255, 255]
+                self.current_image[y:y + h, x:x + w][mask > 0] = [255, 255, 255]
 
             # Update extractor's image
             self.extractor.image = self.current_image.copy()
@@ -342,6 +342,12 @@ class MainWindow(QMainWindow):
         self.btn_load.clicked.connect(self.on_load_image)
         layout.addWidget(self.btn_load)
 
+        # Find components button
+        self.btn_find = QPushButton("Поиск фрагментов")
+        self.btn_find.clicked.connect(self.on_find_components)
+        self.btn_find.setEnabled(False)
+        layout.addWidget(self.btn_find)
+
         # Strategy group
         strategy_group = QGroupBox("Grouping Strategy")
         strategy_layout = QVBoxLayout()
@@ -480,21 +486,43 @@ class MainWindow(QMainWindow):
         # Display image
         self.image_viewer.set_image(self.controller.current_image)
 
-        # Find components
-        self.log("Finding components...")
-        if self.controller.find_components():
-            self.log(f"Found {len(self.controller.extractor.components)} components")
-
-            # Auto-group with default settings
-            self.on_group_components()
-
-            self.btn_group.setEnabled(True)
-        else:
-            self.log("No components found")
+        # Enable find button
+        self.btn_find.setEnabled(True)
+        self.log("Click 'Поиск фрагментов' to detect components")
 
     def on_padding_changed(self, value: int):
         """Handle padding slider change"""
         self.padding_label.setText(f"Value: {value}")
+
+    def on_find_components(self):
+        """Handle find components button"""
+        self.log("Finding components...")
+
+        if not self.controller.find_components():
+            self.log("No components found")
+            QMessageBox.information(self, "Info", "No components found in image")
+            return
+
+        num_components = len(self.controller.extractor.components)
+        self.log(f"Found {num_components} components")
+
+        # Visualize components with bounding boxes (yellow)
+        # Create temporary groups for visualization (each component is its own group)
+        temp_groups = []
+        for idx, comp in enumerate(self.controller.extractor.components):
+            temp_groups.append({
+                'id': idx,
+                'bbox': comp['bbox'],
+                'indices': [idx],
+                'area': comp['area'],
+                'selected': False
+            })
+
+        self.image_viewer.set_groups(temp_groups, set())
+
+        # Enable grouping
+        self.btn_group.setEnabled(True)
+        self.log("Click 'Group Components' to group them")
 
     def on_group_components(self):
         """Handle group button"""
@@ -573,11 +601,25 @@ class MainWindow(QMainWindow):
             self.log("Re-analyzing image...")
             if self.controller.find_components():
                 self.log(f"Found {len(self.controller.extractor.components)} remaining components")
-                self.on_group_components()
+
+                # Show components (not grouped yet)
+                temp_groups = []
+                for idx, comp in enumerate(self.controller.extractor.components):
+                    temp_groups.append({
+                        'id': idx,
+                        'bbox': comp['bbox'],
+                        'indices': [idx],
+                        'area': comp['area'],
+                        'selected': False
+                    })
+
+                self.image_viewer.set_groups(temp_groups, set())
+                self.log("Click 'Group Components' to regroup remaining objects")
             else:
                 self.log("No components remaining")
                 self.controller.groups = []
                 self.image_viewer.set_groups([], set())
+                self.btn_group.setEnabled(False)
         else:
             QMessageBox.critical(self, "Error", "Extraction failed")
 
