@@ -478,11 +478,7 @@ class MainWindow(QMainWindow):
         self.btn_load.clicked.connect(self.on_load_image)
         layout.addWidget(self.btn_load)
 
-        # Find components button
-        self.btn_find = QPushButton("Поиск фрагментов")
-        self.btn_find.clicked.connect(self.on_find_components)
-        self.btn_find.setEnabled(False)
-        layout.addWidget(self.btn_find)
+
 
         # Strategy group
         strategy_group = QGroupBox("Grouping Strategy")
@@ -520,10 +516,10 @@ class MainWindow(QMainWindow):
         layout.addWidget(padding_group)
 
         # Group button
-        self.btn_group = QPushButton("Group Components")
-        self.btn_group.clicked.connect(self.on_group_components)
-        self.btn_group.setEnabled(False)
-        layout.addWidget(self.btn_group)
+        self.btn_find = QPushButton("Find and group Components")
+        self.btn_find.clicked.connect(self.on_find_and_group)
+        self.btn_find.setEnabled(False)
+        layout.addWidget(self.btn_find)
 
         # Selection buttons
         selection_group = QGroupBox("Selection")
@@ -627,7 +623,6 @@ class MainWindow(QMainWindow):
 
         # Reset all buttons to initial state
         self.btn_find.setEnabled(False)
-        self.btn_group.setEnabled(False)
         self.btn_select_all.setEnabled(False)
         self.btn_deselect_all.setEnabled(False)
         self.btn_merge.setEnabled(False)
@@ -649,6 +644,11 @@ class MainWindow(QMainWindow):
     def on_padding_changed(self, value: int):
         """Handle padding slider change"""
         self.padding_label.setText(f"Value: {value}")
+
+    def on_find_and_group(self):
+        """Handle find and group button"""
+        self.on_find_components()
+        self.on_group_components()
 
     def on_find_components(self):
         """Handle find components button"""
@@ -677,7 +677,7 @@ class MainWindow(QMainWindow):
         self.image_viewer.set_groups(temp_groups, set())
 
         # Enable grouping
-        self.btn_group.setEnabled(True)
+
         self.log("Click 'Group Components' to group them")
 
     def on_group_components(self):
@@ -786,7 +786,6 @@ class MainWindow(QMainWindow):
             self.image_viewer.set_groups([], set())
 
             # Reset buttons - user needs to click "Поиск фрагментов" again
-            self.btn_group.setEnabled(False)
             self.btn_select_all.setEnabled(False)
             self.btn_deselect_all.setEnabled(False)
             self.btn_merge.setEnabled(False)
