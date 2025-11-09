@@ -95,7 +95,7 @@ class GUIController:
                 groups = self.extractor.group_components_by_strategy(
                     "Hull-Hull Intersection", self.extractor._merge_condition_s3, padding=padding
                 )
-            elif strategy == 4: # <-- НОВАЯ СТРАТЕГИЯ 4
+            elif strategy == 4: # <-- NEW STRATEGY 4
                 groups = self.extractor.group_components_by_strategy(
                     "Dilated Mask Intersection", self.extractor._merge_condition_s4, padding=padding
                 )
@@ -494,7 +494,7 @@ class MainWindow(QMainWindow):
             "1 - BBox Intersection",
             "2 - BBox-Hull Intersection",
             "3 - Hull-Hull Intersection",
-            "4 - Dilated Mask Intersection" # <-- ДОБАВЛЕНО
+            "4 - Dilated Mask Intersection" # <-- ADDED
         ])
         self.strategy_combo.setCurrentIndex(1)
         strategy_layout.addWidget(self.strategy_combo)
