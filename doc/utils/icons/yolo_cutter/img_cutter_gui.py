@@ -85,15 +85,15 @@ class GUIController:
                 groups = [{i} for i in range(len(self.extractor.components))]
             elif strategy == 1:
                 groups = self.extractor.group_components_by_strategy(
-                    "BBox Intersection", self.extractor._merge_condition_s1
+                    "BBox Intersection", self.extractor._merge_condition_s1, padding=padding
                 )
             elif strategy == 2:
                 groups = self.extractor.group_components_by_strategy(
-                    "BBox-Hull Intersection", self.extractor._merge_condition_s2
+                    "BBox-Hull Intersection", self.extractor._merge_condition_s2, padding=padding
                 )
             elif strategy == 3:
                 groups = self.extractor.group_components_by_strategy(
-                    "Hull-Hull Intersection", self.extractor._merge_condition_s3
+                    "Hull-Hull Intersection", self.extractor._merge_condition_s3, padding=padding
                 )
             elif strategy == 4: # <-- НОВАЯ СТРАТЕГИЯ 4
                 groups = self.extractor.group_components_by_strategy(
@@ -644,7 +644,7 @@ class MainWindow(QMainWindow):
 
         # Enable find button
         self.btn_find.setEnabled(True)
-        self.log("Click 'Find components' to detect components")
+        self.log("Click 'Find and group Components' to start")
 
     def on_padding_changed(self, value: int):
         """Handle padding slider change"""
@@ -683,14 +683,14 @@ class MainWindow(QMainWindow):
 
         # Enable grouping
 
-        self.log("Click 'Group Components' to group them")
+        self.log("Click 'Find and group Components' to group them")
 
     def on_group_components(self):
         """Handle group button"""
         strategy = self.strategy_combo.currentIndex()
         padding = self.padding_slider.value()
 
-        self.log(f"Grouping with strategy {strategy}, padding {padding}...")
+        self.log(f"Grouping with strategy {strategy} ({self.strategy_combo.currentText()}), padding {padding}...")
 
         # Show progress
         progress = QProgressDialog("Grouping components...", None, 0, 0, self)
@@ -796,7 +796,7 @@ class MainWindow(QMainWindow):
             self.btn_merge.setEnabled(False)
             self.btn_extract.setEnabled(False)
 
-            self.log("Click 'Find components' to detect remaining components")
+            self.log("Click 'Find and group Components' to detect remaining components")
         else:
             QMessageBox.critical(self, "Error", "Extraction failed")
 
