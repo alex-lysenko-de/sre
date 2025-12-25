@@ -334,7 +334,7 @@ async function getGroupSummary(date) {
 
 ```javascript
 // src/composables/useGroups.js
-import { supabase } from '@/supabase'
+import { supabase } from '@/supabase'  // ← ВАЖНО: использовать '@/supabase', а не '@/lib/supabaseClient'
 import { useConfigStore } from '@/stores/config'
 
 export function useGroups() {

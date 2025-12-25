@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabaseClient'
+import { supabase } from '@/supabase'
 import { useConfigStore } from '@/stores/config'
 
 /**
