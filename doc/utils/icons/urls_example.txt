@@ -1,0 +1,5 @@
+# Example urls.txt - one direct SVG download URL per line
+# Example (replace with real links from svgrepo/freesvg/etc.):
+https://www.svgrepo.com/download/22572/skull.svg
+https://freesvg.org/img/wolf-head-silhouette.png
+# ... (one URL per line)

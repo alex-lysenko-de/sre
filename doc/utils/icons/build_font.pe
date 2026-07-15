@@ -1,0 +1,49 @@
+
+#!fontforge -script
+# build_font.pe
+# Usage: fontforge -script build_font.pe input_svg_folder output_font.ttf
+# Example: fontforge -script build_font.pe svg_sources BraceletSymbols.ttf
+import sys
+import os
+import fontforge
+
+if len(sys.argv) < 3:
+    print("Usage: fontforge -script build_font.pe svg_folder output.ttf")
+    sys.exit(1)
+
+svg_folder = sys.argv[1]
+out_font = sys.argv[2]
+
+# create new font
+font = fontforge.font()
+font.encoding = 'UnicodeFull'
+font.familyname = "BraceletSymbols"
+font.fontname = "BraceletSymbols"
+font.fullname = "BraceletSymbols"
+
+# start assigning from private use area U+E001
+codepoint = 0xE001
+
+# iterate svg files sorted
+svgs = sorted([f for f in os.listdir(svg_folder) if f.lower().endswith('.svg')])
+for svg in svgs:
+    path = os.path.join(svg_folder, svg)
+    try:
+        glyph = font.createChar(codepoint)
+        glyph.importOutlines(path)
+        glyph.width = 1000
+        glyph.left_side_bearing = 50
+        glyph.right_side_bearing = 50
+        glyph.simplify(0.1)
+        glyph.correctDirection()
+        print("Added", svg, "as", hex(codepoint))
+        codepoint += 1
+    except Exception as e:
+        print("Failed to add", svg, ":", e)
+
+# generate font
+font.generate(out_font)
+print("Generated font:", out_font)
+font.generate(out_font.replace('.ttf', '.woff'))
+print("Also generated WOFF")
+font.close()

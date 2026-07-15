@@ -29,3 +29,4 @@ coverage
 
 *.tsbuildinfo
 /all_project_files.md
+/.vs
