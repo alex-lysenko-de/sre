@@ -21,7 +21,6 @@ export const useConfigStore = defineStore('config', {
         loading: false,
         error: null,
         lastFetch: 0,
-        isAdmin: false,
         subscription: null
     }),
 
@@ -114,8 +113,6 @@ export const useConfigStore = defineStore('config', {
         },
 
         async updateConfig(key, value) {
-            if (!this.isAdmin) throw new Error('Unzureichende Rechte zur Änderung der Konfiguration')
-
             const { error: err } = await supabase
                 .from('config')
                 .update({ value, updated_at: new Date().toISOString() })
@@ -147,21 +144,6 @@ export const useConfigStore = defineStore('config', {
         },
 
         async initConfigModule() {
-            const { data: { user } } = await supabase.auth.getUser()
-
-            if (user) {
-                // Get the actual role from the users table
-                const { data: userData } = await supabase
-                    .from('users')
-                    .select('role')
-                    .eq('user_id', user.id)
-                    .single()
-
-                this.isAdmin = userData?.role === 'admin'
-            } else {
-                this.isAdmin = false
-            }
-
             await this.loadConfig()
             this.subscribeToRealtime()
         },

@@ -9,7 +9,7 @@
       </div>
 
       <div class="card-body">
-        <div v-if="!configStore.isAdmin" class="alert alert-danger" role="alert">
+        <div v-if="!userStore.isAdmin" class="alert alert-danger" role="alert">
           <font-awesome-icon :icon="['fas', 'lock']" class="me-2" />
           Sie haben keine Rechte, auf diese Seite zuzugreifen.
         </div>
@@ -52,10 +52,12 @@
 <script setup>
 import { reactive, onMounted } from 'vue'
 import { useConfigStore } from '../stores/config'
+import { useUserStore } from '../stores/user'
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
 
 // Destructure reactive state and functions from the composable
 const configStore = useConfigStore()
+const userStore = useUserStore()
 
 // Local state for form inputs, reactive to handle updates
 const localConfig = reactive({})
@@ -71,6 +73,7 @@ onMounted(async () => {
  * @param {string} key - The configuration key to update.
  */
 async function saveConfig(key) {
+  if (!userStore.isAdmin) return
   await configStore.updateConfig(key, localConfig[key])
   // Optional: Add a local alert/toast notification here if needed,
   // but for simplicity, we rely on the logic inside useConfig.

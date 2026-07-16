@@ -1,0 +1,6 @@
+ при открытии страницы https://sre-nrw.de/config
+Hauptbetreuer (пользователь с неограниченными правами) получает ошибку:
+ 
+ Sie haben keine Rechte, auf diese Seite zuzugreifen.
+ 
+ хотя у другого Hauptbetreuer стріница открівается нормально
