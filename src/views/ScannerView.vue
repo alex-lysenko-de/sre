@@ -10,9 +10,33 @@
         <i class="fas fa-circle pulse-icon"></i>
         {{ scannerActive ? 'Scanner aktiv' : 'Gestoppt' }}
       </div>
-      <button @click="exitScanner" class="btn btn-danger btn-exit">
-        <i class="fas fa-times"></i> Beenden
-      </button>
+      <div class="header-actions">
+        <button
+            @click="showCameraSelector = !showCameraSelector"
+            class="btn btn-secondary btn-camera"
+            title="Kamera wechseln"
+        >
+          <i class="fas fa-camera"></i>
+        </button>
+        <button @click="exitScanner" class="btn btn-danger btn-exit">
+          <i class="fas fa-times"></i> Beenden
+        </button>
+      </div>
+    </div>
+
+    <!-- Manual Camera Selector -->
+    <div v-if="showCameraSelector" class="camera-selector">
+      <label class="camera-selector-label" for="camera-select">Kamera auswählen:</label>
+      <select
+          id="camera-select"
+          class="form-select"
+          :value="currentCameraId"
+          @change="selectCamera($event.target.value)"
+      >
+        <option v-for="cam in cameraList" :key="cam.id" :value="cam.id">
+          {{ cam.label || cam.id }}
+        </option>
+      </select>
     </div>
 
     <!-- Counter Bar -->
@@ -98,7 +122,12 @@ let html5QrCode = null
 const scannedUrls = new Set() // Набор уже отсканированных URL
 const processingQueue = [] // Очередь на обработку
 let isProcessingQueue = false // Флаг обработки очереди
-let CAMERA_ID = null // ID камеры
+
+// Auswahl der Kamera
+const CAMERA_STORAGE_KEY = 'scanner_preferred_camera_id'
+const cameraList = ref([]) // Liste aller verfügbaren Kameras (id + label)
+const currentCameraId = ref(null) // deviceId der aktuell aktiven Kamera (null bei facingMode-Start)
+const showCameraSelector = ref(false)
 
 // Конфигурация сканера
 const SCANNER_CONFIG = {
@@ -110,8 +139,40 @@ const SCANNER_CONFIG = {
 // ============================================
 // AUDIO
 // ============================================
-const successSound = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSx+zPLTgjMGHm7A7+OZUQ4NVKvl8LNkHgU2jdXxxHcsBS5+y/LajDYIGWi68OScTgwOUKXh8LllHwU4kdXzyXotBS1+yvLaizYIGGe88OWbTw0NUKXh8LplHwU4kdXzyXotBS1+yvLajDYIGGe88OWbTw0NUKXh8LplHwU4kdXzyXotBS1+yvLajDYIGGe88OWbTw0NUKXh8LplHwU4kdXzyXotBS1+yvLajDYIGGe88OWbTw0NUKXh8LplHwU4kdXzyXotBS1+yvLajDYIGGe88OWbTw0NUKXh8LplHwU4kdXzyXotBS1+yvLajDYIGGe88OWbTw0NUKXh8LplHwU4kdXzyXotBS1+yvLajDYIGGe88OWbTw0NUKXh8LplHwU4kdXzyXotBS1+yvLajDYIGGe88OWbTw0NUKXh8LplHwU4kdXzyXotBS1+yvLajDYIGGe88OWbTw0NUKXh8LplHwU4kdXzyXotBS1+yvLajDYIGGe88OWbTw0NUKXh8Lpl')
-const errorSound = new Audio('data:audio/wav;base64,UklGRhQEAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YfADAACAgICAgICAgICAgICAgICAgICAgICAgICAgH9+fnt5dnNwbWllYV1YVFFNSUVBPTk1MTAtKSYjIB0aGBYUEhAODQwLCgkJCAgIBwcHBwYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYHBwcHCAkJCQoLCwwNDg8RExQWGBobHSAjJiksLzM2Oj5CRklNUVVZXWFmam53fIGGi5CUmZ6kqK2xtLi7vsHDxcfIysvMzM3Nzs7Ozs7Ozs7Nzc3MzMvLysnIx8bFxMPCwL++vLu5t7W0srCuq6mloqCdmpeTkI2KiIWCgH99e3l3dXNxcG9ubnBydHh7f4OHjJCVmZ6kqKywtLi7vsHExsjKzM7P0NHR0tLT09PT09PT09PS0tLR0dDPzs3MysrIxsXEwsG/vbu5t7Wzr62spJ6YkoqDfHZwamRfW1dUUU5MSktJSEdHRkZGRkVFRUVFRUVEREREREREREREQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NEREREREREREVFRUVFRUVGRkZGRkdISUlKS0xNT1FSVFZYWl1fYWRnaGprbG1ub3Bxcm5raGVhXVlVUU1JRUFAPz49PTw8PDs7Ozs7Ozo6Ojo6Ojo6Ojo6Ojo6Ozs7Ozs8PDw9PT4+P0BBQkRFRkdJSktNTlBRU1RWV1laW11eX2BhYmNkZGVlZmZmZmZmZmZlZWVkZGNiYWBfXVxaWVdWVFNRUE5NTEpJSEZFQ0JBPz49PDo5ODYzMTAvLS0rKikpKCgnJycnJycnJygoKCkqKywtLzAxMzU3OTs9QENFSEpMTlFTVVdaXF5hY2ZobG90en+Fio+UmZ6krLG3vcLHzNDV2d3g4+Xl5+fo6enp6unp6ejo5+bl5OLh4N/e3NvZ19bU09HQz83LycjGxMPBv7y6uLa0sa+tqaelpaCbloD8+vj29PPx7+3r6efm5OPi4d/e3NvZ2NfW1dTT0dDPzsrJx8XDwL67t7Swr6uopqOgnpqXk5CNioeDgH13dHFubWxrampqamprbG1ub3J1eHuAhIiMkJSYnJ+jpqmsr7G0trm7vsDCxMbIysvNztDR0tPU1NXW1tfX2NjY2NjY19fW1tXU1NPS0dDPzszLysnHxsPCwL69u7m4trSyr6yqp6SioJ2alpeUkY6LiIV/fXl3dXNxb25tbGtranp5eXl5eHd3d3Z2dXV0dHNzcnFxcXBvb29ubW1sbGtrbGxsbW1ubm9vcHBxcnJzdHV1dnd4eHl6ent8fX5/gIGCg4SFhoeIiImKi4uMjI2Ojo+Pj4+QkJCQkJCPj4+Ojo2NjIyLi4qJiIiHhYWEg4KBgH9+fXx7enl4d3Z1dHNyc3R1dneChYiLjpGUl5qdoKOlqKqsrrCys7S1t7i5uru8vL2+v7/AwMDAwMDAwMDAwMC/v76+vby8u7q5uLe2tbSzsrGwr62sq6qpqKaloqGgnp2cm5mYl5WTkpCPjoyLiYiGhYSDgoGAgH9/fn5+fn5+fn9/gIGBgoOEhIWGh4iIiYqLi4yNjY6Oj4+QkJCQkJCQkJCQkJCQkJCQkJCPj4+Oj42NjIyLioqJiYiHh4aGhYWEhIODgoKBgYGBgICAgICAgICAgICAgA==')
+// Web Audio API statt Audio-Dateien: volle Kontrolle ueber Lautstaerke/Dauer,
+// unabhaengig von der Mastering-Qualitaet eines eingebetteten Sounds.
+// Hinweis: Auf iOS Safari bleibt der Ton bei aktiviertem Stummschalter
+// (mute switch) trotzdem stumm - eine Plattform-Einschraenkung von Safari
+// fuer Web-Audio, die sich clientseitig nicht umgehen laesst.
+let audioContext = null
+const getAudioContext = () => {
+  if (!audioContext) {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext
+    audioContext = new AudioContextClass()
+  }
+  return audioContext
+}
+
+const playTone = (frequencies, toneDuration) => {
+  const ctx = getAudioContext()
+  if (ctx.state === 'suspended') {
+    ctx.resume()
+  }
+  const now = ctx.currentTime
+  frequencies.forEach((freq, index) => {
+    const oscillator = ctx.createOscillator()
+    const gainNode = ctx.createGain()
+    oscillator.type = 'sine'
+    oscillator.frequency.value = freq
+    const startTime = now + index * toneDuration
+    gainNode.gain.setValueAtTime(0.9, startTime)
+    gainNode.gain.exponentialRampToValueAtTime(0.001, startTime + toneDuration)
+    oscillator.connect(gainNode)
+    gainNode.connect(ctx.destination)
+    oscillator.start(startTime)
+    oscillator.stop(startTime + toneDuration)
+  })
+}
 
 // ============================================
 // UTILITY FUNCTIONS
@@ -140,11 +201,13 @@ const createQrCodePattern = () => {
 }
 
 // Sound abspielen
-const playSound = (sound) => {
+const playSound = (type) => {
   try {
-    sound.currentTime = 0
-    sound.volume = 1.0 // Maximum volume
-    sound.play().catch(e => console.warn('Audio-Wiedergabe fehlgeschlagen:', e))
+    if (type === 'success') {
+      playTone([880, 1318.51], 0.12) // kurzer, deutlich hörbarer Doppel-Beep
+    } else {
+      playTone([220], 0.35) // tiefer, langer Ton für Fehler
+    }
   } catch (error) {
     console.warn('Sound konnte nicht abgespielt werden:', error)
   }
@@ -154,7 +217,7 @@ const playSound = (sound) => {
 const triggerVibration = () => {
   try {
     if ('vibrate' in navigator) {
-      navigator.vibrate([100, 50, 100]) // Vibration pattern
+      navigator.vibrate([150, 50, 150, 50, 150]) // Vibration pattern (verstärkt)
     }
   } catch (error) {
     console.warn('Vibration nicht unterstützt:', error)
@@ -166,25 +229,67 @@ const triggerFlashEffect = () => {
   showFlash.value = true
   setTimeout(() => {
     showFlash.value = false
-  }, 300)
+  }, 1000)
 }
 
 // ============================================
 // SCANNER MANAGEMENT
 // ============================================
 
-// Запуск сканера
-const startScanning = async () => {
-  if (!CAMERA_ID) return
-
+// Start via deviceId (manuelle Auswahl, gespeicherte Kamera, Fallback über Geräteliste)
+const startScanningWithDeviceId = async (deviceId) => {
   await html5QrCode.start(
-      CAMERA_ID,
+      deviceId,
       SCANNER_CONFIG,
       onScanSuccess,
       onScanError
   )
   scannerActive.value = true
-  console.log('✅ Scanner has started.')
+  currentCameraId.value = deviceId
+  console.log('✅ Scanner has started (deviceId):', deviceId)
+}
+
+// Fallback: Kamera anhand des Labels aus der Geräteliste raten (altes Verhalten,
+// nur noch als letzte Stufe, falls facingMode nicht unterstützt wird).
+const startScanningWithDeviceListFallback = async () => {
+  if (!cameraList.value || cameraList.value.length === 0) {
+    cameraList.value = await Html5Qrcode.getCameras()
+  }
+  if (!cameraList.value || cameraList.value.length === 0) {
+    alert('Keine Kamera gefunden!')
+    return
+  }
+  const backCamera = cameraList.value.find(device =>
+      device.label.toLowerCase().includes('back') ||
+      device.label.toLowerCase().includes('rear') ||
+      device.label.includes('0')
+  ) || cameraList.value[0]
+
+  console.log('📷 Fallback: Verwende Kamera aus Geräteliste:', backCamera.label)
+  await startScanningWithDeviceId(backCamera.id)
+}
+
+// Start über das semantische facingMode-Constraint - funktioniert einheitlich auf
+// Android Chrome und iOS Safari, ohne auf browserabhängige device.label-Texte
+// angewiesen zu sein. Mehrstufiger Fallback, falls das Constraint nicht unterstützt wird.
+const startScanningWithFacingMode = async () => {
+  try {
+    await html5QrCode.start({ facingMode: { exact: 'environment' } }, SCANNER_CONFIG, onScanSuccess, onScanError)
+    scannerActive.value = true
+    currentCameraId.value = null
+    console.log('✅ Scanner has started (facingMode exact environment).')
+  } catch (exactError) {
+    console.warn('⚠️ facingMode { exact: "environment" } fehlgeschlagen, versuche facingMode "environment":', exactError)
+    try {
+      await html5QrCode.start({ facingMode: 'environment' }, SCANNER_CONFIG, onScanSuccess, onScanError)
+      scannerActive.value = true
+      currentCameraId.value = null
+      console.log('✅ Scanner has started (facingMode environment).')
+    } catch (nonExactError) {
+      console.warn('⚠️ facingMode "environment" fehlgeschlagen, Fallback auf Geräteliste:', nonExactError)
+      await startScanningWithDeviceListFallback()
+    }
+  }
 }
 
 // Остановка сканера
@@ -201,26 +306,44 @@ const stopScanning = async () => {
   }
 }
 
+// Manueller Kamerawechsel durch den Nutzer (z. B. bei mehreren Rückkameras)
+const selectCamera = async (deviceId) => {
+  if (!deviceId || deviceId === currentCameraId.value) {
+    showCameraSelector.value = false
+    return
+  }
+  try {
+    await stopScanning()
+    await startScanningWithDeviceId(deviceId)
+    localStorage.setItem(CAMERA_STORAGE_KEY, deviceId)
+    showCameraSelector.value = false
+  } catch (error) {
+    console.error('❌ Fehler beim Wechseln der Kamera:', error)
+    alert('Fehler beim Wechseln der Kamera.')
+  }
+}
+
 // Scanner initialisieren
 const initScanner = async () => {
   try {
     html5QrCode = new Html5Qrcode('qr-reader')
     await configStore.loadConfig()
-    const devices = await Html5Qrcode.getCameras()
 
-    if (devices && devices.length > 0) {
-      const backCamera = devices.find(device =>
-          device.label.toLowerCase().includes('back') ||
-          device.label.toLowerCase().includes('rear') ||
-          device.label.includes('0')
-      ) || devices[0]
+    try {
+      cameraList.value = await Html5Qrcode.getCameras()
+    } catch (listError) {
+      console.warn('⚠️ Kameraliste konnte nicht geladen werden:', listError)
+    }
 
-      console.log('📷 Verwende Kamera:', backCamera.label)
-      CAMERA_ID = backCamera.id
+    // Zuvor vom Nutzer manuell gewählte Kamera bevorzugen, sofern sie noch existiert.
+    const savedCameraId = localStorage.getItem(CAMERA_STORAGE_KEY)
+    const savedCameraStillExists = savedCameraId && cameraList.value.some(device => device.id === savedCameraId)
 
-      await startScanning()
+    if (savedCameraStillExists) {
+      console.log('📷 Verwende gespeicherte Kamera:', savedCameraId)
+      await startScanningWithDeviceId(savedCameraId)
     } else {
-      alert('Keine Kamera gefunden!')
+      await startScanningWithFacingMode()
     }
   } catch (error) {
     console.error('❌ Fehler beim Starten des Scanners:', error)
@@ -267,7 +390,7 @@ const processScannedData = async (decodedText) => {
   if (!match) {
     console.warn('⚠️ Ungültiger QR-Code:', decodedText)
     lastError.value = 'Ungültiger QR-Code'
-    playSound(errorSound)
+    playSound('error')
 
     setTimeout(() => {
       lastError.value = ''
@@ -286,7 +409,7 @@ const processScannedData = async (decodedText) => {
     if (!child) {
       console.warn('⚠️ Kein Kind mit diesem Armband verbunden')
       lastError.value = 'Kein Kind ist mit dem Armband verbunden'
-      playSound(errorSound)
+      playSound('error')
 
       setTimeout(() => {
         lastError.value = ''
@@ -315,14 +438,14 @@ const processScannedData = async (decodedText) => {
     console.log('✅ Kind gescannt:', child.name, 'Gruppe:', child.group_id)
 
     // Success feedback
-    playSound(successSound)
+    playSound('success')
     triggerFlashEffect()
     triggerVibration()
 
   } catch (error) {
     console.error('❌ Fehler beim Verarbeiten des Scans:', error)
     lastError.value = 'Fehler beim Verarbeiten'
-    playSound(errorSound)
+    playSound('error')
 
     setTimeout(() => {
       lastError.value = ''
@@ -431,12 +554,43 @@ onBeforeUnmount(async () => {
   }
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .btn-exit {
   display: flex;
   align-items: center;
   gap: 8px;
   font-weight: 600;
   padding: 10px 20px;
+}
+
+.btn-camera {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 14px;
+  font-weight: 600;
+}
+
+/* Camera Selector */
+.camera-selector {
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(10px);
+  padding: 12px 15px;
+  border-radius: 12px;
+  margin-bottom: 15px;
+  color: white;
+}
+
+.camera-selector-label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
 }
 
 /* Counter Bar */
@@ -468,8 +622,31 @@ onBeforeUnmount(async () => {
 }
 
 .scanner-container.flash-success {
-  box-shadow: 0 0 0 4px rgba(40, 167, 69, 0.8),
-  0 10px 40px rgba(0, 0, 0, 0.3);
+  animation: rainbow-flash 1s ease-in-out;
+}
+
+@keyframes rainbow-flash {
+  0% {
+    box-shadow: 0 0 0 4px rgba(255, 0, 0, 0.9), 0 10px 40px rgba(0, 0, 0, 0.3);
+  }
+  16.6% {
+    box-shadow: 0 0 0 4px rgba(255, 165, 0, 0.9), 0 10px 40px rgba(0, 0, 0, 0.3);
+  }
+  33.3% {
+    box-shadow: 0 0 0 4px rgba(255, 255, 0, 0.9), 0 10px 40px rgba(0, 0, 0, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(0, 200, 0, 0.9), 0 10px 40px rgba(0, 0, 0, 0.3);
+  }
+  66.6% {
+    box-shadow: 0 0 0 4px rgba(0, 150, 255, 0.9), 0 10px 40px rgba(0, 0, 0, 0.3);
+  }
+  83.3% {
+    box-shadow: 0 0 0 4px rgba(75, 0, 130, 0.9), 0 10px 40px rgba(0, 0, 0, 0.3);
+  }
+  100% {
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+  }
 }
 
 #qr-reader {

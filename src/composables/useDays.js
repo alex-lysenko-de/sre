@@ -26,15 +26,22 @@ export function useDays() {
      * @param {number} dayId - The ID of the day
      */
     const deleteDay = async (dayId) => {
-        const { error } = await supabase
+        const { data, error } = await supabase
             .from('days')
             .delete()
             .eq('id', dayId)
+            .select()
 
         if (error) {
             console.error('Error deleting day:', error)
             throw new Error(error.message)
         }
+
+        // RLS silently deletes 0 rows without an error if the policy denies access.
+        if (!data || data.length === 0) {
+            throw new Error(`RLS error: Löschen wurde nicht durchgeführt. Die Sicherheitsrichtlinie erlaubt das Entfernen dieses Eintrags nicht.`)
+        }
+
         return true
     }
 
