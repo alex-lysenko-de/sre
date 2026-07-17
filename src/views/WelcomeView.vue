@@ -140,6 +140,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase } from '@/supabase'
+import { setAuthItem } from '@/modules/storage'
 
 const router = useRouter()
 
@@ -203,8 +204,8 @@ async function handleRegister() {
     }
 
     // NEU: Setzt den permanenten Status, dass der Nutzer registriert ist
-    localStorage.setItem('sre_user_registered', 'true');
-    console.log('✅ Registrierungsstatus im localStorage nach Registrierung gespeichert.');
+    await setAuthItem('sre_user_registered', 'true');
+    console.log('✅ Registrierungsstatus nach Registrierung gespeichert.');
 
 
     success.value = true

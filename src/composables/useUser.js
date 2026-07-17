@@ -1,6 +1,7 @@
 // src/composables/useUser.js
 // Business logic layer - handles caching, validation, orchestration
 import { useSupabaseUser } from './useSupabaseUser'
+import { getAuthItem, setAuthItem, removeAuthItem } from '../modules/storage'
 
 const USER_CACHE_KEY = 'user_info_cache'
 const CACHE_TTL = 60 * 1000 // 1 minute
@@ -16,11 +17,11 @@ export function useUser() {
     }
 
     /**
-     * Load cached user data from localStorage
+     * Load cached user data from LocalForage
      */
-    const loadFromCache = () => {
+    const loadFromCache = async () => {
         try {
-            const cached = localStorage.getItem(USER_CACHE_KEY)
+            const cached = await getAuthItem(USER_CACHE_KEY)
             if (!cached) return null
 
             const { timestamp, data } = JSON.parse(cached)
@@ -38,26 +39,26 @@ export function useUser() {
     }
 
     /**
-     * Save user data to localStorage cache
+     * Save user data to LocalForage cache
      */
-    const saveToCache = (data) => {
+    const saveToCache = async (data) => {
         try {
             const cacheData = {
                 timestamp: Date.now(),
                 data
             }
-            localStorage.setItem(USER_CACHE_KEY, JSON.stringify(cacheData))
+            await setAuthItem(USER_CACHE_KEY, JSON.stringify(cacheData))
         } catch (err) {
             console.error('Error saving cache:', err)
         }
     }
 
     /**
-     * Clear user cache from localStorage
+     * Clear user cache from LocalForage
      */
-    const clearCache = () => {
+    const clearCache = async () => {
         try {
-            localStorage.removeItem(USER_CACHE_KEY)
+            await removeAuthItem(USER_CACHE_KEY)
         } catch (err) {
             console.error('Error clearing cache:', err)
         }

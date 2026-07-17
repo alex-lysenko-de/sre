@@ -47,18 +47,6 @@
                   />
                 </div>
 
-                <div class="form-check mb-3">
-                  <input
-                    v-model="rememberMe"
-                    class="form-check-input"
-                    type="checkbox"
-                    id="remember"
-                  />
-                  <label class="form-check-label small" for="remember">
-                    Angemeldet bleiben
-                  </label>
-                </div>
-
                 <!-- Error Alert -->
                 <div v-if="error" class="alert alert-danger d-flex align-items-center py-2" role="alert">
                   <span class="me-2">⚠️</span>
@@ -97,82 +85,32 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase } from '../supabase'
 import { logApi } from '../utils/logger'
+import { setAuthItem } from '../modules/storage'
 
 const router = useRouter()
 
 const email = ref('')
 const password = ref('')
-const rememberMe = ref(true)
 const loading = ref(false)
 const error = ref('')
 const autoLoginInProgress = ref(true)
 
-// Attempt auto-login on mount
+// Check for existing session on mount
 onMounted(async () => {
   try {
-    // Check current session
     const { data: { session } } = await supabase.auth.getSession()
 
     if (session) {
       // User is already authenticated
       console.log('✅ Aktive Sitzung gefunden, leite weiter...')
       await redirectToHome()
-      return
-    }
-
-    // If no session, but saved credentials exist
-    const savedCredentials = getSavedCredentials()
-    if (savedCredentials) {
-      console.log('🔑 Gespeicherte Anmeldedaten gefunden, führe automatische Anmeldung durch...')
-      await autoLogin(savedCredentials)
     }
   } catch (err) {
-    console.error('Fehler bei der automatischen Anmeldung:', err)
+    console.error('Fehler bei der Sitzungsprüfung:', err)
   } finally {
     autoLoginInProgress.value = false
   }
 })
-
-// Get saved credentials from localStorage
-function getSavedCredentials() {
-  const saved = localStorage.getItem('auth_credentials')
-  if (!saved) return null
-
-  try {
-    return JSON.parse(atob(saved)) // Decode from base64
-  } catch {
-    return null
-  }
-}
-
-// Save credentials to localStorage
-function saveCredentials(email, password) {
-  const credentials = JSON.stringify({ email, password })
-  localStorage.setItem('auth_credentials', btoa(credentials)) // Encode to base64
-}
-
-// Clear saved credentials
-function clearCredentials() {
-  localStorage.removeItem('auth_credentials')
-}
-
-// Auto-login function
-async function autoLogin(credentials) {
-  try {
-    const { data, error: authError } = await supabase.auth.signInWithPassword({
-      email: credentials.email,
-      password: credentials.password
-    })
-
-    if (authError) throw authError
-
-    console.log('✅ Automatische Anmeldung erfolgreich')
-    await redirectToHome()
-  } catch (err) {
-    console.error('Fehler bei der automatischen Anmeldung:', err.message)
-    clearCredentials() // Remove invalid credentials
-  }
-}
 
 // Handle manual login
 async function handleLogin() {
@@ -210,15 +148,8 @@ async function handleLogin() {
     }
 
     // NEU: Setzt den permanenten Status, dass der Nutzer registriert ist
-    localStorage.setItem('sre_user_registered', 'true');
-    console.log('✅ Registrierungsstatus im localStorage gespeichert.');
-
-
-    // Save credentials if checkbox is checked
-    if (rememberMe.value) {
-      saveCredentials(email.value, password.value)
-      console.log('💾 Anmeldedaten für automatische Anmeldung gespeichert')
-    }
+    await setAuthItem('sre_user_registered', 'true');
+    console.log('✅ Registrierungsstatus gespeichert.');
 
     // Update last_seen_date
     await supabase

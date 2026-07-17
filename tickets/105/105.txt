@@ -1,0 +1,15 @@
+https://sre-nrw.de/login
+
+Migration of authentication storage from Local Storage to LocalForage
+
+Сейчас вся информация об авторизации (сессия Supabase, флаг регистрации, сохранённые email/пароль для автовхода, кеш профиля пользователя) хранится исключительно в Local Storage браузера (ключи sb-<project-ref>-auth-token, sre_user_registered, auth_credentials, user_info_cache). На Android это работает стабильно, но на iPhone периодически наблюдается ситуация, когда Local Storage очищается или становится недоступным (после добавления PWA на экран "Домой", при нехватке места на устройстве или из-за особенностей WebKit/ITP). В результате приложение "забывает" пользователя, и ему приходится заново проходить авторизацию, хотя аккаунт и сессия на сервере остаются действительными.
+
+Цель: перевести хранение данных авторизации (токен/сессию Supabase, флаг регистрации, данные для автовхода и кеш пользователя) с Local Storage на LocalForage (IndexedDB с fallback), чтобы обеспечить более надёжное и персистентное хранение сессии, особенно на устройствах под управлением iOS, и исключить случаи неожиданного разлогинивания пользователя.
+
+Что нужно сделать:
+- Добавить зависимость localforage и настроить отдельный instance/store для авторизационных данных.
+- Передать кастомный storage adapter (на основе localforage) в опции createClient() supabase-js (src/supabase.js), чтобы SDK сам писал/читал sb-*-auth-token через LocalForage вместо localStorage.
+- Перенести sre_user_registered, auth_credentials и user_info_cache (src/App.vue, src/views/LoginView.vue, src/views/WelcomeView.vue, src/composables/useUser.js, src/router/index.js) на LocalForage.
+- Предусмотреть миграцию уже существующих данных из localStorage в LocalForage при первом запуске обновлённой версии (чтобы уже вошедшие пользователи не разлогинились после апдейта).
+- Отдельно рассмотреть: хранение auth_credentials в виде base64(email+password) не является шифрованием и должно быть пересмотрено при миграции (например, хранить только refresh-механизм Supabase, без дублирования пароля в открытом/слабо закодированном виде).
+- Проверить поведение на iOS в режиме "Добавлено на экран Домой" (standalone) отдельно от обычной вкладки Safari — это два разных storage-контейнера, и тест должен покрывать оба сценария.

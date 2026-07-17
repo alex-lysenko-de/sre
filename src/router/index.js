@@ -5,6 +5,7 @@ import LoginView from '@/views/LoginView.vue'
 import InviteGeneratorView from '@/views/InviteGeneratorView.vue'
 import WelcomeView from '@/views/WelcomeView.vue'
 import { supabase } from '@/supabase'
+import { getAuthItem } from '@/modules/storage'
 import ChildrenView from '@/views/ChildrenView.vue'
 import UsersView from '@/views/UsersView.vue'
 import GroupEditView from '@/views/GroupEditView.vue'
@@ -146,7 +147,7 @@ const router = createRouter({
 // Global navigation guard
 router.beforeEach(async (to, from, next) => {
     // Prüfen, ob der Nutzer jemals registriert wurde
-    const isRegistered = localStorage.getItem('sre_user_registered') === 'true'
+    const isRegistered = await getAuthItem('sre_user_registered') === 'true'
 
     // --- ЛОГИКА ДЛЯ ГОСТЕЙ ---
     if (!isRegistered) {

@@ -141,6 +141,7 @@ import { ref, computed, onMounted, watch, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { supabase } from './supabase'
 import { useUserStore } from './stores/user'
+import { getAuthItem } from './modules/storage'
 import DailyCheckInModal from './views/DailyCheckInModalView.vue'
 import GroupChangeModal from './components/GroupChangeModal.vue'
 import BusChangeModal from './components/BusChangeModal.vue'
@@ -231,7 +232,7 @@ function clearMenuTimeout() {
  * Checks for existing session or attempts auto-login
  */
 async function initializeApp() {
-  const isRegistered = localStorage.getItem('sre_user_registered') === 'true';
+  const isRegistered = await getAuthItem('sre_user_registered') === 'true';
 
   // Für Gäste wird der Authentifizierungsprozess übersprungen
   if (!isRegistered) {
@@ -249,9 +250,8 @@ async function initializeApp() {
 
     if (session) {
       await handleAuthentication(session);
-    } else {
-      // Try auto-login from localStorage
-      await attemptAutoLogin();
+    } else if (route.path !== '/login' && route.path !== '/welcome' && route.path !== '/main') {
+      await router.push('/login');
     }
   } catch (err) {
     console.error('Fehler bei der Initialisierung:', err);
@@ -259,43 +259,6 @@ async function initializeApp() {
     // Wenn etwas schiefgeht, zum Login leiten
     if (route.path !== '/login' && route.path !== '/welcome' && route.path !== '/main') {
       await router.push('/login');
-    }
-  }
-}
-
-/**
- * Attempt automatic login using stored credentials
- */
-async function attemptAutoLogin() {
-  try {
-    const savedCredentials = getSavedCredentials()
-
-    if (!savedCredentials) {
-      // No saved credentials, redirect to login
-      if (route.path !== '/login' && route.path !== '/welcome' && route.path !== '/main') {
-        await router.push('/login')
-      }
-      return
-    }
-
-    console.log('🔐 Gespeicherte Anmeldedaten gefunden, führe automatische Anmeldung durch...')
-
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email : savedCredentials.email,
-      password : savedCredentials.password
-    })
-
-    if (error) throw error
-
-    await handleAuthentication(data.session)
-    console.log('✅ Automatische Anmeldung erfolgreich')
-
-  } catch (err) {
-    console.error('Fehler bei der automatischen Anmeldung:', err)
-    clearSavedCredentials()
-
-    if (route.path !== '/login' && route.path !== '/welcome' && route.path !== '/main') {
-      await router.push('/login')
     }
   }
 }
@@ -331,27 +294,6 @@ async function checkAuth() {
   } catch (err) {
     console.error('Fehler bei der Berechtigungsprüfung:', err)
   }
-}
-
-/**
- * Get saved credentials from localStorage
- */
-function getSavedCredentials() {
-  const saved = localStorage.getItem('auth_credentials')
-  if (!saved) return null
-
-  try {
-    return JSON.parse(atob(saved))
-  } catch {
-    return null
-  }
-}
-
-/**
- * Clear saved credentials
- */
-function clearSavedCredentials() {
-  localStorage.removeItem('auth_credentials')
 }
 
 /**
@@ -393,11 +335,8 @@ async function onBusChanged(newBusId) {
  */
 async function logout() {
   try {
-    // Clear stored credentials
-    clearSavedCredentials()
-
     // Clear user cache and reset store
-    userStore.clearUserCache()
+    await userStore.clearUserCache()
 
     if (userStore.userStatusChannel) {
       await supabase.removeChannel(userStore.userStatusChannel)

@@ -41,27 +41,27 @@ export const useUserStore = defineStore('user', {
         },
 
         /**
-         * Load cached user data from localStorage
+         * Load cached user data from LocalForage
          */
-        loadFromCache() {
+        async loadFromCache() {
             const user = useUser()
-            return user.loadFromCache()
+            return await user.loadFromCache()
         },
 
         /**
-         * Save user data to localStorage cache
+         * Save user data to LocalForage cache
          */
-        saveToCache(data) {
+        async saveToCache(data) {
             const user = useUser()
-            user.saveToCache(data)
+            await user.saveToCache(data)
         },
 
         /**
-         * Clear user cache from localStorage
+         * Clear user cache from LocalForage
          */
-        clearUserCache() {
+        async clearUserCache() {
             const user = useUser()
-            user.clearCache()
+            await user.clearCache()
             this.$reset() // Reset store state to initial values
         },
 
@@ -88,7 +88,7 @@ export const useUserStore = defineStore('user', {
             try {
                 // Try cache first if not forced
                 if (!force) {
-                    const cached = user.loadFromCache()
+                    const cached = await user.loadFromCache()
                     if (cached) {
                         this.userInfo = cached
                         console.log('✅ User data loaded from cache')
@@ -99,7 +99,7 @@ export const useUserStore = defineStore('user', {
                 // Fetch from database
                 const data = await user.fetchUserFromSupabase()
                 this.userInfo = data
-                user.saveToCache(data)
+                await user.saveToCache(data)
                 console.log('✅ User data loaded from Supabase')
 
                 // If admin, subscribe to realtime updates
@@ -136,7 +136,7 @@ export const useUserStore = defineStore('user', {
                 // Update local state if it's today
                 if (targetDate === user.getTodayDate()) {
                     this.userInfo.group_id = groupId
-                    user.saveToCache(this.userInfo)
+                    await user.saveToCache(this.userInfo)
                 }
 
                 console.log(`✅ User assigned to group ${groupId} for ${targetDate}`)
@@ -167,7 +167,7 @@ export const useUserStore = defineStore('user', {
                 // Update local state if it's today
                 if (targetDate === user.getTodayDate()) {
                     this.userInfo.bus_id = busId
-                    user.saveToCache(this.userInfo)
+                    await user.saveToCache(this.userInfo)
                 }
 
                 console.log(`✅ User assigned to bus ${busId} for ${targetDate}`)
@@ -200,7 +200,7 @@ export const useUserStore = defineStore('user', {
                 // Update local state if it's today
                 if (targetDate === user.getTodayDate()) {
                     this.userInfo.isPresentToday = isPresentValue === 1
-                    user.saveToCache(this.userInfo)
+                    await user.saveToCache(this.userInfo)
                 }
 
                 console.log(`✅ User presence updated to ${isPresentValue} for ${targetDate}`)
