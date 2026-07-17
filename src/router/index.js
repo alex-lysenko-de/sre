@@ -147,7 +147,12 @@ const router = createRouter({
 // Global navigation guard
 router.beforeEach(async (to, from, next) => {
     // Prüfen, ob der Nutzer jemals registriert wurde
-    const isRegistered = await getAuthItem('sre_user_registered') === 'true'
+    let isRegistered = false
+    try {
+        isRegistered = await getAuthItem('sre_user_registered') === 'true'
+    } catch (err) {
+        console.error('❌ Fehler beim Lesen des Registrierungsstatus:', err)
+    }
 
     // --- ЛОГИКА ДЛЯ ГОСТЕЙ ---
     if (!isRegistered) {

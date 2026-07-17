@@ -11,12 +11,12 @@
                 <p class="text-muted small">Systemanmeldung</p>
               </div>
 
-              <!-- Auto-login spinner -->
+              <!-- Session check spinner -->
               <div v-if="autoLoginInProgress" class="text-center py-5">
                 <div class="spinner-border text-success" style="width: 4rem; height: 4rem;" role="status">
                   <span class="visually-hidden">Laden...</span>
                 </div>
-                <p class="mt-3 text-muted">Automatische Anmeldung...</p>
+                <p class="mt-3 text-muted">Sitzung wird geprüft...</p>
               </div>
 
               <!-- Login Form -->

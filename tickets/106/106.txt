@@ -1,0 +1,31 @@
+https://sre-nrw.de/group-edit
+https://sre-nrw.de/main
+
+Child headcount (attendance check) for "My Group"
+
+Implement a child headcount (attendance check) feature for children in "My Group" only (the group of the currently logged-in user).
+
+Placement:
+The feature should be easily accessible, with as few clicks as possible. Two candidate locations:
+- https://sre-nrw.de/group-edit (most likely, as it is closely related to group management), or
+- https://sre-nrw.de/main (if faster access is preferred).
+The final placement can be decided during implementation.
+
+Functionality:
+Add a "Headcount" (or similar) button that opens a list of all children in the current user's group.
+
+For each child, display two attendance indicators:
+
+1. Present in the morning
+   - Determined automatically based on whether the child arrived by bus.
+   - Read-only.
+   - Remains unchanged throughout the day.
+
+2. Present now
+   - Can be updated multiple times during the day during a headcount.
+   - Staff can mark whether the child is currently present.
+   - It should be immediately obvious when a child is marked as absent.
+
+When a user changes the "Present now" status, the update should be sent to the database immediately. There is no need for an additional Save or Submit button.
+
+The feature only applies to children who belong to the user's own group.

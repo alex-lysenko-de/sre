@@ -229,10 +229,15 @@ function clearMenuTimeout() {
 
 /**
  * Initialize application
- * Checks for existing session or attempts auto-login
+ * Checks for existing session, otherwise skips to guest mode
  */
 async function initializeApp() {
-  const isRegistered = await getAuthItem('sre_user_registered') === 'true';
+  let isRegistered = false;
+  try {
+    isRegistered = await getAuthItem('sre_user_registered') === 'true';
+  } catch (err) {
+    console.error('❌ Fehler beim Lesen des Registrierungsstatus:', err);
+  }
 
   // Für Gäste wird der Authentifizierungsprozess übersprungen
   if (!isRegistered) {
