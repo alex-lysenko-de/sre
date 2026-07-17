@@ -13,10 +13,11 @@
       <div class="header-actions">
         <button
             @click="showCameraSelector = !showCameraSelector"
-            class="btn btn-secondary btn-camera"
+            class="btn btn-warning btn-camera"
+            :disabled="isTransitioning"
             title="Kamera wechseln"
         >
-          <i class="fas fa-camera"></i>
+          <i class="fas fa-camera"></i> Kamera wechseln
         </button>
         <button @click="exitScanner" class="btn btn-danger btn-exit">
           <i class="fas fa-times"></i> Beenden
@@ -30,9 +31,11 @@
       <select
           id="camera-select"
           class="form-select"
-          :value="currentCameraId"
+          :value="currentCameraId || ''"
+          :disabled="isTransitioning"
           @change="selectCamera($event.target.value)"
       >
+        <option value="" disabled>Automatisch (Rückkamera)</option>
         <option v-for="cam in cameraList" :key="cam.id" :value="cam.id">
           {{ cam.label || cam.id }}
         </option>
@@ -128,6 +131,10 @@ const CAMERA_STORAGE_KEY = 'scanner_preferred_camera_id'
 const cameraList = ref([]) // Liste aller verfügbaren Kameras (id + label)
 const currentCameraId = ref(null) // deviceId der aktuell aktiven Kamera (null bei facingMode-Start)
 const showCameraSelector = ref(false)
+// Sperrt Kamera-Steuerelemente, solange ein html5QrCode.start()/stop()-Übergang
+// läuft - die Bibliothek wirft synchron, wenn ein neuer Übergang startet, bevor
+// der vorherige abgeschlossen ist.
+const isTransitioning = ref(false)
 
 // Конфигурация сканера
 const SCANNER_CONFIG = {
@@ -151,6 +158,16 @@ const getAudioContext = () => {
     audioContext = new AudioContextClass()
   }
   return audioContext
+}
+
+// Wird an den ersten click/touchend im Dokument gebunden (siehe onMounted),
+// damit AudioContext innerhalb einer echten Nutzergeste erstellt/resumiert
+// wird - Voraussetzung für hörbaren Ton auf iOS Safari.
+const unlockAudioContext = () => {
+  const ctx = getAudioContext()
+  if (ctx.state === 'suspended') {
+    ctx.resume()
+  }
 }
 
 const playTone = (frequencies, toneDuration) => {
@@ -253,7 +270,13 @@ const startScanningWithDeviceId = async (deviceId) => {
 // nur noch als letzte Stufe, falls facingMode nicht unterstützt wird).
 const startScanningWithDeviceListFallback = async () => {
   if (!cameraList.value || cameraList.value.length === 0) {
-    cameraList.value = await Html5Qrcode.getCameras()
+    try {
+      cameraList.value = await Html5Qrcode.getCameras()
+    } catch (accessError) {
+      console.error('❌ Kein Zugriff auf die Kamera:', accessError)
+      alert('Kein Zugriff auf die Kamera. Bitte Berechtigungen prüfen.')
+      return
+    }
   }
   if (!cameraList.value || cameraList.value.length === 0) {
     alert('Keine Kamera gefunden!')
@@ -312,6 +335,13 @@ const selectCamera = async (deviceId) => {
     showCameraSelector.value = false
     return
   }
+  // Verhindert einen parallelen html5QrCode.start()-Aufruf, während bereits ein
+  // Übergang läuft (z. B. die automatische Initialisierung ist noch nicht fertig) -
+  // die Bibliothek wirft in diesem Fall synchron eine Exception.
+  if (isTransitioning.value) {
+    return
+  }
+  isTransitioning.value = true
   try {
     await stopScanning()
     await startScanningWithDeviceId(deviceId)
@@ -320,11 +350,14 @@ const selectCamera = async (deviceId) => {
   } catch (error) {
     console.error('❌ Fehler beim Wechseln der Kamera:', error)
     alert('Fehler beim Wechseln der Kamera.')
+  } finally {
+    isTransitioning.value = false
   }
 }
 
 // Scanner initialisieren
 const initScanner = async () => {
+  isTransitioning.value = true
   try {
     html5QrCode = new Html5Qrcode('qr-reader')
     await configStore.loadConfig()
@@ -348,6 +381,8 @@ const initScanner = async () => {
   } catch (error) {
     console.error('❌ Fehler beim Starten des Scanners:', error)
     alert('Fehler beim Zugriff auf die Kamera. Bitte Berechtigungen prüfen.')
+  } finally {
+    isTransitioning.value = false
   }
 }
 
@@ -496,10 +531,18 @@ const exitScanner = async () => {
 // ============================================
 
 onMounted(() => {
+  // AudioContext muss innerhalb einer echten Nutzergeste erstellt/resumiert
+  // werden, sonst bleibt er auf iOS Safari dauerhaft "suspended" und Töne
+  // werden nie hörbar - initScanner() selbst startet automatisch ohne Klick.
+  window.addEventListener('touchend', unlockAudioContext, { once: true })
+  window.addEventListener('click', unlockAudioContext, { once: true })
   initScanner()
 })
 
 onBeforeUnmount(async () => {
+  window.removeEventListener('touchend', unlockAudioContext)
+  window.removeEventListener('click', unlockAudioContext)
+  audioContext?.close()
   await stopScanning()
 })
 </script>
@@ -515,8 +558,10 @@ onBeforeUnmount(async () => {
 /* Compact Header */
 .scanner-header {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
+  gap: 10px;
   margin-bottom: 15px;
 }
 
@@ -571,9 +616,17 @@ onBeforeUnmount(async () => {
 .btn-camera {
   display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 10px 14px;
-  font-weight: 600;
+  gap: 8px;
+  font-weight: 700;
+  padding: 10px 18px;
+  color: #212529;
+  border: 2px solid #ffc107;
+  box-shadow: 0 2px 8px rgba(255, 193, 7, 0.5);
+}
+
+.btn-camera:disabled {
+  opacity: 0.6;
+  box-shadow: none;
 }
 
 /* Camera Selector */
@@ -814,6 +867,11 @@ onBeforeUnmount(async () => {
 
   .btn-exit {
     padding: 8px 16px;
+    font-size: 0.9rem;
+  }
+
+  .btn-camera {
+    padding: 8px 14px;
     font-size: 0.9rem;
   }
 
