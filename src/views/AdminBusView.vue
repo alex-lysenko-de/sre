@@ -19,7 +19,7 @@
         :class="{ 'complete': allBusesHaveData }"
     >
       <div class="card-body">
-        <h3 class="mb-3">Gesamt</h3>
+        <h3 class="mb-3 text-center">Gesamt</h3>
         <div class="row text-center">
           <div class="col-6">
             <div class="total-count display-4 fw-bold text-primary">
@@ -129,7 +129,6 @@
           <table class="table table-hover">
             <thead>
             <tr>
-              <th scope="col" style="width: 50px"></th>
               <th scope="col">Bus</th>
               <th scope="col">Kinder</th>
               <th scope="col">Betreuer</th>
@@ -143,19 +142,16 @@
                 :class="{ 'table-secondary': !getBusData(busNumber).hasData }"
             >
               <td>
-                  <span
-                      class="status-indicator"
-                      :class="getBusData(busNumber).hasData ? 'bg-success' : 'bg-secondary'"
-                      :title="getBusData(busNumber).hasData ? 'Daten verfügbar' : 'Keine Daten'"
-                  ></span>
-              </td>
-              <td>
                 <button
                     class="btn btn-link text-start p-0 fw-bold text-decoration-none"
                     @click="openBusDetail(busNumber)"
                 >
-                  <i class="fas fa-bus me-2"></i>
-                  Bus {{ busNumber }}
+                  <span
+                      class="status-indicator me-2"
+                      :class="getBusData(busNumber).hasData ? 'bg-success' : 'bg-secondary'"
+                      :title="getBusData(busNumber).hasData ? 'Daten verfügbar' : 'Keine Daten'"
+                  ></span>
+                  {{ busNumber }}
                 </button>
               </td>
               <td>
@@ -171,11 +167,11 @@
                 <span v-else class="text-muted">-</span>
               </td>
               <td>
-                <div v-if="getBusData(busNumber).betreuer_names.length > 0">
+                <div v-if="getBusData(busNumber).betreuer_names.length > 0" class="betreuer-badges">
                     <span
                         v-for="(name, idx) in getBusData(busNumber).betreuer_names"
                         :key="idx"
-                        class="badge bg-info text-dark me-1"
+                        class="badge bg-info text-dark"
                     >
                       {{ name }}
                     </span>
@@ -626,9 +622,12 @@ export default {
 }
 
 /* Total Summary Card */
+/* Light gradient echoing the text-primary/text-success accents already used
+   below for "Kinder"/"Betreuer" - reuses the app's existing color identity
+   instead of introducing an unrelated new color, with dark text for contrast. */
 .total-summary {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+  background: linear-gradient(135deg, #e7f1ff 0%, #e3f6ed 100%);
+  color: #212529;
   border: none;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
   transition: all 0.3s ease;
@@ -637,6 +636,16 @@ export default {
 .total-summary.complete {
   background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
   animation: pulse 2s ease-in-out infinite;
+}
+
+/* Complete-state gradient is darker/more saturated than the new default
+   background - keep white text here, unrelated to the ticket's feedback
+   about the default (non-complete) background. */
+.total-summary.complete h3,
+.total-summary.complete h4,
+.total-summary.complete h5,
+.total-summary.complete p {
+  color: white;
 }
 
 @keyframes pulse {
@@ -656,7 +665,7 @@ export default {
 .total-summary h4,
 .total-summary h5,
 .total-summary p {
-  color: white;
+  color: #212529;
 }
 
 .total-count {
@@ -700,6 +709,14 @@ export default {
 .badge {
   font-size: 0.875rem;
   padding: 0.375rem 0.75rem;
+}
+
+/* Verantwortliche: allow badges to wrap onto multiple lines instead of
+   forcing them into one line / stretching the row width. */
+.betreuer-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
 }
 
 /* Alert Animations */
@@ -753,6 +770,58 @@ export default {
 
   .total-summary .card-body {
     padding: 1.5rem;
+  }
+}
+
+/* Narrower phone breakpoint (e.g. iPhone 12, 390px) - more aggressive than
+   the 768px tablet step above: frameless/edge-to-edge layout and larger,
+   more compact table so it fits the viewport width without horizontal
+   scroll. */
+@media (max-width: 576px) {
+  /* Cancel the horizontal padding of App.vue's <main class="container-fluid p-3">
+     (1rem each side) so this page's content reaches the screen edges.
+     NOTE: this negative margin is tied to that p-3 value - if it changes in
+     App.vue, this compensation must be updated to match. */
+  .admin-bus-view {
+    padding-left: 0;
+    padding-right: 0;
+    margin-left: -1rem;
+    margin-right: -1rem;
+  }
+
+  /* Flatter, less "boxed" look on phones */
+  .card {
+    border: none;
+    box-shadow: none;
+  }
+
+  .total-summary {
+    box-shadow: none;
+  }
+
+  .card-body {
+    padding: 0.75rem;
+  }
+
+  .total-summary .card-body {
+    padding: 1rem;
+  }
+
+  /* Bigger, more readable "Gesamt" numbers than the 768px step above */
+  .total-count {
+    font-size: 2.5rem;
+  }
+
+  /* Bigger, more readable table text than the 768px step above, compensated
+     by the reduced cell/table paddings below so the table still fits. */
+  .table-responsive {
+    font-size: 1rem;
+  }
+
+  .table th,
+  .table td {
+    padding-left: 0.4rem;
+    padding-right: 0.4rem;
   }
 }
 
