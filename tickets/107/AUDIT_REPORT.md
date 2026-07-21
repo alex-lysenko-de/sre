@@ -1,99 +1,99 @@
-# Ticket 107 — Aufräumen der Projektdateien: Audit-Bericht
+# Тикет 107 — Наведение порядка в файлах проекта: отчёт по ревизии
 
-Umfang: alle losen Dateien im Projekt-Root (`readme.md`, `backup.bat`, `pack.bat`, `unpack.bat`, `project_packer.py`, `backup.sql`) sowie sämtliche Dateien unter `doc/` (inkl. `doc/db/` und `doc/utils/`).
+Область ревизии: все отдельные файлы в корне проекта (`readme.md`, `backup.bat`, `pack.bat`, `unpack.bat`, `project_packer.py`, `backup.sql`), а также все файлы в каталоге `doc/` (включая `doc/db/` и `doc/utils/`).
 
-**Wichtiger Hinweis zur Vorgehensweise:** Auf ausdrücklichen Wunsch wurden in diesem Durchgang **keine Dateien gelöscht**. Für Dateien, die inhaltlich als überholt/redundant eingestuft wurden, steht unten **„LÖSCHEN (empfohlen, nicht ausgeführt)"** — die Datei existiert weiterhin unverändert im Repo, die Entscheidung über das tatsächliche Löschen liegt beim Projektinhaber.
+**Важное замечание по подходу:** по прямому указанию в рамках этого прохода **ни один файл не был удалён**. Для файлов, которые по содержанию признаны устаревшими/избыточными, ниже стоит пометка **«УДАЛИТЬ (рекомендуется, не выполнено)»** — сам файл при этом остался в репозитории без изменений, решение о фактическом удалении остаётся за владельцем проекта.
 
 ---
 
-## ⚠️ Sicherheitsfund (unabhängig vom eigentlichen Auftrag)
+## ⚠️ Найдена проблема безопасности (не относится напрямую к заданию)
 
-Bei der Durchsicht wurde ein **echter Supabase `service_role`-Key im Klartext** in zwei versionierten Dateien gefunden:
+При ревизии обнаружен **реальный Supabase `service_role`-ключ в открытом виде** в двух файлах, находящихся под версионным контролем:
 - `doc/sb_install_keys.bat`
 - `doc/supabase_install.md`
 
-Dieser Key hebelt Row Level Security vollständig aus. Er wurde im Commit `7fd4c5a "new technology"` eingecheckt, **dieser Commit befindet sich bereits auf `origin/main`** (github.com/alex-lysenko-de/sre.git). Zusätzlich enthält `doc/users.sql` eine echte Bootstrap-Admin-E-Mail, Telefonnummer und ein Klartext-Passwort (`P@ssw0rd123`).
+Этот ключ полностью обходит Row Level Security. Он был закоммичен в коммите `7fd4c5a "new technology"`, **этот коммит уже присутствует в `origin/main`** (github.com/alex-lysenko-de/sre.git). Кроме того, `doc/users.sql` содержит реальный email администратора-бутстрапа, номер телефона и пароль в открытом виде (`P@ssw0rd123`).
 
-**Auf ausdrücklichen Wunsch des Projektinhabers wurden diese drei Dateien in diesem Durchgang nicht verändert** — der Key wird bewusst nicht rotiert/entfernt. Dieser Punkt wird hier nur zur Dokumentation festgehalten.
+**По прямому указанию владельца проекта эти три файла в рамках данного прохода не изменялись** — ключ намеренно не ротировался и не удалялся. Этот пункт зафиксирован здесь исключительно для документирования.
 
 ---
 
-## Root-Verzeichnis
+## Корневой каталог
 
-| Datei | Inhalt | Entscheidung |
+| Файл | Содержимое | Решение |
 |---|---|---|
-| `readme.md` | Tech-Stack, Architektur- und Coding-Regeln, Setup-Anleitung | **BEHALTEN** — stimmt mit `package.json` und der aktuellen Projektstruktur überein |
-| `backup.bat` | `supabase db dump` mit bewusst generischem Passwort-Platzhalter | **BEHALTEN** — Platzhalter ist Absicht (kein Secret im Klartext), Nutzer trägt Passwort manuell ein |
-| `backup.sql` (0 Bytes) | Leere Artefakt-Datei, vermutlich Output-Datei von `backup.bat` | **LÖSCHEN (empfohlen, nicht ausgeführt)** — leer, kein Informationswert, wird bei Bedarf neu erzeugt |
-| `pack.bat` / `unpack.bat` | Rufen `project_packer.py` auf, um `src/` in eine einzelne Markdown-Datei zu bündeln (z.B. für externe LLM-Tools) | **AKTUALISIERT** — siehe unten |
-| `project_packer.py` | Pack/Unpack-Logik für obige Skripte | **AKTUALISIERT (Bugfix)** — Datei war am Ende abgeschnitten (`el` statt `elif ...`), dadurch schlug **sowohl `pack.bat` als auch `unpack.bat` mit `SyntaxError`** fehl. Fehlender `elif args.mode == "unpack"`-Zweig wurde ergänzt und die Syntax verifiziert (`ast.parse` erfolgreich). *Hinweis:* Da Claude Code in diesem Projekt bereits direkten Dateizugriff hat, ist der praktische Nutzen dieses Tools inzwischen gering — Empfehlung, es bei Gelegenheit ganz zu entfernen, falls es nicht mehr für andere (Nicht-Claude-Code) AI-Tools gebraucht wird. |
+| `readme.md` | Стек технологий, архитектурные и стилевые правила, инструкция по установке | **ОСТАВИТЬ** — соответствует `package.json` и текущей структуре проекта |
+| `backup.bat` | `supabase db dump` с намеренно generic-плейсхолдером вместо пароля | **ОСТАВИТЬ** — плейсхолдер сделан осознанно (без секрета в открытом виде), пароль вписывается вручную пользователем |
+| `backup.sql` (0 байт) | Пустой файл-артефакт, вероятно, выходной файл от `backup.bat` | **УДАЛИТЬ (рекомендуется, не выполнено)** — пустой, не несёт информации, при необходимости создаётся заново |
+| `pack.bat` / `unpack.bat` | Вызывают `project_packer.py`, чтобы собрать `src/` в один markdown-файл (например, для внешних LLM-инструментов) | **ОБНОВЛЕНО** — см. ниже |
+| `project_packer.py` | Логика pack/unpack для скриптов выше | **ОБНОВЛЕНО (исправлен баг)** — файл был оборван в конце (`el` вместо `elif ...`), из-за чего **и `pack.bat`, и `unpack.bat` падали с `SyntaxError`**. Отсутствующая ветка `elif args.mode == "unpack"` восстановлена, синтаксис проверен (`ast.parse` прошёл успешно). *Примечание:* поскольку у Claude Code в этом проекте уже есть прямой доступ к файлам, практическая польза этого инструмента сейчас невелика — рекомендуется при случае убрать его полностью, если он больше не нужен для других (не Claude Code) AI-инструментов. |
 
 ---
 
-## `doc/` — Tech-Task-Dokumente
+## `doc/` — технические задания
 
-| Datei | Inhalt | Abgleich mit Code | Entscheidung |
+| Файл | Содержимое | Соответствие коду | Решение |
 |---|---|---|---|
-| `AdminBusView_TechTask.md` | Aktuelle Bus-/Kinderzähl-Logik hinter AdminBusView | Stimmt exakt mit `useBusData.js` überein | **BEHALTEN** |
-| `ArmbandTask.md` | Spezifikation Armband→Kind-Zuordnung | Kernlogik korrekt, aber referenzierte `useAuth.js`/`stores/children.js`/`ArmbandAssignForm.vue` existieren nicht | **AKTUALISIERT** — auf reale Struktur (`useArmband.js`, `stores/user.js`, `ArmbandConnectView.vue`) korrigiert, Status-Vermerk ergänzt |
-| `Aufgabe.md` | Ursprüngliche Gesamtspezifikation für `useUser`/`selectGroupAndBus` | Beschreibt ein abweichendes, nie umgesetztes Schema (`status`-Feld unsicher dokumentiert); inhaltlich durch `useUser.md` + `selectGroupAndBus.md` abgedeckt | **LÖSCHEN (empfohlen, nicht ausgeführt)** — Duplikat einer überholten Zwischenversion |
-| `ChildrenView_TechTask.md` | Auftrag, Mock-/Zufallsdaten in ChildrenView durch echte Queries zu ersetzen | Vollständig umgesetzt (`useGroups.js`, keine `Math.random()`-Reste mehr) | **LÖSCHEN (empfohlen, nicht ausgeführt)** — beschriebenes Problem existiert nicht mehr |
-| `QR-codes.md` | Aktuelles QR-URL-Format (`?id=`/`?n=`) + Vorschlag für künftiges Format | Übereinstimmung mit Router-Logik und `qr-gen.html`-Tools bestätigt | **BEHALTEN** |
-| `selectGroupAndBus.md` | Spezifikation für tägliches Check-in-Modal | Größtenteils umgesetzt als `DailyCheckInModalView.vue` + `GroupChangeModal.vue`/`BusChangeModal.vue` (andere Namen als im Doc) | **AKTUALISIERT** — Status-Vermerk mit realer Komponentenzuordnung ergänzt |
-| `tickets.md` | Früher Backlog-Plan (ScanView, BindBraceletView, verschachtelte `/main`-Routen, Tabelle `c_bands`) | Keine dieser Komponenten/Tabellen existiert; MainView ist eine flache Route, kein verschachteltes Layout | **LÖSCHEN (empfohlen, nicht ausgeführt)** — beschreibt eine verworfene Architekturrichtung |
-| `triggers.md` | Frühe Erzähl-/SQL-Fassung der Scan-/Zähler-Trigger | Unvollständiger Entwurf, fehlt u.a. Delete-Trigger, Recalc-Helper, Indizes aus `db_triggers.sql` | **LÖSCHEN (empfohlen, nicht ausgeführt)** — durch `db_triggers.sql`/`doc/db/triggers.md` ersetzt |
-| `useUser.md` | Spezifikation für `useUser`-Modul | Pfad/Struktur veraltet (ein Modul geplant, real drei Schichten: `useUser.js` + `useSupabaseUser.js` + `stores/user.js`, LocalForage statt localStorage) | **AKTUALISIERT** — Status-Vermerk mit realer Aufteilung ergänzt |
+| `AdminBusView_TechTask.md` | Актуальная логика подсчёта автобусов/детей в AdminBusView | Полностью совпадает с `useBusData.js` | **ОСТАВИТЬ** |
+| `ArmbandTask.md` | Спецификация привязки браслета к ребёнку | Основная логика верна, но упомянутые `useAuth.js`/`stores/children.js`/`ArmbandAssignForm.vue` не существуют | **ОБНОВЛЕНО** — приведено в соответствие с реальной структурой (`useArmband.js`, `stores/user.js`, `ArmbandConnectView.vue`), добавлена пометка о статусе |
+| `Aufgabe.md` | Исходная общая спецификация для `useUser`/`selectGroupAndBus` | Описывает иную, так и не реализованную схему (поле `status` документировано с пометкой «не точно»); по содержанию покрывается `useUser.md` + `selectGroupAndBus.md` | **УДАЛИТЬ (рекомендуется, не выполнено)** — дубликат устаревшей промежуточной версии |
+| `ChildrenView_TechTask.md` | Задание заменить мок-/случайные данные в ChildrenView на реальные запросы | Полностью реализовано (`useGroups.js`, следов `Math.random()` не осталось) | **УДАЛИТЬ (рекомендуется, не выполнено)** — описанная проблема больше не существует |
+| `QR-codes.md` | Текущий формат QR-URL (`?id=`/`?n=`) + предложение по будущему формату | Соответствие роутеру и инструментам `qr-gen.html` подтверждено | **ОСТАВИТЬ** |
+| `selectGroupAndBus.md` | Спецификация ежедневного модального окна регистрации | В основном реализовано как `DailyCheckInModalView.vue` + `GroupChangeModal.vue`/`BusChangeModal.vue` (названия отличаются от документа) | **ОБНОВЛЕНО** — добавлена пометка о статусе с реальным соответствием компонентов |
+| `tickets.md` | Ранний план бэклога (ScanView, BindBraceletView, вложенные маршруты `/main`, таблица `c_bands`) | Ни один из этих компонентов/таблиц не существует; MainView — плоский маршрут, без вложенного layout | **УДАЛИТЬ (рекомендуется, не выполнено)** — описывает отброшенное архитектурное направление |
+| `triggers.md` | Ранняя описательная/SQL-версия триггеров сканирования и счётчиков | Неполный черновик, отсутствуют delete-триггер, recalc-хелпер, индексы из `db_triggers.sql` | **УДАЛИТЬ (рекомендуется, не выполнено)** — заменён `db_triggers.sql`/`doc/db/triggers.md` |
+| `useUser.md` | Спецификация модуля `useUser` | Путь/структура устарели (планировался один модуль, по факту три слоя: `useUser.js` + `useSupabaseUser.js` + `stores/user.js`, LocalForage вместо localStorage) | **ОБНОВЛЕНО** — добавлена пометка о статусе с реальным разделением |
 
-## `doc/` — Datenbank/SQL
+## `doc/` — база данных/SQL
 
-| Datei | Inhalt | Abgleich mit Code | Entscheidung |
+| Файл | Содержимое | Соответствие коду | Решение |
 |---|---|---|---|
-| `backup.sql` | HeidiSQL-Dump-Vorlage | Nur Kommentarzeilen, keine echte DDL, faktisch leer | **LÖSCHEN (empfohlen, nicht ausgeführt)** |
-| `database_migration.sql` | DDL für `c_bands`, `groups`, `scan_type`, u.a. | Diese Tabellen existieren nicht (mehr) — laut `db_children_scans_days.txt` bewusst entfernt | **LÖSCHEN (empfohlen, nicht ausgeführt)** — beschreibt verworfenes Schema |
-| `database_migration_config_rls.sql` | RLS-Policies für `public.config` | Stimmt exakt mit `stores/config.js` überein | **BEHALTEN** |
-| `db_children_scans_days.txt` | Überarbeitetes vereinfachtes Schema (children/scans/days) + unstrukturierte Notiz zu Scan-Deduplizierung | SQL-Teil konsistent mit aktueller Code-Nutzung; Notiz war reines Brainstorming | **AKTUALISIERT** — Fließtext-Notiz zu einer kompakten "offene Idee"-Anmerkung gekürzt, SQL unverändert belassen |
-| `db_triggers.sql` | Vollständiges Trigger-Set (`on_scan_insert`, `on_children_today_change`, Recalc-Helper, Indizes) | Dient mangels `supabase/migrations/`-Ordner als Source-of-Truth fürs Schema | **BEHALTEN** |
-| `table_structure.md` | DDL für `children`, `scans`, `children_today`, `groups_today`, `reset_events` | Korrekt, aber unvollständig — `users`, `user_group_day`, `config`, `days` fehlten, obwohl aktiv im Code verwendet | **AKTUALISIERT** — fehlende vier Tabellen ergänzt |
-| `genkeys_curl.bat` | curl-Beispiel für `invite-generate`-Edge-Function | Passt zu `supabase/functions/invite-generate/index.ts`, keine Secrets | **BEHALTEN** |
-| `sb_install_keys.bat` | `supabase secrets set`-Befehle | Enthält den echten service_role-Key (siehe Sicherheitsfund oben) | **BEHALTEN (unverändert, auf ausdrücklichen Wunsch)** |
-| `supabase_install.md` | Deploy-/Secrets-Befehle | Duplikat von `sb_install_keys.bat`, gleicher Key | **BEHALTEN (unverändert, auf ausdrücklichen Wunsch)** |
-| `users.sql` | DDL `public.users` + Bootstrap-SuperAdmin + RLS | Schema stimmt mit `stores/user.js` überein; enthält echte Zugangsdaten (siehe Sicherheitsfund) | **BEHALTEN (unverändert, auf ausdrücklichen Wunsch)** |
-| `migration_guide.md` | Migration von `localStorage` zu LocalForage (Ticket 105) | `src/modules/storage.js` entspricht der Beschreibung | **BEHALTEN** |
-| `band.psd` (802 KB) | Photoshop-Datei, vermutlich Armband-Design-Quelle | Keine textuelle Referenz gefunden, aber auch kein Hinweis auf Überholtheit | **BEHALTEN** (bei Gelegenheit mit Eigentümer bestätigen, ob noch aktive Design-Quelle) |
+| `backup.sql` | Шаблон HeidiSQL-дампа | Только строки комментариев, реальной DDL нет, фактически пустой | **УДАЛИТЬ (рекомендуется, не выполнено)** |
+| `database_migration.sql` | DDL для `c_bands`, `groups`, `scan_type` и др. | Эти таблицы больше не существуют — согласно `db_children_scans_days.txt`, намеренно удалены | **УДАЛИТЬ (рекомендуется, не выполнено)** — описывает отброшенную схему |
+| `database_migration_config_rls.sql` | RLS-политики для `public.config` | Полностью совпадает с `stores/config.js` | **ОСТАВИТЬ** |
+| `db_children_scans_days.txt` | Пересмотренная упрощённая схема (children/scans/days) + неструктурированная заметка о дедупликации сканов | SQL-часть согласуется с текущим использованием в коде; заметка была чистым брейнстормингом | **ОБНОВЛЕНО** — свободный текст заметки сокращён до компактного пункта «открытая идея», SQL оставлен без изменений |
+| `db_triggers.sql` | Полный набор триггеров (`on_scan_insert`, `on_children_today_change`, recalc-хелпер, индексы) | За неимением папки `supabase/migrations/` служит источником истины по схеме | **ОСТАВИТЬ** |
+| `table_structure.md` | DDL для `children`, `scans`, `children_today`, `groups_today`, `reset_events` | Корректно, но неполно — отсутствовали `users`, `user_group_day`, `config`, `days`, хотя они активно используются в коде | **ОБНОВЛЕНО** — добавлены четыре недостающие таблицы |
+| `genkeys_curl.bat` | Пример curl-запроса для edge-функции `invite-generate` | Соответствует `supabase/functions/invite-generate/index.ts`, секретов нет | **ОСТАВИТЬ** |
+| `sb_install_keys.bat` | Команды `supabase secrets set` | Содержит реальный service_role-ключ (см. проблему безопасности выше) | **ОСТАВИТЬ (без изменений, по прямому указанию)** |
+| `supabase_install.md` | Команды деплоя/секретов | Дубликат `sb_install_keys.bat`, тот же ключ | **ОСТАВИТЬ (без изменений, по прямому указанию)** |
+| `users.sql` | DDL `public.users` + бутстрап SuperAdmin + RLS | Схема совпадает с `stores/user.js`; содержит реальные учётные данные (см. проблему безопасности) | **ОСТАВИТЬ (без изменений, по прямому указанию)** |
+| `migration_guide.md` | Миграция с `localStorage` на LocalForage (тикет 105) | `src/modules/storage.js` соответствует описанию | **ОСТАВИТЬ** |
+| `band.psd` (802 КБ) | Файл Photoshop, предположительно исходник дизайна браслета | Текстовых ссылок не найдено, но и признаков устаревания тоже нет | **ОСТАВИТЬ** (при случае уточнить у владельца, актуален ли ещё как источник дизайна) |
 
 ## `doc/db/`
 
-| Datei | Inhalt | Abgleich mit Code | Entscheidung |
+| Файл | Содержимое | Соответствие коду | Решение |
 |---|---|---|---|
-| `adminBusView.md` | Architekturübersicht (Komponentenhierarchie, Datenfluss) für AdminBusView | Struktur korrekt, aber Route `/admin/buses` (real: `/admin-busses`) und Zeilenangabe „450 Zeilen“ (real: ~889) waren veraltet | **AKTUALISIERT** — Route global korrigiert, Zeilenangabe präzisiert |
-| `days_rls.sql` | RLS-Fix für `public.days` (Ticket 102) mit Ursachenerklärung | Konsistent mit `useDays.js` | **BEHALTEN** |
-| `triggers.md` | Reine SQL-Datei | **Byte-identisches Duplikat** von `doc/db_triggers.sql` (verifiziert per `diff`, keine Abweichung) | **LÖSCHEN (empfohlen, nicht ausgeführt)** — Root-Version als einzige Quelle behalten |
+| `adminBusView.md` | Обзор архитектуры (иерархия компонентов, поток данных) для AdminBusView | Структура верна, но маршрут `/admin/buses` (на деле: `/admin-busses`) и указание «450 строк» (на деле: ~889) устарели | **ОБНОВЛЕНО** — маршрут исправлен по всему файлу, уточнено количество строк |
+| `days_rls.sql` | Исправление RLS для `public.days` (тикет 102) с объяснением причины | Согласуется с `useDays.js` | **ОСТАВИТЬ** |
+| `triggers.md` | Чистый SQL-файл | **Побайтово идентичный дубликат** `doc/db_triggers.sql` (проверено через `diff`, расхождений нет) | **УДАЛИТЬ (рекомендуется, не выполнено)** — оставить версию в корне как единственный источник |
 
 ## `doc/utils/`
 
-| Datei | Inhalt | Entscheidung |
+| Файл | Содержимое | Решение |
 |---|---|---|
-| `bus-gen.html`, `group-gen.html` | Eigenständige jsPDF/QR-Generatoren für Bus-/Gruppenlisten | **BEHALTEN** |
-| `info.html` | Statischer HTML-Prototyp „Stadtranderholung Selm 2025" | Keine Referenz im Code, wirkt wie ein früher Prototyp vor `InfoView.vue` | **LÖSCHEN (empfohlen, nicht ausgeführt)** |
-| `qr-gen.html` | QR-Armband-Generator, fixer `n=`-Parameter | Durch `qr-gen1.html` (konfigurierbarer Parametername, Muster-Skalierung) ersetzt | **LÖSCHEN (empfohlen, nicht ausgeführt)** |
-| `qr-gen1.html` | Neuere Version des QR-Generators | Passt zum aktuellen `?n=id`-Scan-Schema im Router | **BEHALTEN** |
-| `1.png`, `2.png`, `узор.png` | Beispiel-Outputs/Muster-Textur | Keine textuelle Referenz, vermutlich Generator-Beispiele | **BEHALTEN** |
-| `icons/` (README.txt, build_font.md/.pe, download_svgs.py, manifest_full.csv, urls_example.txt) | Eigenständiges Toolkit zum Bauen einer Icon-Font aus 162 SVGs | Nicht in den Build eingebunden, aber in sich geschlossenes Zukunfts-Tooling | **BEHALTEN** |
+| `bus-gen.html`, `group-gen.html` | Самостоятельные jsPDF/QR-генераторы для списков по автобусам/группам | **ОСТАВИТЬ** |
+| `info.html` | Статический HTML-прототип «Stadtranderholung Selm 2025» | Ссылок в коде нет, похоже на ранний прототип, предшествующий `InfoView.vue` | **УДАЛИТЬ (рекомендуется, не выполнено)** |
+| `qr-gen.html` | Генератор QR-браслетов с фиксированным параметром `n=` | Заменён `qr-gen1.html` (настраиваемое имя параметра, масштабирование узора) | **УДАЛИТЬ (рекомендуется, не выполнено)** |
+| `qr-gen1.html` | Более новая версия QR-генератора | Соответствует текущей схеме сканирования `?n=id` в роутере | **ОСТАВИТЬ** |
+| `1.png`, `2.png`, `узор.png` | Примеры вывода/текстура узора | Текстовых ссылок нет, предположительно примеры от генератора | **ОСТАВИТЬ** |
+| `icons/` (README.txt, build_font.md/.pe, download_svgs.py, manifest_full.csv, urls_example.txt) | Самостоятельный тулкит для сборки шрифта иконок из 162 SVG | Не подключён к сборке, но представляет собой законченный инструментарий на будущее | **ОСТАВИТЬ** |
 
 ---
 
-## Ausgeführte Änderungen in diesem Durchgang
+## Изменения, выполненные в рамках этого прохода
 
-- `project_packer.py`: fehlenden `elif`-Zweig ergänzt (Bugfix, Datei war syntaktisch defekt)
-- `doc/ArmbandTask.md`: veraltete Datei-/Modulnamen korrigiert, Status-Vermerk ergänzt
-- `doc/selectGroupAndBus.md`: Status-Vermerk mit realer Komponentenzuordnung ergänzt
-- `doc/useUser.md`: Status-Vermerk zur realen 3-Schichten-Architektur ergänzt
-- `doc/table_structure.md`: vier fehlende Tabellen ergänzt (`users`, `user_group_day`, `config`, `days`)
-- `doc/db_children_scans_days.txt`: unstrukturierte Brainstorming-Notiz zu einer kompakten Anmerkung gekürzt
-- `doc/db/adminBusView.md`: veraltete Route (`/admin/buses` → `/admin-busses`) und Zeilenangabe korrigiert
+- `project_packer.py`: добавлена отсутствующая ветка `elif` (исправление бага, файл был синтаксически некорректен)
+- `doc/ArmbandTask.md`: исправлены устаревшие названия файлов/модулей, добавлена пометка о статусе
+- `doc/selectGroupAndBus.md`: добавлена пометка о статусе с реальным соответствием компонентов
+- `doc/useUser.md`: добавлена пометка о статусе с описанием реальной архитектуры из 3 слоёв
+- `doc/table_structure.md`: добавлены четыре недостающие таблицы (`users`, `user_group_day`, `config`, `days`)
+- `doc/db_children_scans_days.txt`: неструктурированная заметка-брейншторм сокращена до компактного пункта
+- `doc/db/adminBusView.md`: исправлен устаревший маршрут (`/admin/buses` → `/admin-busses`) и указание количества строк
 
-**Keine Datei wurde gelöscht** (siehe Hinweis oben). Alle mit „LÖSCHEN (empfohlen, nicht ausgeführt)" markierten Dateien liegen unverändert im Repo.
+**Ни один файл не был удалён** (см. замечание выше). Все файлы с пометкой «УДАЛИТЬ (рекомендуется, не выполнено)» остаются в репозитории без изменений.
 
-## Zur Frage „Reverse-Engineering der Dokumentation"
+## По вопросу «восстановление документации методом реверс-инжиниринга»
 
-Nicht notwendig: Nach der obigen Durchsicht ist der verbleibende Dokumentationsbestand (Tech-Task-Dokumente + `doc/db/`-Schema-Dokumente + `readme.md`) inhaltlich ausreichend aktuell und deckt Architektur, Datenmodell und Kernlogik ab — größere Lücken wurden durch die oben aufgeführten Aktualisierungen geschlossen. Eine vollständige Neuerstellung der Dokumentation aus dem Quellcode wird nicht für erforderlich gehalten.
+Не требуется: после проведённой ревизии оставшийся массив документации (технические задания + документы по схеме БД из `doc/db/` + `readme.md`) по содержанию достаточно актуален и покрывает архитектуру, модель данных и основную логику — основные пробелы закрыты перечисленными выше обновлениями. Полное восстановление документации с нуля из исходного кода не считается необходимым.
