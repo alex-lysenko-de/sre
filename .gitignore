@@ -37,3 +37,7 @@ coverage
 /backup/database/data.sql
 /backup/database/full_backup.sql
 /backup/.env.local
+
+# Ticket 108: Obsidian vault. Personal workspace settings, not part of the
+# knowledge base content itself.
+/vault/.obsidian/
