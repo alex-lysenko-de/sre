@@ -98,4 +98,5 @@ if __name__ == "__main__":
 
     if args.mode == "pack":
         pack_project_to_md()
-    el
+    elif args.mode == "unpack":
+        unpack_md_to_project()

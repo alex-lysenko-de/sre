@@ -21,7 +21,7 @@ Verwendet:
 ```
 src/
 ├── views/
-│   └── AdminBusView.vue                # 450 Zeilen
+│   └── AdminBusView.vue                # ~889 Zeilen (Stand 2026-07, war 450 bei Erstellung dieses Dokuments)
 │       ├── Template: UI-Layout
 │       ├── Script: Business Logic
 │       └── Style: Component-Styling
@@ -58,7 +58,7 @@ src/
 │
 └── router/
     └── index.js
-        └── Route: /admin/buses
+        └── Route: /admin-busses
 ```
 
 ---
@@ -68,7 +68,7 @@ src/
 ### 1. Initial Load
 
 ```
-User navigiert zu /admin/buses
+User navigiert zu /admin-busses
          ↓
 AdminBusView.vue mounted()
          ↓
@@ -479,7 +479,7 @@ USING (true);
 // In AdminBusView.vue - nur für Admins zugänglich
 // Via Router Meta:
 {
-  path: '/admin/buses',
+  path: '/admin-busses',
   meta: { requiresAdmin: true }
 }
 
@@ -755,7 +755,7 @@ if (err.code?.startsWith('PGRST')) {
 ```javascript
 // Router lazy loading
 {
-  path: '/admin/buses',
+  path: '/admin-busses',
   component: () => import('@/views/AdminBusView.vue')
 }
 ```
@@ -862,14 +862,14 @@ describe('AdminBusView', () => {
 ```javascript
 // admin-bus-view.spec.js
 test('Admin can start new day', async ({ page }) => {
-  await page.goto('/admin/buses')
+  await page.goto('/admin-busses')
   await page.click('text=Tag starten')
   await page.click('text=OK')  // Confirm
   await expect(page.locator('.alert-success')).toBeVisible()
 })
 
 test('Bus detail modal works', async ({ page }) => {
-  await page.goto('/admin/buses')
+  await page.goto('/admin-busses')
   await page.click('text=Bus 1')
   await expect(page.locator('.modal-title')).toContainText('Bus 1')
 })
@@ -1189,7 +1189,7 @@ if ('Notification' in window && 'serviceWorker' in navigator) {
   <div class="bus-widget">
     <div class="widget-header">
       <h6>Bus-Status</h6>
-      <router-link to="/admin/buses">Details →</router-link>
+      <router-link to="/admin-busses">Details →</router-link>
     </div>
     <div class="widget-body">
       <div class="stat">

@@ -1,6 +1,8 @@
 
 ## 🧾 **Техническое задание: модуль `useUser.js`**
 
+> **Status (Stand: 2026-07):** Реализовано как связка трёх слоёв вместо одного модуля: `src/composables/useUser.js` (кеш/оркестрация), `src/composables/useSupabaseUser.js` (запросы к Supabase) и `src/stores/user.js` (Pinia-store, публичный API для компонентов, поля `userInfo`, `isAdmin`, `isCheckInRequired`). Кеш хранится через `LocalForage` (`src/modules/storage.js`), а не `localStorage`, TTL сейчас 1 минута. Раздел "Целевая структура данных" и таблицы ниже остаются актуальным описанием бизнес-логики.
+
 ### 🎯 Цель
 
 1. Создать Vue-модуль (`src/modules/useUser.js`), который объединяет:

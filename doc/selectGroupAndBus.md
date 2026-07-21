@@ -83,4 +83,8 @@ Dropdown 2:	Bus: <select> с выбором из списка доступных
 - язык комментариев английский
 - используй Font-awesome icons and Bootstrap CSS (не используй Tailwind)
 
+---
+
+> **Status (Stand: 2026-07):** Umgesetzt als `DailyCheckInModalView.vue` (Intercept-Modal, `isCheckInRequired` in `stores/user.js`) und die beiden Indikatoren/Änderungs-Modals `components/GroupChangeModal.vue` + `components/BusChangeModal.vue` in `App.vue`, statt der hier vorgeschlagenen `selectGroup`/`selectBus`-Modals. Die Kernlogik (Tagesabfrage gegen `user_group_day`, Pflicht-Check-in vor Nutzung) entspricht diesem Dokument.
+
 

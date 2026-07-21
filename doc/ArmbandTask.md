@@ -67,30 +67,31 @@ select id, name , age, band_id  from children where group_id = :user_group_id
 
 ### 📁 **composables/**
 
-* `useArmband.js` → работа с таблицей браслетов
+* `useArmband.js` → работа с таблицей браслетов (реализовано, объединяет все функции ниже в одном файле)
 
-  * `getBraceletStatus(id)`
-  * `assignBraceletToChild(braceletId, childId)`
-* `useChildren.js` → загрузка детей по группе
-
+  * `getBraceletStatus(bandId)`
   * `getChildrenByGroup(groupId)`
   * `getChildDetails(childId)`
-* `useAuth.js` → данные текущего пользователя (для определения группы)
+  * `checkBraceletAlreadyBound(bandId)`
+  * `assignBraceletToChild(childId, bandId)`
+  * `recordChildPresence(userId, childId, bandId, busId)`
 
-### 📁 **router/**
+Отдельного `useChildren.js`/`useAuth.js` нет — данные текущего пользователя берутся из `stores/user.js` (Pinia).
+
+### 📁 **router/** (актуальные маршруты, `src/router/index.js`)
 
 ```js
 [
   { path: '/armband/:id', name: 'Armband', component: ArmbandView },
+  { path: '/armband-connect/:id', name: 'ArmbandConnect', component: ArmbandConnectView },
   { path: '/child/:id', name: 'ChildDetail', component: ChildDetailView },
-  { path: '/group-edit/:id', name: 'GroupEdit', component: GroupEditView },
+  { path: '/group-edit/:id?', name: 'GroupEdit', component: GroupEditView },
 ]
 ```
 
 ### 📁 **stores/**
 
-* `user.js` → хранит данные авторизованного воспитателя (включая `groupId`)
-* `children.js` → состояние и кеш детей группы
+* `user.js` → хранит данные авторизованного воспитателя (включая `group_id`), реализовано через Pinia. Отдельного `children.js`-стора нет.
 
 ---
 
@@ -110,5 +111,9 @@ select id, name , age, band_id  from children where group_id = :user_group_id
 
   * `"Dieser Armband ist noch keinem Kind zugeordnet."`
   * `"Kind auswählen"`, `"Armband zuordnen"`.
-* Компонент формы привязки можно вынести в `components/ArmbandAssignForm.vue`.
+* Форма привязки реализована непосредственно в `views/ArmbandConnectView.vue`, отдельный `components/ArmbandAssignForm.vue` не выделялся.
+
+---
+
+> **Status (Stand: 2026-07):** Kernlogik ist implementiert (`useArmband.js`, `ArmbandView.vue`, `ArmbandConnectView.vue`). Dieses Dokument beschreibt weiterhin die ursprüngliche Zielarchitektur und dient als Referenz.
 
