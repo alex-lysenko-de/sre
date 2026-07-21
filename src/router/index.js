@@ -18,6 +18,7 @@ import ChildDetailView from "@/views/ChildDetailView.vue"
 import ChildEditView from "@/views/ChildEditView.vue"
 import MainView from "@/views/MainView.vue"
 import AdminBusView from "@/views/AdminBusView.vue";
+import HeadcountView from "@/views/HeadcountView.vue";
 
 // Define routes
 const routes = [
@@ -78,6 +79,13 @@ const routes = [
         path: '/select-child',
         name: 'SelectChild',
         component: SelectChildView,
+        meta: { requiresAuth: true, requiresAdmin: false }
+    },
+
+    {
+        path: '/headcount',
+        name: 'Headcount',
+        component: HeadcountView,
         meta: { requiresAuth: true, requiresAdmin: false }
     },
 

@@ -96,6 +96,25 @@ export function useChildren() {
 
 
     /**
+     * Ruft die Kinder einer bestimmten Gruppe ab.
+     * @param {number} groupId - ID der Gruppe
+     */
+    const fetchChildrenByGroup = async (groupId) => {
+        const { data, error } = await supabase
+            .from('children')
+            .select('id, name, age, band_id')
+            .eq('group_id', groupId)
+            .order('name', { ascending : true });
+
+        if (error) {
+            console.error('Fehler beim Abrufen der Kinder der Gruppe:', error);
+            throw new Error(error.message);
+        }
+        return data;
+    };
+
+
+    /**
      * Ruft eine Liste aller Kinder ab, optional mit Suchbegriff.
      * @param {string} searchTerm - Suchbegriff (Name oder Armband-ID)
      */
@@ -230,6 +249,7 @@ export function useChildren() {
         createChildAndBind,
         bindBraceletToExistingChild,
         fetchAllChildren,
+        fetchChildrenByGroup,
         fetchChildrenList,
         fetchChildDetailsAndScans,
         saveChild,

@@ -20,29 +20,36 @@ BEGIN
   END IF;
 
   -- Upsert in children_today
+  -- Ticket 106: presence_morning wird nur im INSERT-Zweig gesetzt (erster Scan
+  -- des Tages) und bewusst NICHT im ON CONFLICT DO UPDATE-Zweig überschrieben,
+  -- damit "Anwesend am Morgen" ein einmaliger Snapshot bleibt (siehe
+  -- doc/db/headcount_presence_morning.sql).
   INSERT INTO children_today (
-    user_id, 
-    child_id, 
-    group_id, 
-    presence_today, 
-    presence_now, 
-    bus_today, 
-    bus_now
+    user_id,
+    child_id,
+    group_id,
+    presence_today,
+    presence_now,
+    bus_today,
+    bus_now,
+    presence_morning
   )
   VALUES (
     NEW.user_id,
     NEW.child_id,
     v_group_id,
-    1, 
     1,
-    NEW.bus_id, 
-    NEW.bus_id
+    1,
+    NEW.bus_id,
+    NEW.bus_id,
+    CASE WHEN NEW.bus_id IS NOT NULL THEN 1 ELSE 0 END
   )
   ON CONFLICT (child_id) DO UPDATE
-    SET 
+    SET
       presence_now = 1,
       bus_now = EXCLUDED.bus_now,
       user_id = EXCLUDED.user_id;
+      -- presence_morning bewusst nicht im SET-Zweig: Wert wird nur einmal beim ersten INSERT des Tages gesetzt
 
   RETURN NEW;
 END;

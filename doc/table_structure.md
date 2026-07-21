@@ -43,6 +43,7 @@ create table public.children_today (
   presence_now smallint null default '0'::smallint,
   bus_today smallint null,
   bus_now smallint null,
+  presence_morning smallint null default NULL, -- Ticket 106: 1 = beim ersten Scan des Tages war bus_id gesetzt, 0 = erster Scan ohne Bus, NULL = noch kein Scan heute. Wird nur beim INSERT-Zweig von on_scan_insert gesetzt und danach nie wieder überschrieben (siehe doc/db/headcount_presence_morning.sql).
   constraint children_today_pkey primary key (id),
   constraint children_today_child_id_key unique (child_id),
   constraint children_today_child_id_fkey foreign KEY (child_id) references children (id) on update CASCADE on delete CASCADE

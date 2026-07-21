@@ -39,6 +39,22 @@
             <font-awesome-icon :icon="['fas', 'arrow-right']" />
           </button>
 
+          <!-- Headcount Button -->
+          <button
+              v-if="isAuthenticated && userStore.userInfo.group_id"
+              @click="goToHeadcount"
+              class="btn btn-primary btn-lg d-flex align-items-center justify-content-between"
+          >
+            <span class="d-flex align-items-center">
+              <font-awesome-icon :icon="['fas', 'clipboard-check']" class="me-3" size="2x" />
+              <span>
+                <div class="fw-bold text-start">Kopfzählung</div>
+                <small class="text-white-50">Anwesenheit meiner Gruppe prüfen</small>
+              </span>
+            </span>
+            <font-awesome-icon :icon="['fas', 'arrow-right']" />
+          </button>
+
           <!-- Admin Overview Button -->
           <button
               v-if="userStore.isAdmin"
@@ -176,6 +192,10 @@ async function checkAuth() {
  */
 function goToMyGroup() {
   router.push(`/group-edit`)
+}
+
+function goToHeadcount() {
+  router.push('/headcount')
 }
 
 function goToAdminBus() {
