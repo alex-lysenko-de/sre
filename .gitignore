@@ -30,3 +30,10 @@ coverage
 *.tsbuildinfo
 /all_project_files.md
 /.vs
+
+# Ticket 111: DB backups. schema.sql is versioned on purpose (structure only,
+# no personal data). Data dumps and DB credentials must never reach git,
+# since children_today/children/scans contain real children's names/ages.
+/backup/database/data.sql
+/backup/database/full_backup.sql
+/backup/.env.local
