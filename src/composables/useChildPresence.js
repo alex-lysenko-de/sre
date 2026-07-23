@@ -51,14 +51,25 @@ export function useChildPresence() {
         }
 
         if (existing) {
-            const { error } = await supabase
+            const { data, error } = await supabase
                 .from('children_today')
                 .update({ presence_now : presenceNow, user_id : currentUserId })
-                .eq('child_id', childId);
+                .eq('child_id', childId)
+                .select()
+                .single();
 
             if (error) {
                 console.error('Fehler beim Aktualisieren der Anwesenheit:', error);
+                // PGRST116 = keine Zeile zurückgegeben, i.d.R. weil die RLS-Policy
+                // die UPDATE-Zeile unsichtbar gemacht hat (0 betroffene Zeilen).
+                // Ohne diese Prüfung meldet Supabase hier fälschlich Erfolg (error: null).
+                if (error.code === 'PGRST116') {
+                    throw new Error('Speichern nicht erlaubt oder Kind nicht gefunden (keine Zeile aktualisiert).');
+                }
                 throw new Error(error.message);
+            }
+            if (!data) {
+                throw new Error('Speichern nicht erlaubt oder Kind nicht gefunden (keine Zeile aktualisiert).');
             }
         } else {
             const { error } = await supabase
@@ -66,6 +77,24 @@ export function useChildPresence() {
                 .insert({ user_id : currentUserId, child_id : childId, group_id : groupId, presence_now : presenceNow });
 
             if (error) {
+                // 23505 = unique_violation auf children_today_child_id_key: ein anderer
+                // Betreuer hat dieses Kind zwischen SELECT und INSERT bereits angelegt
+                // (Race bei gleichzeitiger Erstmarkierung). Fallback auf UPDATE.
+                if (error.code === '23505') {
+                    const { data, error : updateError } = await supabase
+                        .from('children_today')
+                        .update({ presence_now : presenceNow, user_id : currentUserId })
+                        .eq('child_id', childId)
+                        .select()
+                        .single();
+
+                    if (updateError || !data) {
+                        console.error('Fehler beim Aktualisieren nach Race-Fallback:', updateError);
+                        throw new Error('Speichern nicht erlaubt oder Kind nicht gefunden (keine Zeile aktualisiert).');
+                    }
+                    return;
+                }
+
                 console.error('Fehler beim Erstellen des Anwesenheitseintrags:', error);
                 throw new Error(error.message);
             }

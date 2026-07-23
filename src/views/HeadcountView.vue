@@ -101,6 +101,12 @@ export default {
     }
     this.groupId = this.userStore.userInfo.group_id
 
+    if (!this.groupId) {
+      this.loadingInitialData = false
+      this.loadError = 'Ihnen ist heute keine Gruppe zugewiesen. Kopfzählung ist nicht möglich.'
+      return
+    }
+
     await this.loadInitialData()
   },
 
