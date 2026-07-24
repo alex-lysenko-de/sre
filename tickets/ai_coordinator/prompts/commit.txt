@@ -1,0 +1,1 @@
+Сгенерируй сообщение git commit для тикета {{TICKET}} на основе IMPLEMENTATION_REPORT.md и REVIEW_REPORT.md.

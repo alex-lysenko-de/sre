@@ -1,77 +1,6 @@
 # Итог
 
-DONE (повторная проверка 2026-07-24, коммит `4e22bb6`: замечания устранены)
-
-> **Обновление после третьей проверки.** Предыдущее обновление этого отчёта
-> (см. секцию «Повторная проверка (2026-07-24, коммит 7c3d20b)» ниже)
-> зафиксировало, что коммит `7c3d20b` не содержал ни одного изменения в
-> `vault/` — только `doc/utils/qr-gen.html` и сам отчёт/`state.txt`. Автор
-> сообщил, что это было ошибкой и что реальный фикс вошёл в следующий
-> коммит, `4e22bb6` («108 bugfix»).
->
-> `git diff 7c3d20b..4e22bb6 -- vault/` подтверждает: 15 файлов `vault/`
-> изменено (+322/-86), плюс обновлены `IMPLEMENTATION_REPORT.md`,
-> `state.txt` и сам этот отчёт. Каждое из требований «Списка обязательных
-> исправлений» и «Списка необязательных улучшений» сверено точечно с
-> первоисточниками:
->
-> - **Critical 1** — `Обзор-схемы-БД.md`, `children.md`, `config.md`,
->   `reset_events.md`, `user_group_day.md` переписаны по
->   `backup/database/schema.sql`. Прямая сверка DDL в заметках с
->   `CREATE TABLE public.{children,config,reset_events,user_group_day}` в
->   `schema.sql:3650-3662,3714-3722,3808-3815,3899-3910` — **совпадает
->   дословно**, включая ранее неверные факты (`user_group_day.status` →
->   `"isPresentToday"`/`"bMustWorkToday"`/`updated_at`; `reset_events.user_id
->   bigint` + `children_count`; `config.access_level`/`description`/`name`).
->   Отсутствовавшие 6 таблиц (`admin_logs`, `calendar`, `invites`,
->   `scan_type`, `sessions`, `webauthn_challenges`/`auth.webauthn_credentials`)
->   теперь перечислены в таблице обзора схемы (обзорно, `invites`/`sessions`/
->   `webauthn_*` — через новую заметку, см. Critical 2).
-> - **Critical 2** — новая заметка
->   `04-Пользователи-и-аутентификация/Инвайты-сессии-WebAuthn.md` добавлена и
->   связана двусторонними ссылками с `Модель-аутентификации.md`, `users.md`,
->   `Обзор-Edge-Functions.md`, `Обзор-схемы-БД.md`. `Обзор-Edge-Functions.md`
->   переписан по построчному чтению всех 4 `supabase/functions/*/index.ts`
->   (ранее — по имени каталога).
-> - **Major 3** — `RLS-политики.md` дополнен разделом про неотозванные
->   permissive-политики `USING (true)`. Сверка с
->   `backup/database/schema.sql:6275-6446` подтверждает дословно каждую
->   названную политику (`Allow authenticated users to
->   update/insert/delete children_today/groups_today/reset_events`, `Allow
->   authenticated users to modify children`, `Enable insert/update for
->   authenticated users` на `days`, `Allow public read config` / `Allow read
->   for all users` / `Allow insert for all users` / `Allow update for all
->   users` на `config` рядом с корректной `Public read access` /
->   `Allow admins to manage config`) — OR-объединение permissive-политик
->   действительно делает узкие `own_group_*`/admin-only политики
->   декоративными для этих таблиц, вывод заметки корректен. `config.md`
->   получил симметричную правку.
-> - **Major 4** — `Карта-маршрутов.md`/`QR-код-URL.md` больше не говорят
->   «любой маршрут»: сверка с `src/router/index.js:168-239` подтверждает,
->   что ветки `meta.public`/`meta.requiresAuth` возвращаются раньше блока
->   `to.query.id || to.query.n`, и по фактической карте маршрутов это
->   действительно достижимо только для `/main`/`/info`.
-> - **Minor 5/6** — формулировка про `.gitignore` в
->   `IMPLEMENTATION_REPORT.md` исправлена на «уже содержит»; nullability
->   `children_today.user_id`/`days.date` исправлены на nullable, лишний
->   `unique` у `days.date` убран — совпадает с `schema.sql`.
->
-> Проверка целостности `[[wiki-ссылок]]` во всём `vault/` (скрипт,
-> регэксп по `[[...]]`) — 0 битых ссылок (единственное вхождение
-> `[[wiki-ссылки]]` в `vault/README.md` — иллюстративный пример синтаксиса
-> в тексте, не реальная ссылка на заметку); единственная «заметка-сирота»
-> (0 входящих ссылок) — сам `vault/README.md`, что ожидаемо: это
-> дополнительная точка входа для тех, кто открывает каталог вне Obsidian, а
-> не узел графа заметок — она сама ссылается на `MOC.md`, а не наоборот.
->
-> Итог: все пункты обоих списков (обязательный и необязательный) устранены
-> и подтверждены сверкой с первоисточниками (`schema.sql`,
-> `src/router/index.js`, `supabase/functions/*/index.ts`). Тикет закрывается.
-
-Исходный (первый) прогон ревью и повторная проверка коммита `7c3d20b` —
-ниже, без изменений, для истории.
-
----
+CHANGES_REQUIRED
 
 Каркас, конвенции, перелинковка и запрет на утечку секретов выполнены
 качественно (проверено скриптом: 43 файла, 0 битых `[[ссылок]]`, 0
@@ -306,38 +235,23 @@ URL»), так что неточность здесь особенно неже�
 
 # Список обязательных исправлений
 
-- [x] Critical 1 — актуализировать раздел 03 по `backup/database/schema.sql`:
+- [ ] Critical 1 — актуализировать раздел 03 по `backup/database/schema.sql`:
       добавить 6 отсутствующих таблиц (хотя бы обзорно), исправить DDL
       `children`, `config`, `reset_events`, полностью переписать
       `user_group_day.md` (несуществующее поле `status` → реальные
       `isPresentToday`/`bMustWorkToday`/`updated_at`).
-- [x] Critical 2 — дополнить/добавить заметку о кастомном
+- [ ] Critical 2 — дополнить/добавить заметку о кастомном
       session/WebAuthn/invite-слое аутентификации на основе реальных таблиц
       и `supabase/functions/auth/index.ts`.
-- [x] Major 3 — исправить `RLS-политики.md`: указать на legacy
+- [ ] Major 3 — исправить `RLS-политики.md`: указать на legacy
       permissive-политики `USING (true)`, ослабляющие заявленные
       ограничения по `children_today`/`groups_today`/`reset_events`/`children`/`days`.
-- [x] Major 4 — исправить формулировку «любого маршрута» в
+- [ ] Major 4 — исправить формулировку «любого маршрута» в
       `Карта-маршрутов.md` и `QR-код-URL.md`.
 
 # Список необязательных улучшений
 
-- [x] Minor 5 — поправить формулировку про `.gitignore` в
+- [ ] Minor 5 — поправить формулировку про `.gitignore` в
       `IMPLEMENTATION_REPORT.md`.
-- [x] Minor 6 — точечно исправить nullability/constraints в `children_today.md`
+- [ ] Minor 6 — точечно исправить nullability/constraints в `children_today.md`
       и `days.md` по актуальной схеме.
-
----
-
-# Повторная проверка (2026-07-24, коммит `7c3d20b`)
-
-Автор сообщил, что «все замечания исправлены» и «все изменения вошли в
-последний commit» (`7c3d20b`, «108 bugfix»). Фактическая сверка
-`git diff 56476d7..HEAD -- vault/` показала **0 изменений в `vault/`** — ни
-один из файлов раздела 03/04/06, упомянутых в найденных проблемах, не
-менялся. Единственные изменения в коммите `7c3d20b`:
-`doc/utils/qr-gen.html` (117 строк, не связан ни с одним пунктом этого
-отчёта) и сам `tickets/108/REVIEW_REPORT.md`/`state.txt`. Итог на тот
-момент остался `CHANGES_REQUIRED` — тикет было рано закрывать. Реальный
-фикс вошёл в следующий коммит, `4e22bb6` — см. секцию «Итог» в начале
-документа.
