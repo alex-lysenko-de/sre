@@ -1,6 +1,6 @@
 # `useArmband.js`
 
-> Источник: `src/composables/useArmband.js`, `doc/ArmbandTask.md`.
+> Источник: `src/composables/useArmband.js`, `doc/ArmbandTask.md` (удалён в тикете 118, содержание перенесено сюда).
 
 Работа с идентификацией/привязкой браслетов — единственная таблица
 [[children]]. Реализует основной сценарий из [[Идентификация-ребёнка]].

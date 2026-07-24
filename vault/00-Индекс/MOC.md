@@ -39,6 +39,7 @@
 ## 04 — Пользователи и аутентификация
 
 - [[Модель-аутентификации]]
+- [[Инвайты-сессии-WebAuthn]] — invites/sessions/WebAuthn, что из этого реально используется
 - [[useUser]]
 - [[useSupabaseUser]]
 - [[stores-user]]

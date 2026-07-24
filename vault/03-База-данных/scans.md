@@ -1,6 +1,6 @@
 # `scans`
 
-> Источник: `doc/table_structure.md`.
+> Источник: `doc/table_structure.md` (удалён в тикете 118, содержание перенесено сюда).
 
 История всех сканирований браслетов — append-only журнал (в отличие от
 upsert-таблицы [[children_today]]).

@@ -1,6 +1,6 @@
 # `groups_today`
 
-> Источник: `doc/table_structure.md`, `doc/db_triggers.sql`.
+> Источник: `doc/table_structure.md` (удалён в тикете 118), `doc/db_triggers.sql`.
 
 Агрегированные счётчики присутствия по группам на сегодня — производные от
 [[children_today]], пересчитываются автоматически триггером, а не клиентским

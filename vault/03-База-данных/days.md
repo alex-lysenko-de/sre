@@ -4,7 +4,7 @@
 > приоритетный источник), `doc/db/days_rls.sql` (тикет 102). `date` в
 > реальной схеме nullable и без `UNIQUE`-ограничения на уровне таблицы
 > (только `days_pkey PRIMARY KEY (id)`) — предыдущая версия заметки
-> указывала `not null unique` по устаревшему `doc/table_structure.md`
+> указывала `not null unique` по устаревшему `doc/table_structure.md` (удалён в тикете 118)
 > (`tickets/108/REVIEW_REPORT.md`, Minor 6). Уникальность дат на практике
 > не проверялась отдельно в рамках этой ревизии.
 

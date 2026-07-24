@@ -2,7 +2,7 @@
 
 > Источник: `backup/database/schema.sql` (реальный `pg_dump`, тикет 111) —
 > предыдущая версия этой заметки опиралась только на устаревший
-> `doc/table_structure.md` и пропускала `last_scan_at`/`bus_id` (см.
+> `doc/table_structure.md` (удалён в тикете 118) и пропускала `last_scan_at`/`bus_id` (см.
 > `tickets/108/REVIEW_REPORT.md`, Critical 1).
 
 Справочник детей — статичные данные, не привязанные к конкретному дню.

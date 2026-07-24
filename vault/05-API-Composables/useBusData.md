@@ -1,7 +1,7 @@
 # `useBusData.js`
 
 > Источники: `src/composables/useBusData.js`, `doc/db/adminBusView.md`,
-> `doc/AdminBusView_TechTask.md`.
+> `doc/AdminBusView_TechTask.md` (оба doc-файла удалены в тикете 118, содержание перенесено сюда).
 
 Центральная логика экрана `AdminBusView.vue` (`/admin-busses`, admin-only) —
 комбинирует [[children_today]] и [[user_group_day]] в единую структуру по

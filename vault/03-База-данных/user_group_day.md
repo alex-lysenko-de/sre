@@ -1,7 +1,7 @@
 # `user_group_day`
 
 > Источник: `backup/database/schema.sql` (реальный `pg_dump`, тикет 111).
-> Предыдущая версия этой заметки (по устаревшему `doc/table_structure.md`)
+> Предыдущая версия этой заметки (по устаревшему `doc/table_structure.md`, удалён в тикете 118)
 > документировала несуществующее поле `status smallint` — в реальной
 > таблице такого поля нет вообще, вместо него `"isPresentToday"` и
 > `"bMustWorkToday"` (оба подтверждены прямым использованием в коде, см.
@@ -46,7 +46,7 @@ create table public.user_group_day (
   и в SQL, и в JS-коде запросов эти имена используются как есть, без
   snake_case.
 
-## Логика заполнения (`doc/selectGroupAndBus.md`)
+## Логика заполнения (`doc/selectGroupAndBus.md`, удалён в тикете 118)
 
 Заполнять эту таблицу может любой пользователь с правами `admin` — для
 любого Betreuer, с `"isPresentToday" = 0` (администратор не знает точно,

@@ -1,7 +1,7 @@
 # `reset_events`
 
 > Источник: `backup/database/schema.sql` (реальный `pg_dump`, тикет 111) —
-> предыдущая версия этой заметки (по `doc/table_structure.md`) указывала
+> предыдущая версия этой заметки (по `doc/table_structure.md`, удалён в тикете 118) указывала
 > `user_id smallint` и пропускала `children_count`; реально `user_id
 > bigint` (как везде в проекте, FK на `users.id`) — см.
 > `tickets/108/REVIEW_REPORT.md`, Critical 1.

@@ -4,7 +4,7 @@
 > приоритетный источник), `doc/db_triggers.sql`,
 > `doc/db/headcount_presence_morning.sql` (тикет 106). `user_id` в реальной
 > схеме nullable — предыдущая версия заметки указывала `not null` по
-> устаревшему `doc/table_structure.md` (`tickets/108/REVIEW_REPORT.md`,
+> устаревшему `doc/table_structure.md` (удалён в тикете 118) (`tickets/108/REVIEW_REPORT.md`,
 > Minor 6).
 
 Оперативная upsert-таблица — одно, ровно одно текущее состояние присутствия
