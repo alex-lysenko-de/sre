@@ -1,6 +1,13 @@
 # `user_group_day`
 
-> Источники: `doc/table_structure.md`, `doc/selectGroupAndBus.md`.
+> Источник: `backup/database/schema.sql` (реальный `pg_dump`, тикет 111).
+> Предыдущая версия этой заметки (по устаревшему `doc/table_structure.md`)
+> документировала несуществующее поле `status smallint` — в реальной
+> таблице такого поля нет вообще, вместо него `"isPresentToday"` и
+> `"bMustWorkToday"` (оба подтверждены прямым использованием в коде, см.
+> ниже). Это была самая серьёзная фактическая ошибка, найденная ревью
+> тикета 108 (`tickets/108/REVIEW_REPORT.md`, Critical 1) — заметка
+> переписана по актуальной схеме.
 
 Ежедневная (динамическая) привязка Betreuer к группе и автобусу + статус
 подтверждения присутствия. В отличие от [[children_today]] (снимок на
@@ -14,30 +21,40 @@ create table public.user_group_day (
   day date null,
   user_id bigint null,
   group_id smallint null,
-  bus_id smallint null,
-  status smallint null default '0'::smallint, -- 0 = admin-предзаполнено/отсутствует, 1 = присутствует/подтверждено
+  "isPresentToday" smallint null default '0'::smallint,
   description character varying null,
+  bus_id smallint null,
+  "bMustWorkToday" smallint null default '0'::smallint,
+  updated_at timestamp without time zone null,
   constraint user_group_day_pkey primary key (id),
   constraint user_group_day_user_id_fkey foreign key (user_id) references users (id) on update CASCADE on delete CASCADE
 );
 ```
 
-**Примечание по имени столбца:** в текущей БД используется столбец `status`
-(0/1). В более старых версиях документации (`doc/useUser.md`,
-`doc/db/adminBusView.md`) и в SQL RLS-политике тикета 106
-(`doc/db/headcount_presence_morning.sql`) встречается `"isPresentToday"` —
-это то же самое булево значение присутствия, под другим именем/написанием в
-разных версиях документа. При работе с этой таблицей ориентироваться на
-актуальный `table_structure.md`.
+- `"isPresentToday"` — 1 = Betreuer подтвердил, что едет сегодня (кнопка
+  «Ich fahre heute mit!»), 0 = не подтверждено/отсутствует. Читается в
+  [[useBusData]] и [[useGroups]] как фильтр «кого считать в подсчёте
+  Betreuer по группе/автобусу» (`.eq('isPresentToday', 1)`), а также в RLS
+  own_group_*-политиках [[children_today]] (см. [[RLS-политики]]).
+- `"bMustWorkToday"` — отдельный флаг (заполняется admin-ом при
+  предварительном планировании), используется в `useUser.js`/`stores/user.js`
+  для UI-состояния (`isCheckInRequired` и т.п.), независим от
+  `"isPresentToday"`.
+- Имена в двойных кавычках (`"isPresentToday"`, `"bMustWorkToday"`) —
+  Postgres-идентификаторы с camelCase сохраняют регистр только если созданы
+  в кавычках; без кавычек колонка трактуется как `ispresenttoday` — поэтому
+  и в SQL, и в JS-коде запросов эти имена используются как есть, без
+  snake_case.
 
 ## Логика заполнения (`doc/selectGroupAndBus.md`)
 
 Заполнять эту таблицу может любой пользователь с правами `admin` — для
-любого Betreuer, со `status = 0` (администратор не знает точно, поедет ли
-Betreuer). Сам Betreuer подтверждает участие через кнопку «Ich fahre heute
-mit!», которая выставляет `status = 1` — см. [[Группы-и-рабочий-день]].
-Если запись на день отсутствует, пользователь всё равно может войти в
-систему — запись создаётся автоматически (см. [[useSupabaseUser]].`insertScheduleRecord()`).
+любого Betreuer, с `"isPresentToday" = 0` (администратор не знает точно,
+поедет ли Betreuer). Сам Betreuer подтверждает участие через кнопку «Ich
+fahre heute mit!», которая выставляет `"isPresentToday" = 1` — см.
+[[Группы-и-рабочий-день]]. Если запись на день отсутствует, пользователь
+всё равно может войти в систему — запись создаётся автоматически (см.
+[[useSupabaseUser]].`insertScheduleRecord()`).
 
 Обычный пользователь видит только своё расписание и использует его для
 импорта событий в свой календарь (например, Google Calendar) — эта функция

@@ -47,6 +47,7 @@ create table public.users (
 
 - [[user_group_day]]
 - [[Модель-аутентификации]]
+- [[Инвайты-сессии-WebAuthn]]
 - [[useSupabaseUser]]
 - [[Роли-пользователей]]
 - [[Карта-маршрутов]]

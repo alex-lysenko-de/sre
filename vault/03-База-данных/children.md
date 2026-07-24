@@ -1,6 +1,9 @@
 # `children`
 
-> Источник: `doc/table_structure.md`.
+> Источник: `backup/database/schema.sql` (реальный `pg_dump`, тикет 111) —
+> предыдущая версия этой заметки опиралась только на устаревший
+> `doc/table_structure.md` и пропускала `last_scan_at`/`bus_id` (см.
+> `tickets/108/REVIEW_REPORT.md`, Critical 1).
 
 Справочник детей — статичные данные, не привязанные к конкретному дню.
 
@@ -15,6 +18,8 @@ create table public.children (
   notes text null default '""'::text,
   group_id bigint null,
   band_id bigint null,
+  last_scan_at timestamp with time zone null,
+  bus_id smallint null,
   constraint children_pkey primary key (id),
   constraint children_band_id_key unique (band_id)
 );
@@ -27,6 +32,12 @@ create table public.children (
   [[Обзор-схемы-БД]]).
 - `schwimmer` — признак «умеет плавать» (используется в
   `BusDetailModal.vue`/`fetchBusChildren()`).
+- `last_scan_at`, `bus_id` — денормализованный «последний известный» снимок
+  на самой карточке ребёнка (в отличие от [[children_today]], который
+  сбрасывается триггерами reset-событий); не заполняются напрямую
+  триггерами `on_scan_insert`/`on_reset_event_insert` (те пишут только в
+  `children_today`/`groups_today`) — колонки существуют в схеме, но их
+  фактический писатель в коде `src/` в рамках этой ревизии не подтверждён.
 
 ## Кто читает/пишет
 
