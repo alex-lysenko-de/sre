@@ -1,6 +1,6 @@
 # Кэширование через LocalForage
 
-> Источники: `doc/migration_guide.md` (тикет 105), `src/modules/storage.js`.
+> Источники: `src/modules/storage.js`, история тикета 105.
 
 ## Что это
 
@@ -38,7 +38,7 @@ export const authLocalForage = localforage.createInstance({
 
 ## Почему LocalForage, а не `localStorage`
 
-`doc/migration_guide.md` фиксирует переход как отдельный тикет (105) —
+Переход зафиксирован как отдельный тикет (105) —
 `localStorage` синхронный и ограничен по объёму/типам (только строки),
 IndexedDB (через LocalForage) снимает оба ограничения и не блокирует
 основной поток при больших объёмах кэша. Обратная совместимость
