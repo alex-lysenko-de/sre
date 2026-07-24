@@ -169,7 +169,7 @@ async function handleLogin() {
 
 // Redirect to home page
 async function redirectToHome() {
-  await router.push('/info')
+  await router.push('/main')
 }
 </script>
 

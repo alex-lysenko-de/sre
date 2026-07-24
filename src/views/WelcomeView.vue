@@ -220,7 +220,7 @@ async function handleRegister() {
         await setAuthItem('sre_user_registered', 'true');
         console.log('✅ Registrierungsstatus nach erfolgreichem Login gespeichert.');
 
-        await router.push('/info')
+        await router.push('/main')
       } catch (err) {
         console.error('Fehler bei der automatischen Anmeldung:', err)
         await router.push('/login')
