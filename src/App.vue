@@ -101,7 +101,7 @@
              <span v-if="isAdmin" class="badge bg-dark ms-2">ADMIN</span>
             </span>
             <button
-                @click="logout"
+                @click="showLogoutConfirmModal = true"
                 class="btn btn-secondary btn-sm"
             >
               🚪 Abmelden
@@ -129,6 +129,14 @@
         @saved="onBusChanged"
     />
 
+    <!-- Logout Confirm Modal -->
+    <LogoutConfirmModal
+        v-if="showLogoutConfirmModal"
+        :show="showLogoutConfirmModal"
+        @close="showLogoutConfirmModal = false"
+        @confirm="onLogoutConfirmed"
+    />
+
     <!-- Main Content -->
     <main class="container-fluid p-3">
       <router-view/>
@@ -141,10 +149,11 @@ import { ref, computed, onMounted, watch, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { supabase } from './supabase'
 import { useUserStore } from './stores/user'
-import { getAuthItem } from './modules/storage'
+import { getAuthItem, setAuthItem, clearAllAuthStorage } from './modules/storage'
 import DailyCheckInModal from './views/DailyCheckInModalView.vue'
 import GroupChangeModal from './components/GroupChangeModal.vue'
 import BusChangeModal from './components/BusChangeModal.vue'
+import LogoutConfirmModal from './components/LogoutConfirmModal.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -162,6 +171,7 @@ const isAuthenticated = ref(false)
 const showGroupChangeModal = ref(false)
 const showBusChangeModal = ref(false)
 const showCheckInModal = ref(false)
+const showLogoutConfirmModal = ref(false)
 
 // Refs for menu control
 const navbarCollapse = ref(null)
@@ -239,22 +249,17 @@ async function initializeApp() {
     console.error('❌ Fehler beim Lesen des Registrierungsstatus:', err);
   }
 
-  // Für Gäste wird der Authentifizierungsprozess übersprungen
-  if (!isRegistered) {
-    console.log('👤 Gastmodus. Authentifizierung wird übersprungen.');
-    isAuthenticated.value = false;
-    return; // Wichtig: Hier abbrechen
-  }
-
-  // Für registrierte Nutzer wird der normale Authentifizierungsprozess gestartet
-  console.log('✅ Registrierter Benutzer. Starte Authentifizierung...');
-
-  // Check for existing session
+  // Sitzung wird jetzt immer geprüft, unabhängig vom Registrierungsflag
+  // (Flag allein ist auf iOS unzuverlässig, siehe tickets/112)
   try {
     const { data : { session } } = await supabase.auth.getSession();
 
     if (session) {
       await handleAuthentication(session);
+    } else if (!isRegistered) {
+      // Für Gäste wird der Authentifizierungsprozess übersprungen
+      console.log('👤 Gastmodus. Authentifizierung wird übersprungen.');
+      isAuthenticated.value = false;
     } else if (route.path !== '/login' && route.path !== '/welcome' && route.path !== '/main') {
       await router.push('/login');
     }
@@ -274,6 +279,10 @@ async function initializeApp() {
 async function handleAuthentication(session) {
   isAuthenticated.value = true
 
+  // Selbstheilung des Registrierungsflags, fire-and-forget (analog last_seen_date in router/index.js)
+  setAuthItem('sre_user_registered', 'true')
+      .catch(err => console.error('❌ Fehler beim Speichern des Registrierungsstatus:', err))
+
   // Load user data with Pinia store
   await userStore.loadUser()
 
@@ -292,6 +301,9 @@ async function checkAuth() {
 
     if (session) {
       isAuthenticated.value = true
+      // Selbstheilung des Registrierungsflags, fire-and-forget
+      setAuthItem('sre_user_registered', 'true')
+          .catch(err => console.error('❌ Fehler beim Speichern des Registrierungsstatus:', err))
       await userStore.loadUser()
     } else {
       isAuthenticated.value = false
@@ -336,10 +348,23 @@ async function onBusChanged(newBusId) {
 }
 
 /**
- * Logout function
+ * Handle confirmed logout from LogoutConfirmModal
  */
-async function logout() {
+async function onLogoutConfirmed(eraseLocalData) {
+  showLogoutConfirmModal.value = false
+  await logout(eraseLocalData)
+}
+
+/**
+ * Logout function
+ * @param {boolean} eraseLocalData - also wipe authLocalForage (sre_user_registered etc.)
+ */
+async function logout(eraseLocalData = false) {
   try {
+    // Sign out from Supabase first, while the session is still in place
+    // (signOut() needs to read the current refresh token for the server-side revoke)
+    await supabase.auth.signOut()
+
     // Clear user cache and reset store
     await userStore.clearUserCache()
 
@@ -349,8 +374,10 @@ async function logout() {
       console.log('🧹 Realtime subscription entfernt')
     }
 
-    // Sign out from Supabase
-    await supabase.auth.signOut()
+    if (eraseLocalData) {
+      await clearAllAuthStorage()
+      console.log('🧹 Lokale Auth-Daten vollständig gelöscht')
+    }
 
     console.log('👋 Erfolgreich abgemeldet')
 

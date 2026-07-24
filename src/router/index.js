@@ -162,21 +162,44 @@ router.beforeEach(async (to, from, next) => {
         console.error('❌ Fehler beim Lesen des Registrierungsstatus:', err)
     }
 
-    // --- ЛОГИКА ДЛЯ ГОСТЕЙ ---
-    if (!isRegistered) {
-        // Gäste dürfen nur auf öffentliche Seiten und die Willkommens-Seite zugreifen
-        if (to.meta.public || to.name === 'Welcome' || to.name === 'Main' || to.name === 'Info') {
-            return next()
-        }
-        // Wenn ein Gast versucht, eine andere Seite aufzurufen, wird er zur Info-Seite geleitet
-        if (to.path !== '/info') {
-            console.log('👤 Gast erkannt, leite zu /info weiter');
-            return next('/info');
-    }
-        return next();
+    // Sitzung wird jetzt immer geprüft, unabhängig vom Registrierungsflag
+    // (Flag allein ist auf iOS unzuverlässig, siehe tickets/112)
+    let session = null
+    try {
+        const result = await supabase.auth.getSession()
+        session = result.data.session
+    } catch (err) {
+        console.error('❌ Fehler bei der Sitzungsprüfung:', err)
     }
 
-    // --- ЛОГИКА ДЛЯ ЗАРЕГИСТРИРОВАННЫХ ПОЛЬЗОВАТЕЛЕЙ ---
+    // --- ЛОГИКА ДЛЯ ОТСУТСТВУЮЩЕЙ СЕССИИ ---
+    if (!session) {
+        if (to.meta.public) {
+            return next()
+        }
+
+        if (!isRegistered) {
+            // Gäste dürfen nur auf öffentliche Seiten und die Willkommens-Seite zugreifen
+            if (to.name === 'Welcome' || to.name === 'Main' || to.name === 'Info') {
+                return next()
+            }
+            // Wenn ein Gast versucht, eine andere Seite aufzurufen, wird er zur Info-Seite geleitet
+            if (to.path !== '/info') {
+                console.log('👤 Gast erkannt, leite zu /info weiter');
+                return next('/info');
+            }
+            return next();
+        }
+
+        // Gerät war bereits registriert, aber aktuell keine gültige Sitzung
+        if (to.name !== 'Login') {
+            console.log('🚫 Keine aktive Sitzung gefunden, leite zu Login weiter')
+            return next('/login')
+        }
+        return next()
+    }
+
+    // --- ЛОГИКА ДЛЯ АКТИВНОЙ СЕССИИ ---
     // Public pages
     if (to.meta.public) {
         return next()
@@ -185,13 +208,6 @@ router.beforeEach(async (to, from, next) => {
     // Check authentication
     if (to.meta.requiresAuth) {
         try {
-            const { data: { session } } = await supabase.auth.getSession()
-
-            if (!session) {
-                console.log('🚫 Keine aktive Sitzung gefunden, leite zu Login weiter')
-                return next('/login')
-            }
-
             // Get user data from 'users' table
             const { data: userData, error } = await supabase
                 .from('users')

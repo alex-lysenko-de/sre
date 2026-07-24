@@ -203,11 +203,6 @@ async function handleRegister() {
       throw new Error(data.error || 'Registrierungsfehler')
     }
 
-    // NEU: Setzt den permanenten Status, dass der Nutzer registriert ist
-    await setAuthItem('sre_user_registered', 'true');
-    console.log('✅ Registrierungsstatus nach Registrierung gespeichert.');
-
-
     success.value = true
     console.log('✅ Benutzer erfolgreich registriert')
 
@@ -220,6 +215,10 @@ async function handleRegister() {
         })
 
         if (signInError) throw signInError
+
+        // Flag wird erst nach bestätigtem Login gesetzt, nicht schon nach invite-accept
+        await setAuthItem('sre_user_registered', 'true');
+        console.log('✅ Registrierungsstatus nach erfolgreichem Login gespeichert.');
 
         await router.push('/info')
       } catch (err) {

@@ -27,8 +27,10 @@ export const authLocalForage = localforage.createInstance({
 ## Что здесь хранится
 
 - `user_info_cache` — кэш `userInfo`, TTL 60 секунд (см. [[useUser]])
-- `sre_user_registered` — флаг «пользователь хотя бы раз проходил
-  регистрацию», используется в `router.beforeEach` для гостевого доступа
+- `sre_user_registered` — флаг «устройство хотя бы раз успешно логинилось».
+  С тикета 112 — не блокирующий гейт (сессия проверяется всегда), а только
+  подсказка для выбора redirect-таргета (`/login` vs `/info`), когда активной
+  сессии нет; самовосстанавливается при каждой подтверждённой сессии
   (см. [[Модель-аутентификации]])
 - Сессия Supabase Auth — через `supabaseStorageAdapter`, передаваемый в
   `createClient({ auth: { storage } })`; ключ-агностичный passthrough к тем
@@ -41,6 +43,26 @@ export const authLocalForage = localforage.createInstance({
 IndexedDB (через LocalForage) снимает оба ограничения и не блокирует
 основной поток при больших объёмах кэша. Обратная совместимость
 обеспечена read-through-миграцией, а не одномоментной миграцией данных.
+
+## Полная очистка: `clearAllAuthStorage()` (тикет 112)
+
+Дополняет существующие `getAuthItem`/`setAuthItem`/`removeAuthItem` (которые
+работают с одним ключом за раз):
+
+```js
+export async function clearAllAuthStorage() {
+    await authLocalForage.clear()
+    window.localStorage.clear() // legacy-ключи из read-through-миграции (тикет 105)
+}
+```
+
+Очищает разом весь `auth`-store LocalForage (сессию Supabase, флаг
+`sre_user_registered`, `user_info_cache`). Используется только в
+`App.vue.logout()`, когда пользователь при выходе явно отмечает чекбокс
+«Auch lokale Daten löschen» (см. [[Модель-аутентификации]]) — сценарий
+«стереть устройство перед продажей/передачей», после которого устройство
+неотличимо от гостевого. `app_config_cache` (см. ниже) этой функцией не
+затрагивается — сознательно, отдельный механизм.
 
 ## Отдельный кэш конфигурации
 

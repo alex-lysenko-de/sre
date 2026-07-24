@@ -37,6 +37,15 @@ export async function removeAuthItem(key) {
 }
 
 /**
+ * Löscht sämtliche Auth-Daten (Sitzung, sre_user_registered, user_info_cache)
+ * für "Auch lokale Daten löschen" beim Abmelden
+ */
+export async function clearAllAuthStorage() {
+    await authLocalForage.clear()
+    window.localStorage.clear() // legacy-Schlüssel aus der Read-through-Migration (Ticket 105)
+}
+
+/**
  * Storage-Adapter für supabase-js createClient({ auth: { storage } })
  * Key-agnostischer Passthrough zu LocalForage mit Read-through-Migration
  */
