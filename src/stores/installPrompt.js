@@ -7,7 +7,8 @@ export const useInstallPromptStore = defineStore('installPrompt', {
         platform: 'other', // 'android' | 'ios' | 'other'
         isStandalone: false,
         bannerTriggered: false,
-        showIosInstructions: false
+        showIosInstructions: false,
+        installing: false
     }),
 
     getters: {
@@ -55,12 +56,27 @@ export const useInstallPromptStore = defineStore('installPrompt', {
         },
 
         async promptInstall() {
-            if (this.platform === 'android' && this.deferredPrompt) {
-                await this.deferredPrompt.prompt()
-                await this.deferredPrompt.userChoice
+            // guard against double clicks/taps while a prompt() call is
+            // already awaiting userChoice — the native event may only be
+            // triggered once, a second call throws
+            if (this.installing) return
+            this.installing = true
+
+            try {
+                if (this.platform === 'android' && this.deferredPrompt) {
+                    await this.deferredPrompt.prompt()
+                    await this.deferredPrompt.userChoice
+                    this.deferredPrompt = null
+                } else if (this.platform === 'ios') {
+                    this.showIosInstructions = true
+                }
+            } catch (err) {
+                console.error('❌ Fehler beim Anzeigen des Installationsdialogs:', err)
+                // the event is single-use and unusable after an error — drop it
+                // so the store doesn't keep offering a dead prompt
                 this.deferredPrompt = null
-            } else if (this.platform === 'ios') {
-                this.showIosInstructions = true
+            } finally {
+                this.installing = false
             }
         },
 
