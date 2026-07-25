@@ -17,7 +17,7 @@
 | [111](111 — DB backup tooling, коммит 17e206d, без файла в tickets/) | Backup-тулинг для БД (pg_dump schema+data) | DONE (только в git-истории) |
 | [112](112/112.txt) | Сохранение авторизации в PWA на iPhone (Safari / Add to Home Screen) | DEVELOPMENT_DONE |
 | [114](114/114.txt) | Bug fix: редирект на /info вместо home page после логина/регистрации | DONE |
-| [115](115/115.txt) | Bug fix: работа с группой "null" | CHANGES_REQUIRED |
+| [115](115/115.txt) | Bug fix: работа с группой "null" | BUGFIX_DONE |
 | [113](113/113.txt) | Автоматическое создание PWA-приложения | DEVELOPMENT_DONE |
 | [117](117/117.txt) | LocalForage ↔ Supabase: архитектура обмена данными | тикет создан |
 | [116](116/116.txt) | Улучшение модуля сканирования | тикет создан |

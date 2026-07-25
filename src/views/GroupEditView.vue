@@ -133,6 +133,7 @@ export default {
     'userStore.userInfo.group_id'(newGroupId) {
       if (!this.$route.params.id && newGroupId) {
         this.groupNumber = newGroupId
+        this.noGroupAssigned = false
         this.loadInitialData()
       }
     }
