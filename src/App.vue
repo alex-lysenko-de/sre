@@ -139,6 +139,14 @@
         @confirm="onLogoutConfirmed"
     />
 
+    <!-- Install App Button (global, survives WelcomeView → /main transition) -->
+    <div class="install-app-button-wrapper">
+      <InstallAppButton/>
+    </div>
+
+    <!-- Install iOS Instructions Modal -->
+    <InstallIosInstructionsModal/>
+
     <!-- Main Content -->
     <main class="container-fluid p-3">
       <router-view/>
@@ -156,6 +164,8 @@ import DailyCheckInModal from './views/DailyCheckInModalView.vue'
 import GroupChangeModal from './components/GroupChangeModal.vue'
 import BusChangeModal from './components/BusChangeModal.vue'
 import LogoutConfirmModal from './components/LogoutConfirmModal.vue'
+import InstallAppButton from './components/InstallAppButton.vue'
+import InstallIosInstructionsModal from './components/InstallIosInstructionsModal.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -418,5 +428,12 @@ async function logout(eraseLocalData = false) {
   .navbar-brand {
     font-size: 1rem;
   }
+}
+
+.install-app-button-wrapper {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  z-index: 1050;
 }
 </style>

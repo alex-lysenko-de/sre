@@ -161,10 +161,12 @@ import { supabase } from '@/supabase'
 import { setAuthItem } from '@/modules/storage'
 import { useUserStore } from '@/stores/user'
 import { useConfigStore } from '@/stores/config'
+import { useInstallPromptStore } from '@/stores/installPrompt'
 
 const router = useRouter()
 const userStore = useUserStore()
 const configStore = useConfigStore()
+const installPromptStore = useInstallPromptStore()
 
 const inviteToken = ref(null)
 const name = ref('')
@@ -230,6 +232,7 @@ async function handleRegister() {
 
     success.value = true
     console.log('✅ Benutzer erfolgreich registriert')
+    installPromptStore.triggerBanner()
 
     // Auto-login after registration
     setTimeout(async () => {

@@ -103,6 +103,11 @@ app.use(router)
 
 // === new code for async global initialization of config store ===
 import { useConfigStore } from '@/stores/config'
+import { useInstallPromptStore } from '@/stores/installPrompt'
+
+// register beforeinstallprompt listener as early as possible (must not be
+// delayed by the await below, or the event may be missed)
+useInstallPromptStore().init()
 
 // run async initialization before mounting the app
 const configStore = useConfigStore()

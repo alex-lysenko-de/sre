@@ -86,8 +86,10 @@ import { useRouter } from 'vue-router'
 import { supabase } from '../supabase'
 import { logApi } from '../utils/logger'
 import { setAuthItem } from '../modules/storage'
+import { useInstallPromptStore } from '@/stores/installPrompt'
 
 const router = useRouter()
+const installPromptStore = useInstallPromptStore()
 
 const email = ref('')
 const password = ref('')
@@ -146,6 +148,8 @@ async function handleLogin() {
       await supabase.auth.signOut()
       throw new Error('Unzureichende Rechte für die Anmeldung')
     }
+
+    installPromptStore.triggerBanner()
 
     // NEU: Setzt den permanenten Status, dass der Nutzer registriert ist
     await setAuthItem('sre_user_registered', 'true');
