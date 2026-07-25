@@ -16,9 +16,9 @@
 | [110](110/110.md) | Миграция в сторону multi-tenant (план) | не начат |
 | [111](111 — DB backup tooling, коммит 17e206d, без файла в tickets/) | Backup-тулинг для БД (pg_dump schema+data) | DONE (только в git-истории) |
 | [112](112/112.txt) | Сохранение авторизации в PWA на iPhone (Safari / Add to Home Screen) | DEVELOPMENT_DONE |
-| [114](114/114.txt) | Bug fix: редирект на /info вместо home page после логина/регистрации | DEVELOPMENT_DONE |
-| [115](115/115.txt) | Bug fix: работа с группой "null" | тикет создан |
-| [113](113/113.txt) | Автоматическое создание PWA-приложения | тикет создан |
+| [114](114/114.txt) | Bug fix: редирект на /info вместо home page после логина/регистрации | DONE |
+| [115](115/115.txt) | Bug fix: работа с группой "null" | CHANGES_REQUIRED |
+| [113](113/113.txt) | Автоматическое создание PWA-приложения | ARCHITECT_DONE |
 | [117](117/117.txt) | LocalForage ↔ Supabase: архитектура обмена данными | тикет создан |
 | [116](116/116.txt) | Улучшение модуля сканирования | тикет создан |
 | [118](118/118.txt) | Рефакторинг документации: уборка doc/ после базы знаний + компактная сводка для ИИ (CLAUDE.md). Backlog нереализованных идей AdminBusView, спасённый из удалённого `doc/AdminBusView_TechTask.md`: [tickets/118/AdminBusView_Backlog.md](118/AdminBusView_Backlog.md) | FIXES_APPLIED |

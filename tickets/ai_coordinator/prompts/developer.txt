@@ -58,7 +58,7 @@ tickets/{{TICKET}}/IMPLEMENTATION_REPORT.md
 # Проверки
 
 
-После завершения работы обнови файл `tickets/118/state.txt`:
+После завершения работы обнови файл `tickets/{{TICKET}}/state.txt`:
 
 * `DEVELOPMENT_DONE` — задача реализована и готова к ревью;
 * `REQUIREMENTS_CLARIFICATION` — выполнение невозможно до получения дополнительных требований;

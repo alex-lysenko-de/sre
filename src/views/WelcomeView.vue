@@ -94,6 +94,24 @@
                   />
                 </div>
 
+                <div class="mb-4">
+                  <label for="selectedGroup" class="form-label fw-semibold">Gruppe (optional)</label>
+                  <select
+                    v-model.number="selectedGroup"
+                    id="selectedGroup"
+                    class="form-select form-select-lg"
+                  >
+                    <option :value="null">Keine Angabe</option>
+                    <option
+                      v-for="n in configStore.totalGroups"
+                      :key="n"
+                      :value="n"
+                    >
+                      Gruppe {{ n }}
+                    </option>
+                  </select>
+                </div>
+
                 <!-- Error Alert -->
                 <div v-if="error" class="alert alert-danger d-flex align-items-start py-2 mb-3" role="alert">
                   <span class="me-2">⚠️</span>
@@ -141,8 +159,12 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase } from '@/supabase'
 import { setAuthItem } from '@/modules/storage'
+import { useUserStore } from '@/stores/user'
+import { useConfigStore } from '@/stores/config'
 
 const router = useRouter()
+const userStore = useUserStore()
+const configStore = useConfigStore()
 
 const inviteToken = ref(null)
 const name = ref('')
@@ -150,17 +172,20 @@ const email = ref('')
 const phone = ref('')
 const password = ref('')
 const confirmPassword = ref('')
+const selectedGroup = ref(null)
 const loading = ref(false)
 const error = ref('')
 const success = ref(false)
 
-onMounted(() => {
+onMounted(async () => {
   const params = new URLSearchParams(window.location.search)
   inviteToken.value = params.get('invite')
 
   if (!inviteToken.value) {
     console.error('⚠️ Einladungstoken nicht in der URL gefunden')
   }
+
+  await configStore.loadConfig()
 })
 
 async function handleRegister() {
@@ -219,6 +244,15 @@ async function handleRegister() {
         // Flag wird erst nach bestätigtem Login gesetzt, nicht schon nach invite-accept
         await setAuthItem('sre_user_registered', 'true');
         console.log('✅ Registrierungsstatus nach erfolgreichem Login gespeichert.');
+
+        if (selectedGroup.value) {
+          try {
+            await userStore.loadUser(true)
+            await userStore.assignUserToGroup(selectedGroup.value)
+          } catch (groupErr) {
+            console.error('Fehler beim Vorbelegen der Gruppe:', groupErr)
+          }
+        }
 
         await router.push('/main')
       } catch (err) {
