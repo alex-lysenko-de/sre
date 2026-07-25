@@ -24,8 +24,9 @@
         </router-link>
 
         <!-- User Info Indicators (Group & Bus) -->
-        <div v-if="!isCheckInRequired && userStore.userInfo.isPresentToday" class="d-flex align-items-center gap-2 me-1">
+        <div class="d-flex align-items-center gap-2 me-1">
           <button
+              v-if="userStore.userInfo.id"
               @click="showGroupChangeModal = true"
               class="btn btn-sm btn-light d-flex align-items-center gap-2"
               title="Gruppe ändern"
@@ -35,6 +36,7 @@
           </button>
 
           <button
+              v-if="!isCheckInRequired && userStore.userInfo.isPresentToday"
               @click="showBusChangeModal = true"
               class="btn btn-sm btn-light d-flex align-items-center gap-2"
               title="Bus ändern"

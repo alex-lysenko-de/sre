@@ -23,6 +23,11 @@
           <p class="text-muted">Bitte gehen Sie zur Anmeldeseite zurück, um die Konfiguration zu laden.</p>
         </div>
 
+        <div v-else-if="noGroupAssigned" class="text-center py-5">
+          <font-awesome-icon :icon="['fas', 'exclamation-triangle']"/>
+          <h5 class="text-muted">Ihnen ist heute keine Gruppe zugewiesen. Gruppenverwaltung ist nicht möglich.</h5>
+        </div>
+
         <div v-else>
           <ul class="list-group list-group-flush children-list">
             <li v-if="children.length === 0" class="list-group-item text-center text-muted">
@@ -105,6 +110,7 @@ export default {
     return {
       isConfigLoaded : true,
       loadingInitialData : true,
+      noGroupAssigned : false,
       groupNumber : '1', // Wird in created() aus route.params gesetzt
       formattedCurrentDate : '',
       allChildrenData : [],
@@ -142,6 +148,12 @@ export default {
       }
       // set groupId = current user's group_id
       groupId = this.userStore.userInfo.group_id
+    }
+
+    if (!groupId) {
+      this.noGroupAssigned = true
+      this.loadingInitialData = false
+      return
     }
 
     this.groupNumber = groupId
