@@ -1,0 +1,128 @@
+# Ticket: Redesign of the **Kopfzählung** Interface
+
+## Goal
+
+Redesign the **Kopfzählung** interface to make it significantly more convenient for conducting roll calls in real working conditions.
+
+The current implementation is functional but inefficient. Too much screen space is occupied by decorative elements, margins and containers, while the actual working area is too small. As a result, the user cannot quickly assess the entire group and mark attendance.
+
+The new interface should prioritize **speed, clarity and information density**, rather than visual decoration.
+
+## Design Principles
+
+When designing the new interface, the primary reference should not be modern card-based web layouts, but the traditional paper attendance sheets that teachers and group leaders are already familiar with.
+
+The interface should feel like a digital version of a paper checklist.
+
+## Requirements
+
+### 1. Display the entire group
+
+The interface should display the complete list of children whenever possible.
+
+The user should not need to scroll through multiple cards or switch between screens just to understand the current attendance status.
+
+Screen space should be used as efficiently as possible by reducing unnecessary:
+
+* margins;
+* paddings;
+* decorative frames;
+* empty areas.
+
+The maximum possible area should be dedicated to the attendance table.
+
+### 2. Tabular layout
+
+Children should be displayed as rows of a compact table.
+
+Each row should contain:
+
+* sequence number;
+* child's name;
+* attendance indicators.
+
+A table is much easier to scan visually than a collection of independent cards.
+
+### 3. Stable ordering
+
+Children should always appear in the same order.
+
+Even if there is no explicit "group number" in the database, the order should remain stable between roll calls.
+
+A sequence number should be displayed for each row to improve navigation and communication.
+
+### 4. Attendance indicators
+
+Attendance should be represented using simple checkboxes (or equivalent check marks).
+
+This is a familiar interaction pattern and is considerably easier to understand than custom indicators.
+
+### 5. Two attendance states
+
+Consider displaying two independent attendance columns:
+
+* **Morning**
+* **Current**
+
+This allows the group leader to immediately see changes during the day.
+
+Example:
+
+|  № | Child   | Morning | Current |
+| -: | ------- | :-----: | :-----: |
+|  1 | Ivanov  |    ☑    |    ☑    |
+|  2 | Petrov  |    ☑    |    ☐    |
+|  3 | Sidorov |    ☐    |    ☑    |
+
+For the very first roll call of the day, the **Morning** state does not yet exist. The interface should handle this case automatically (for example, by treating the first roll call as the morning attendance or by temporarily hiding the column).
+
+### 6. Manual marking
+
+Attendance must remain editable manually.
+
+The user should be able to mark or unmark a child directly from the table without using the scanner.
+
+## Deliverable
+
+The goal of this ticket is **not** to implement a final visual design immediately.
+
+First, prepare **several alternative interface concepts** (wireframes or mockups) based on the principles above.
+
+These alternatives will be reviewed, after which one concept will be selected for implementation.
+
+## Expected Result
+
+The updated **Kopfzählung** interface should allow a group leader to:
+
+* see the entire group at a glance;
+* immediately identify missing children;
+* mark attendance with minimal interaction;
+* work as naturally as with a traditional paper attendance sheet, while benefiting from the speed and convenience of the digital application.
+
+
+7. Integrated Scanner
+
+The Kopfzählung interface shall include a Scan button located above the attendance table.
+
+Pressing this button opens the scanner implemented in tickets 116 and 120 (the same scanner used in the Gruppen-Scan mode).
+
+The scanner should appear as a temporary panel that slides down from the top of the screen, occupying approximately the upper quarter to half of the display. The attendance table remains visible below it, allowing the user to continue seeing the group while scanning.
+
+All scanned children are processed exactly as defined for Gruppen-Scan (see ticket 120): successful scans immediately update the corresponding attendance marks in the table.
+
+8. Automatic Scanner Closing
+
+The scanner is intended for short scanning sessions rather than remaining permanently open.
+
+After the last successful scan, an inactivity timer starts.
+
+If no additional scans occur within 5 seconds, the scanner panel automatically closes and slides out of view. The Scan button then reappears in its original position.
+
+This behavior mimics the workflow of dedicated handheld scanners:
+
+The user presses Scan.
+The scanner opens.
+Multiple children are scanned in succession.
+After 5 seconds of inactivity, the scanner automatically closes.
+
+This interaction minimizes screen clutter while allowing the scanner to be reopened instantly whenever another scanning session is required.
