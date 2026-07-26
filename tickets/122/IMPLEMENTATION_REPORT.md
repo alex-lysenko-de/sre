@@ -173,3 +173,46 @@ POLICY IF EXISTS` перед созданием) — безопасен для �
   «Не затрагиваются»).
 - Ручная проверка на реальной БД/задеплоенной функции/устройствах — не
   выполнена в этой сессии, см. «Отклонения от плана».
+
+# Деплой и исправление после сообщения об ошибке (2026-07-26)
+
+Пользователь сообщил баг: при отправке пакета сканирования (клиент 120)
+выводится `Fehler beim Senden, failed to fetch`.
+
+**Диагностика** (без изменений в коде на этом этапе):
+- `curl -X OPTIONS .../functions/v1/submit-scan-packet` → `404
+  {"code":"NOT_FOUND","message":"Requested function was not found"}`
+  (заголовок `sb-error-code: NOT_FOUND`).
+- Для сравнения тот же запрос к `delete-user`/`invite-generate`/
+  `invite-accept`/`auth` — везде `200`. Значит проблема специфична именно
+  для `submit-scan-packet`, а не общая для проекта/окружения.
+- `curl .../rest/v1/scan_packets?select=id&limit=1` (анонимный ключ) →
+  `200 []` — таблица `scan_packets` в БД существует (SQL из
+  `doc/db/scan_packets.sql` к этому моменту уже был применён кем-то вне
+  этой сессии; пустой результат ожидаем — RLS отдаёт анониму 0 строк, не
+  ошибку).
+
+**Вывод**: это не дефект кода/SQL, а именно тот шаг, что был явно
+задокументирован как невыполненный в разделе «Отклонения от плана» —
+Edge Function `submit-scan-packet` никогда не была задеплоена. `404` на
+preflight-запрос (`OPTIONS`) браузер трактует как провал CORS и показывает
+это клиенту как обобщённую сетевую ошибку (`Failed to fetch`), а не как
+понятный HTTP-статус — отсюда сообщение в `ScannerBusView.vue`/
+`ScannerGroupView.vue`/`ScannerCheckinView.vue` (`scanPacket.errorMessage.value`,
+куда попадает `err.message` из `fetch()`).
+
+**Исправление**: с явного подтверждения пользователя выполнен деплой:
+```
+npx supabase link --project-ref prlivcmqjqjypclkcovl
+npx supabase functions deploy submit-scan-packet
+```
+Проверено повторно: `OPTIONS` → `200`; `POST` без `Authorization` →
+`401 UNAUTHORIZED_NO_AUTH_HEADER` (ожидаемое поведение платформы Supabase
+для функции без `--no-verify-jwt`, до входа в код самой функции) — функция
+теперь доступна и корректно требует токен.
+
+Код `supabase/functions/submit-scan-packet/index.ts` при деплое не менялся.
+Оставшийся пункт из «Отклонения от плана» (регрессия по `HeadcountView`/
+`ChildrenView`/`AdminBusView`/`ChildDetailView`, сквозная проверка с 120 на
+реальных устройствах, включая повтор после сетевого сбоя) по-прежнему не
+выполнен — устранение самого «Failed to fetch» не заменяет эти проверки.
