@@ -101,6 +101,28 @@
                   <h5 class="text-muted">Keine Daten für diesen Bus</h5>
                   <p class="text-muted">Dieser Bus ist heute nicht aktiv.</p>
                 </div>
+
+                <!-- Empfangene Pakete (Ticket 122) -->
+                <div class="mb-2">
+                  <h6 class="border-bottom pb-2">
+                    <i class="fas fa-inbox me-2"></i>
+                    Empfangene Pakete
+                  </h6>
+                  <div v-if="packets.length" class="list-group">
+                    <div
+                        v-for="packet in packets"
+                        :key="packet.id"
+                        class="list-group-item d-flex justify-content-between align-items-center"
+                    >
+                      <div>
+                        <strong>{{ packet.authorName }}</strong>
+                        <span class="text-muted ms-2">{{ formatReceivedAt(packet.receivedAt) }}</span>
+                      </div>
+                      <span class="badge bg-primary">{{ packet.childrenCount }} Kinder</span>
+                    </div>
+                  </div>
+                  <p v-else class="text-muted mb-0">Heute noch keine Pakete für diesen Bus empfangen.</p>
+                </div>
               </div>
             </div>
 
@@ -129,6 +151,7 @@
 <script>
 import { ref, watch } from 'vue'
 import { useBusData } from '@/composables/useBusData'
+import { fetchPacketsForBus } from '@/composables/useScanPackets'
 
 export default {
   name: 'BusDetailModal',
@@ -156,6 +179,7 @@ export default {
     })
     const betreuerDetails = ref([])
     const childrenDetails = ref([])
+    const packets = ref([])
 
     // ============================================================================
     // METHODS
@@ -181,6 +205,9 @@ export default {
           betreuer_count: betreuer.length
         }
 
+        // 4. Empfangene Pakete laden (Ticket 122)
+        packets.value = await fetchPacketsForBus(props.busNumber, today)
+
       } catch (error) {
         console.error('Fehler beim Laden der Bus-Details:', error)
       } finally {
@@ -196,6 +223,10 @@ export default {
       loadBusDetails()
     }
 
+    function formatReceivedAt(isoString) {
+      return new Date(isoString).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
+    }
+
     // Watch for modal open
     watch(() => props.show, (newVal) => {
       if (newVal) {
@@ -208,8 +239,10 @@ export default {
       busData,
       betreuerDetails,
       childrenDetails,
+      packets,
       close,
-      refresh
+      refresh,
+      formatReceivedAt
     }
   }
 }

@@ -105,6 +105,14 @@
                   >
                     Gruppe {{ group.id }}
                   </router-link>
+                  <button
+                      type="button"
+                      class="btn btn-sm btn-link text-decoration-none p-0 ms-2"
+                      title="Empfangene Pakete anzeigen"
+                      @click="openGroupDetail(group.id)"
+                  >
+                    <font-awesome-icon :icon="['fas', 'inbox']" />
+                  </button>
                 </td>
                 <td>{{ group.morning ?? '-' }}</td>
                 <td>{{ group.current ?? '-' }}</td>
@@ -126,6 +134,13 @@
         </div>
       </div>
     </template>
+
+    <!-- Group Detail Modal (Ticket 122 - empfangene Pakete) -->
+    <GroupDetailModal
+        :show="showGroupModal"
+        :group-id="selectedGroupId"
+        @close="closeGroupModal"
+    />
   </div>
 </template>
 
@@ -142,9 +157,13 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useConfigStore } from '@/stores/config'
 import { fetchGroupsData, subscribeToGroupsChanges } from '@/composables/useGroups'
+import GroupDetailModal from '@/components/GroupDetailModal.vue'
 
 export default {
   name: 'AdminGroupView',
+  components: {
+    GroupDetailModal
+  },
   setup() {
     const configStore = useConfigStore()
 
@@ -154,6 +173,10 @@ export default {
     const error = ref(null)
     const lastUpdateTime = ref(null)
     const currentDate = ref(new Date().toISOString().split('T')[0])
+
+    // Group Detail Modal state (Ticket 122)
+    const showGroupModal = ref(false)
+    const selectedGroupId = ref(null)
 
     // Realtime subscription
     let realtimeSubscription = null
@@ -192,6 +215,16 @@ export default {
       if (diff > 0)
         return `<span class="text-danger fw-bold">-${diff}</span>`
       return `<span class="text-info fw-bold">+${Math.abs(diff)}</span>`
+    }
+
+    function openGroupDetail(groupId) {
+      selectedGroupId.value = groupId
+      showGroupModal.value = true
+    }
+
+    function closeGroupModal() {
+      showGroupModal.value = false
+      selectedGroupId.value = null
     }
 
     // Load groups data from database
@@ -282,6 +315,10 @@ export default {
       getStatusClass,
       formatDifference,
       loadGroupsData,
+      showGroupModal,
+      selectedGroupId,
+      openGroupDetail,
+      closeGroupModal,
     }
   },
 }
