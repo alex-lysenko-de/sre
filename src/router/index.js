@@ -96,6 +96,13 @@ const routes = [
         meta: { requiresAuth: true, requiresAdmin: false }
     },
 
+    {
+        path: '/scanner-prototype',
+        name: 'ScannerPrototype',
+        component: () => import('@/views/ScannerPrototypeView.vue'),
+        meta: { requiresAuth: true, requiresAdmin: false }
+    },
+
 
     {
         path: '/child/:id',

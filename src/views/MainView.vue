@@ -104,6 +104,22 @@
             <font-awesome-icon :icon="['fas', 'arrow-right']" />
           </button>
 
+          <!-- Scanner Prototype Button (Ticket 116, for authenticated users) -->
+          <button
+              v-if="isAuthenticated"
+              @click="goToScanPrototype"
+              class="btn btn-outline-success btn-lg d-flex align-items-center justify-content-between"
+          >
+            <span class="d-flex align-items-center">
+              <font-awesome-icon :icon="['fas', 'qrcode']" class="me-3" size="2x" />
+              <span>
+                <div class="fw-bold text-start">Scannen (Neu, Prototyp)</div>
+                <small class="text-muted">Testet die neue Scanner-Oberfläche</small>
+              </span>
+            </span>
+            <font-awesome-icon :icon="['fas', 'arrow-right']" />
+          </button>
+
           <!-- Login Button (for guests) -->
           <button
               v-if="!isAuthenticated"
@@ -208,6 +224,10 @@ function goToAdminOverview() {
 
 function goToScan() {
   router.push('/scanner')
+}
+
+function goToScanPrototype() {
+  router.push('/scanner-prototype')
 }
 
 function goToLogin() {
