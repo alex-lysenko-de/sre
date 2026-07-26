@@ -7,7 +7,7 @@
 <template>
   <div class="proto-scanner">
     <div class="proto-scan-area">
-      <div id="qr-reader-proto" ref="qrReaderEl"></div>
+      <div id="qr-reader-proto"></div>
 
       <div v-if="!scannerActive && !confirmation.show" class="proto-scanner-overlay">
         <div class="spinner-border text-light" role="status"></div>
@@ -15,50 +15,53 @@
       </div>
 
       <div v-if="confirmation.show" class="proto-confirmation" :class="confirmation.variant">
-        <font-awesome-icon
-            :icon="['fas', confirmation.variant === 'success' ? 'check-circle' : 'times']"
-            class="proto-confirmation-icon"
-        />
+        <div class="proto-confirmation-icons">
+          <font-awesome-icon
+              :icon="['fas', confirmation.variant === 'success' ? 'check-circle' : 'times']"
+              class="proto-confirmation-icon"
+          />
+          <font-awesome-icon
+              v-if="confirmation.repeat"
+              :icon="['fas', 'check-circle']"
+              class="proto-confirmation-icon proto-confirmation-icon-repeat"
+          />
+        </div>
         <div class="proto-confirmation-title">{{ confirmation.title }}</div>
         <div v-if="confirmation.subtitle" class="proto-confirmation-subtitle">{{ confirmation.subtitle }}</div>
       </div>
     </div>
 
     <div class="proto-scanner-controls">
-      <div class="proto-camera-indicator">
+      <button
+          class="btn btn-warning proto-camera-picker-btn"
+          :disabled="controlsDisabled"
+          @click="showCameraSelector = !showCameraSelector"
+      >
         Kamera: {{ currentCameraLabel }}
-      </div>
+      </button>
 
-      <div class="proto-camera-buttons">
-        <button
-            class="btn btn-warning btn-sm"
-            :disabled="controlsDisabled"
-            @click="showCameraSelector = !showCameraSelector"
-        >
-          Kamera wählen
-        </button>
-        <button
-            class="btn btn-outline-light btn-sm"
-            :disabled="controlsDisabled || currentCameraId === null"
-            @click="useAutomaticCamera"
-        >
-          Automatisch (Rückkamera)
-        </button>
-      </div>
-
-      <div v-if="showCameraSelector" class="proto-camera-selector">
-        <select
-            class="form-select"
-            :disabled="controlsDisabled"
-            :value="currentCameraId || ''"
-            @change="selectCamera($event.target.value)"
-        >
-          <option value="" disabled>Kamera auswählen…</option>
-          <option v-for="cam in cameraList" :key="cam.id" :value="cam.id">
+      <ul v-if="showCameraSelector" class="proto-camera-list">
+        <li>
+          <button
+              class="proto-camera-list-item"
+              :class="{ active: currentCameraId === null }"
+              :disabled="controlsDisabled"
+              @click="chooseCamera(null)"
+          >
+            Automatische Kamerawahl
+          </button>
+        </li>
+        <li v-for="cam in cameraList" :key="cam.id">
+          <button
+              class="proto-camera-list-item"
+              :class="{ active: currentCameraId === cam.id }"
+              :disabled="controlsDisabled"
+              @click="chooseCamera(cam.id)"
+          >
             {{ cam.label || cam.id }}
-          </option>
-        </select>
-      </div>
+          </button>
+        </li>
+      </ul>
     </div>
   </div>
 </template>
@@ -71,8 +74,8 @@ import { useConfigStore } from '@/stores/config.js'
 import { useScannerFeedback } from '@/composables/useScannerFeedback'
 
 const props = defineProps({
-  // Pflicht-Callback: async (result) => ({ title, subtitle, variant? })
-  // result ist { status: 'invalid' } | { status: 'not-found', bandId } | { status: 'found', child, bandId }
+  // Pflicht-Callback: async (result) => ({ title, subtitle, variant?, repeat? })
+  // result ist { status: 'invalid' } | { status: 'error', bandId } | { status: 'not-found', bandId } | { status: 'found', child, bandId }
   onChildResolved: {
     type: Function,
     required: true
@@ -83,7 +86,6 @@ const armband = useArmband()
 const configStore = useConfigStore()
 const feedback = useScannerFeedback()
 
-const qrReaderEl = ref(null)
 let html5QrCode = null
 
 // Gleicher Schluessel wie ScannerView.vue - die bevorzugte Kamera ist eine
@@ -119,8 +121,17 @@ const confirmation = reactive({
   show: false,
   variant: 'success',
   title: '',
-  subtitle: ''
+  subtitle: '',
+  repeat: false
 })
+
+// Anzeigedauer des Bestaetigungsbildschirms - laut manuellem Test auf echten
+// Geraeten war eine einzige Konstante (0.8s) fuer beide Ergebnisarten zu kurz,
+// besonders um Fehlertexte zu lesen.
+const CONFIRMATION_DURATION_MS = {
+  success: 1600,
+  error: 3000
+}
 
 // ============================================
 // QR-Code Format (wie ScannerView.vue, unabhaengig neu implementiert)
@@ -145,6 +156,9 @@ const SOUND = {
   scan: { frequencies: [660], duration: 0.08 },
   invalid: { frequencies: [220], duration: 0.3 },
   notFound: { frequencies: [220, 180], duration: 0.25 },
+  // Eigener Ton fuer Infrastruktur-/Netzwerkfehler - hoerbar unterscheidbar von
+  // "Armband wirklich nicht zugeordnet" (notFound).
+  error: { frequencies: [220, 220, 220], duration: 0.18 },
   success: { frequencies: [880, 1318.51], duration: 0.12 }
 }
 const VIBRATION_SHORT = [80]
@@ -213,41 +227,31 @@ const stopScanning = async () => {
   }
 }
 
-const selectCamera = async (deviceId) => {
-  if (!deviceId || deviceId === currentCameraId.value) {
-    showCameraSelector.value = false
+// Einheitliche Kamerawahl: deviceId einer konkreten Kamera oder null fuer den
+// automatischen Modus (facingMode) - beide Faelle sind gleichwertige Eintraege
+// derselben Liste (Ergebnis der manuellen UX-Tests, siehe REVIEW_REPORT.md).
+const chooseCamera = async (deviceId) => {
+  if (controlsDisabled.value) {
     return
   }
-  if (controlsDisabled.value) {
+  if (deviceId === currentCameraId.value) {
+    showCameraSelector.value = false
     return
   }
   isTransitioning.value = true
   try {
     await stopScanning()
-    await startScanningWithDeviceId(deviceId)
-    localStorage.setItem(CAMERA_STORAGE_KEY, deviceId)
+    if (deviceId === null) {
+      await startScanningWithFacingMode()
+      localStorage.removeItem(CAMERA_STORAGE_KEY)
+    } else {
+      await startScanningWithDeviceId(deviceId)
+      localStorage.setItem(CAMERA_STORAGE_KEY, deviceId)
+    }
     showCameraSelector.value = false
   } catch (error) {
     console.error('❌ Fehler beim Wechseln der Kamera:', error)
     alert('Fehler beim Wechseln der Kamera.')
-  } finally {
-    isTransitioning.value = false
-  }
-}
-
-const useAutomaticCamera = async () => {
-  if (controlsDisabled.value || currentCameraId.value === null) {
-    return
-  }
-  isTransitioning.value = true
-  try {
-    await stopScanning()
-    await startScanningWithFacingMode()
-    localStorage.removeItem(CAMERA_STORAGE_KEY)
-    showCameraSelector.value = false
-  } catch (error) {
-    console.error('❌ Fehler beim Zurückschalten auf Automatisch:', error)
-    alert('Fehler beim Zurückschalten auf die automatische Kamera.')
   } finally {
     isTransitioning.value = false
   }
@@ -288,6 +292,9 @@ const defaultDisplayFor = (result) => {
   if (result.status === 'invalid') {
     return { title: 'Ungültiger QR-Code' }
   }
+  if (result.status === 'error') {
+    return { title: 'Fehler beim Prüfen des Armbands', subtitle: 'Bitte erneut versuchen' }
+  }
   if (result.status === 'not-found') {
     return { title: 'Kein Kind mit dem Verband verbunden' }
   }
@@ -298,6 +305,7 @@ const showConfirmationScreen = (variant, display) => {
   confirmation.variant = variant
   confirmation.title = display.title
   confirmation.subtitle = display.subtitle || ''
+  confirmation.repeat = !!display.repeat
   confirmation.show = true
 }
 
@@ -333,13 +341,21 @@ const onScanSuccess = async (decodedText) => {
   } else {
     const bandId = match[1]
     let child = null
+    let fetchFailed = false
     try {
       child = await armband.getBraceletStatus(bandId)
     } catch (error) {
       console.error('❌ Fehler beim Abrufen des Armband-Status:', error)
+      fetchFailed = true
     }
 
-    if (!child) {
+    if (fetchFailed) {
+      // Netzwerk-/Serverfehler darf nicht als "Armband nicht zugeordnet"
+      // erscheinen - das waere in der Praesenzerfassung ein falscher Befund.
+      result = { status: 'error', bandId }
+      feedback.playTone(SOUND.error.frequencies, SOUND.error.duration)
+      feedback.vibrate(VIBRATION_LONG)
+    } else if (!child) {
       result = { status: 'not-found', bandId }
       feedback.playTone(SOUND.notFound.frequencies, SOUND.notFound.duration)
       feedback.vibrate(VIBRATION_LONG)
@@ -364,7 +380,7 @@ const onScanSuccess = async (decodedText) => {
   const variant = display.variant || (result.status === 'found' ? 'success' : 'error')
   showConfirmationScreen(variant, display)
 
-  await wait(800)
+  await wait(CONFIRMATION_DURATION_MS[variant])
   hideConfirmationScreen()
 
   try {
@@ -378,6 +394,32 @@ const onScanSuccess = async (decodedText) => {
 
 const onScanError = () => {
   // Ignorieren - normal beim Scannen.
+}
+
+// Fuer extern ausgeloeste Meldungen (z. B. Ergebnis von "Senden" in
+// ScannerPrototypeView.vue), die denselben Bestaetigungsbildschirm wie ein
+// Scan-Ergebnis wiederverwenden sollen, ohne selbst ein Scan-Ereignis zu sein.
+const showExternalMessage = async (variant, display, durationMs) => {
+  const wasActive = scannerActive.value
+  if (wasActive) {
+    try {
+      await html5QrCode.pause(true)
+    } catch (error) {
+      console.warn('⚠️ Fehler beim Pausieren des Scanners:', error)
+    }
+  }
+
+  showConfirmationScreen(variant, display)
+  await wait(durationMs || CONFIRMATION_DURATION_MS[variant] || CONFIRMATION_DURATION_MS.success)
+  hideConfirmationScreen()
+
+  if (wasActive) {
+    try {
+      html5QrCode.resume()
+    } catch (error) {
+      console.warn('⚠️ Fehler beim Fortsetzen des Scanners:', error)
+    }
+  }
 }
 
 // ============================================
@@ -396,20 +438,20 @@ onBeforeUnmount(async () => {
   await stopScanning()
 })
 
-defineExpose({ stop: stopScanning })
+defineExpose({ stop: stopScanning, showMessage: showExternalMessage })
 </script>
 
 <style scoped>
 .proto-scanner {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
 }
 
 .proto-scan-area {
   position: relative;
   width: 100%;
-  flex: 1 1 auto;
+  aspect-ratio: 1 / 1;
+  flex: 0 0 auto;
   background: #000;
   overflow: hidden;
 }
@@ -417,6 +459,16 @@ defineExpose({ stop: stopScanning })
 #qr-reader-proto {
   width: 100%;
   height: 100%;
+}
+
+/* html5-qrcode erzeugt video/canvas dynamisch (kein vom Compiler erfasstes
+   Scoped-Markup) und setzt teils eigene Inline-Groessen - hier erzwungen auf
+   volle Flaeche des quadratischen Containers, damit kein schwarzer Rand bleibt. */
+#qr-reader-proto :deep(video),
+#qr-reader-proto :deep(canvas) {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover;
 }
 
 .proto-scanner-overlay {
@@ -453,8 +505,19 @@ defineExpose({ stop: stopScanning })
   color: white;
 }
 
+.proto-confirmation-icons {
+  display: flex;
+  gap: 8px;
+}
+
 .proto-confirmation-icon {
   font-size: 4rem;
+}
+
+.proto-confirmation-icon-repeat {
+  font-size: 2.5rem;
+  align-self: flex-end;
+  opacity: 0.85;
 }
 
 .proto-confirmation-title {
@@ -474,20 +537,38 @@ defineExpose({ stop: stopScanning })
   padding: 12px 15px;
 }
 
-.proto-camera-indicator {
-  text-align: center;
-  margin-bottom: 10px;
-  font-size: 0.95rem;
+.proto-camera-picker-btn {
+  width: 100%;
+  padding: 14px 18px;
+  font-weight: 600;
 }
 
-.proto-camera-buttons {
-  display: flex;
-  gap: 10px;
-  justify-content: center;
-  flex-wrap: wrap;
+.proto-camera-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  max-height: 240px;
+  overflow-y: auto;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
 }
 
-.proto-camera-selector {
-  margin-top: 10px;
+.proto-camera-list-item {
+  width: 100%;
+  text-align: left;
+  padding: 12px 16px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  color: white;
+}
+
+.proto-camera-list-item:last-child {
+  border-bottom: none;
+}
+
+.proto-camera-list-item.active {
+  background: rgba(40, 167, 69, 0.4);
+  font-weight: 700;
 }
 </style>

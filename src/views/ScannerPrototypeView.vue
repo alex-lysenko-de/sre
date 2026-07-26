@@ -14,12 +14,10 @@
           <font-awesome-icon :icon="['fas', 'arrow-left']"/>
           Beenden
         </button>
-        <button class="btn btn-success" :disabled="packet.children.length === 0" @click="sendStub">
+        <button class="btn btn-success" :disabled="packet.children.length === 0 || isSending" @click="sendStub">
           Senden
         </button>
       </div>
-
-      <div v-if="sentMessage" class="alert alert-info mb-0 mt-2">{{ sentMessage }}</div>
 
       <div class="proto-summary-count mt-2">
         Gescannt in diesem Durchgang: <strong>{{ packet.children.length }}</strong>
@@ -40,19 +38,20 @@ import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import Scanner from '@/components/scanner/Scanner.vue'
 import { useUserStore } from '@/stores/user'
-import { useScannerFeedback } from '@/composables/useScannerFeedback'
 
 const router = useRouter()
 const userStore = useUserStore()
-const feedback = useScannerFeedback()
 
 const scannerRef = ref(null)
-const sentMessage = ref('')
+const isSending = ref(false)
 
 // Liste "in diesem Durchgang gescannt" - fuer die Anzeige und Duplikat-Erkennung.
 const scannedList = reactive([])
 
 // PresencePacket (tickets/120/120.txt) - Form GROUP, wird nur im Speicher gehalten.
+// group_id stammt aus userInfo.group_id ("Gruppe heute", siehe CLAUDE.md) und kann
+// null sein, wenn dem Nutzer heute keine Gruppe zugewiesen ist - fuer den Prototyp
+// unkritisch (Paket wird nirgends versendet), aber nicht ungeprueft nach 120 uebernehmen.
 const packet = reactive({
   type: 'GROUP',
   author_id: userStore.userInfo.id,
@@ -62,21 +61,26 @@ const packet = reactive({
   children: []
 })
 
-const DUPLICATE_SOUND = { frequencies: [440, 440], duration: 0.15 }
-const DUPLICATE_VIBRATION = [80]
+const resetRound = () => {
+  packet.started_at = null
+  packet.finished_at = null
+  packet.children.splice(0, packet.children.length)
+  scannedList.splice(0, scannedList.length)
+}
 
 const handleResolved = async (result) => {
   if (result.status !== 'found') {
-    return undefined // Scanner zeigt den Standardbildschirm für invalid/not-found selbst.
+    return undefined // Scanner zeigt den Standardbildschirm für invalid/not-found/error selbst.
   }
 
   const child = result.child
   const alreadyScanned = packet.children.some(entry => entry.child_id === child.id)
 
   if (alreadyScanned) {
-    feedback.playTone(DUPLICATE_SOUND.frequencies, DUPLICATE_SOUND.duration)
-    feedback.vibrate(DUPLICATE_VIBRATION)
-    return { title: 'Bereits gescannt', subtitle: child.name, variant: 'error' }
+    // Laut manuellem Test (REVIEW_REPORT.md) ist ein Wiederholungsscan kein Fehler:
+    // gruener Erfolgsbildschirm + Standard-Erfolgston (in Scanner.vue bereits
+    // ausgeloest), nur mit Hinweistext und zusaetzlicher "doppelt"-Markierung.
+    return { title: 'Bereits erfasst', subtitle: child.name, variant: 'success', repeat: true }
   }
 
   const now = new Date().toISOString()
@@ -90,10 +94,28 @@ const handleResolved = async (result) => {
   return undefined // Scanner zeigt den Standard-Erfolgsbildschirm (Name des Kindes).
 }
 
-const sendStub = () => {
-  // Bewusster Stub (116.txt, "Was nicht in dieses Ticket gehört"): kein Netzwerk-/DB-Aufruf.
-  packet.finished_at = new Date().toISOString()
-  sentMessage.value = 'Gesendet (Simulation) – es wurde nichts an den Server übertragen.'
+const sendStub = async () => {
+  if (isSending.value) {
+    return
+  }
+  isSending.value = true
+  try {
+    // Bewusster Stub (116.txt, "Was nicht in dieses Ticket gehört"): kein Netzwerk-/DB-Aufruf.
+    packet.finished_at = new Date().toISOString()
+    await scannerRef.value?.showMessage('success', {
+      title: 'Gesendet',
+      subtitle: 'Simulation – es wurde nichts an den Server übertragen.'
+    })
+    resetRound()
+  } catch (error) {
+    console.error('❌ Fehler beim Senden (Stub):', error)
+    await scannerRef.value?.showMessage('error', {
+      title: 'Fehler beim Senden',
+      subtitle: 'Bitte erneut versuchen.'
+    })
+  } finally {
+    isSending.value = false
+  }
 }
 
 const exit = async () => {
@@ -121,6 +143,8 @@ const exit = async () => {
 
 .proto-summary-actions .btn {
   flex: 1;
+  padding: 16px 18px;
+  font-size: 1.1rem;
 }
 
 .proto-summary-count {
