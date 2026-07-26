@@ -6,8 +6,7 @@
 
         <!-- Logo/Brand - Links to Main -->
         <router-link to="/main" class="navbar-brand text-white fw-bold mb-0 text-decoration-none btn btn-success shadow">
-          <font-awesome-icon :icon="['fas', 'home']" class="me-2"/>
-          Home
+          🌳 SRE
         </router-link>
 
         <!-- User Info Indicators (Group & Bus) -->
