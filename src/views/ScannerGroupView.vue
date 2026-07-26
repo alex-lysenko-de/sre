@@ -19,7 +19,7 @@
 
 <template>
   <div class="scan-mode-view">
-    <Scanner ref="scannerRef" :on-child-resolved="handleResolved"/>
+    <Scanner ref="scannerRef" :on-child-resolved="handleResolved" :on-bind-requested="onBindRequested"/>
 
     <div class="mode-panel">
       <h5 class="mode-title">Gruppen-Appell — Gruppe {{ groupId }}</h5>
@@ -54,8 +54,8 @@
       </ul>
 
       <div class="mode-actions">
-        <button class="btn btn-secondary" :disabled="isSending" @click="handleReset">
-          Reset
+        <button class="btn btn-secondary" :disabled="isSending" @click="handleClose">
+          Close
         </button>
         <button class="btn btn-success" :disabled="foundCount === 0 || isSending" @click="handleSend">
           Senden
@@ -67,11 +67,13 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import Scanner from '@/components/scanner/Scanner.vue'
 import { useUserStore } from '@/stores/user'
 import { useArmband } from '@/composables/useArmband'
 import { useScanPacket } from '@/composables/useScanPacket'
 
+const router = useRouter()
 const userStore = useUserStore()
 const armband = useArmband()
 const scanPacket = useScanPacket()
@@ -149,6 +151,20 @@ const markManual = (child) => {
 const handleReset = () => {
   scanPacket.resetPacket()
   roster.forEach(child => { child.found = false })
+}
+
+// Beendet den Modus ohne Versand (tickets/126/126.txt Punkt 6) - Navigation
+// explizit statt router.back(), da dieser Screen nicht nur von /main erreicht
+// werden kann.
+const handleClose = () => {
+  router.push('/main')
+}
+
+// Nicht-verbundenes Armband -> Zuordnung anbieten (tickets/126/126.txt Punkt 7):
+// Session ohne Versand beenden, dann zum bestehenden Zuordnungs-Screen.
+const onBindRequested = (bandId) => {
+  handleReset()
+  router.push({ name: 'Armband', params: { id: bandId } })
 }
 
 const handleSend = async () => {

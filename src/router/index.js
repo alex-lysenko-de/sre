@@ -112,6 +112,13 @@ const routes = [
         meta: { requiresAuth: true, requiresAdmin: false }
     },
 
+    {
+        path: '/scanner/settings',
+        name: 'ScannerSettings',
+        component: () => import('@/views/ScannerSettingsView.vue'),
+        meta: { requiresAuth: true, requiresAdmin: false }
+    },
+
 
     {
         path: '/child/:id',

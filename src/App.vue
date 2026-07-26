@@ -1,26 +1,13 @@
 <template>
   <div class="min-vh-100 bg-light">
-    <!-- Daily Check-In Modal (Blocking) -->
-    <DailyCheckInModal
-        :show="showCheckInModal"
-        @completed="onCheckInCompleted"
-        @error="onCheckInError"
-        @close="showCheckInModal = false"
-    />
-
     <!-- Navigation Bar -->
     <nav v-if="isAuthenticated" class="navbar navbar-expand-lg navbar-light bg-success shadow-sm">
       <div class="container-fluid px-1">
 
-        <div v-if="isCheckInRequired" class="ms-auto me-2">
-          <button class="btn btn-warning fw-bold" @click="showCheckInModal = true">
-            Ich fahre heute mit!
-          </button>
-        </div>
-
         <!-- Logo/Brand - Links to Main -->
         <router-link to="/main" class="navbar-brand text-white fw-bold mb-0 text-decoration-none btn btn-success shadow">
-          🌳 SRE
+          <font-awesome-icon :icon="['fas', 'home']" class="me-2"/>
+          Home
         </router-link>
 
         <!-- User Info Indicators (Group & Bus) -->
@@ -94,6 +81,11 @@
                 ℹ️ Info
               </router-link>
             </li>
+            <li class="nav-item">
+              <router-link to="/scanner/settings" class="nav-link text-white" @click="closeMenu">
+                📷 Scanner
+              </router-link>
+            </li>
           </ul>
 
           <!-- Mobile Group/Bus Indicators -->
@@ -160,7 +152,6 @@ import { useRouter, useRoute } from 'vue-router'
 import { supabase } from './supabase'
 import { useUserStore } from './stores/user'
 import { getAuthItem, setAuthItem, clearAllAuthStorage } from './modules/storage'
-import DailyCheckInModal from './views/DailyCheckInModalView.vue'
 import GroupChangeModal from './components/GroupChangeModal.vue'
 import BusChangeModal from './components/BusChangeModal.vue'
 import LogoutConfirmModal from './components/LogoutConfirmModal.vue'
@@ -182,7 +173,6 @@ const userEmail = computed(() => userStore.userEmail)
 const isAuthenticated = ref(false)
 const showGroupChangeModal = ref(false)
 const showBusChangeModal = ref(false)
-const showCheckInModal = ref(false)
 const showLogoutConfirmModal = ref(false)
 
 // Refs for menu control
@@ -323,22 +313,6 @@ async function checkAuth() {
   } catch (err) {
     console.error('Fehler bei der Berechtigungsprüfung:', err)
   }
-}
-
-/**
- * Handle check-in completion
- */
-function onCheckInCompleted(data) {
-  console.log('✅ Daily registration completed', data)
-  showCheckInModal.value = false
-  userStore.loadUser(true) // Force reload user data
-}
-
-/**
- * Handle check-in error
- */
-function onCheckInError(error) {
-  console.error('❌ Fehler bei der Registrierung:', error)
 }
 
 /**

@@ -3,15 +3,24 @@
 <!-- Kamera, Decode, Bracelet-Resolve, Grundfeedback (Ton/Vibration/Bestaetigungsbildschirm). -->
 <!-- Kennt keine Modi (Bus/Gruppe/Checkin, siehe Ticket 120) - liefert nur das Resolve-Ergebnis
      ueber den Pflicht-Callback-Prop onChildResolved nach oben. -->
+<!-- Kamera-Einstellungen (bevorzugte Kamera, Anzeigedauern) sind seit Ticket 126
+     in useScannerSettings.js ausgelagert - siehe tickets/126/126.txt Punkt 4. -->
 
 <template>
   <div class="proto-scanner">
     <div class="proto-scan-area">
       <div id="qr-reader-proto"></div>
 
-      <div v-if="!scannerActive && !confirmation.show" class="proto-scanner-overlay">
+      <div v-if="isTransitioning && !confirmation.show" class="proto-scanner-overlay">
         <div class="spinner-border text-light" role="status"></div>
         <p>Scanner wird initialisiert...</p>
+      </div>
+
+      <div v-if="!scannerActive && !isTransitioning && !confirmation.show" class="proto-scanner-off">
+        <button class="btn btn-primary proto-scan-btn" @click="startCamera">
+          <font-awesome-icon :icon="['fas', 'qrcode']" size="2x" class="mb-2"/>
+          <div>Scan</div>
+        </button>
       </div>
 
       <div v-if="confirmation.show" class="proto-confirmation" :class="confirmation.variant">
@@ -28,50 +37,27 @@
         </div>
         <div class="proto-confirmation-title">{{ confirmation.title }}</div>
         <div v-if="confirmation.subtitle" class="proto-confirmation-subtitle">{{ confirmation.subtitle }}</div>
+
+        <div v-if="confirmation.persistent" class="proto-confirmation-actions">
+          <button class="btn btn-outline-light" @click="handleConfirmationCancel">
+            Cancel
+          </button>
+          <button class="btn btn-warning fw-bold" @click="handleConfirmationBind">
+            Привязать бейдж
+          </button>
+        </div>
       </div>
-    </div>
-
-    <div class="proto-scanner-controls">
-      <button
-          class="btn btn-warning proto-camera-picker-btn"
-          :disabled="controlsDisabled"
-          @click="showCameraSelector = !showCameraSelector"
-      >
-        Kamera: {{ currentCameraLabel }}
-      </button>
-
-      <ul v-if="showCameraSelector" class="proto-camera-list">
-        <li>
-          <button
-              class="proto-camera-list-item"
-              :class="{ active: currentCameraId === null }"
-              :disabled="controlsDisabled"
-              @click="chooseCamera(null)"
-          >
-            Automatische Kamerawahl
-          </button>
-        </li>
-        <li v-for="cam in cameraList" :key="cam.id">
-          <button
-              class="proto-camera-list-item"
-              :class="{ active: currentCameraId === cam.id }"
-              :disabled="controlsDisabled"
-              @click="chooseCamera(cam.id)"
-          >
-            {{ cam.label || cam.id }}
-          </button>
-        </li>
-      </ul>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, reactive, onMounted, onBeforeUnmount } from 'vue'
 import { Html5Qrcode } from 'html5-qrcode'
 import { useArmband } from '@/composables/useArmband'
 import { useConfigStore } from '@/stores/config.js'
 import { useScannerFeedback } from '@/composables/useScannerFeedback'
+import { useScannerSettings } from '@/composables/useScannerSettings'
 
 const props = defineProps({
   // Pflicht-Callback: async (result) => ({ title, subtitle, variant?, repeat? })
@@ -79,18 +65,41 @@ const props = defineProps({
   onChildResolved: {
     type: Function,
     required: true
+  },
+  // Wenn false, wird die Kamera nicht automatisch beim Mounten gestartet -
+  // stattdessen erscheint sofort der Scan-Button (siehe unten). Fuer die
+  // eingebettete Kopfzaehlung-Panel (tickets/126/126.txt Punkt 5), deren
+  // Bereich immer sichtbar bleiben soll, aber nicht immer die Kamera laufen
+  // lassen darf.
+  autoStart: {
+    type: Boolean,
+    default: true
+  },
+  // Optional: async/sync (bandId) => void. Wenn gesetzt, zeigt der Status
+  // 'not-found' einen persistenten Bildschirm mit Cancel/"Привязать бейдж"
+  // statt des automatisch schliessenden Standardbildschirms (tickets/126/126.txt
+  // Punkt 7). "Привязать бейдж" ruft diesen Callback auf und setzt das
+  // Scannen NICHT selbst fort - das ist Sache der aufrufenden Seite (Navigation
+  // weg von diesem Bildschirm oder expliziter stop()-Aufruf).
+  onBindRequested: {
+    type: Function,
+    default: null
   }
 })
+
+// Fuer Aufrufer, die die Kamera nicht selbst ueber start()/stop() ansteuern,
+// sondern nur ihren eigenen Zustand synchron halten wollen (Kopfzaehlung,
+// tickets/126/126.txt Punkt 5: Paketaufbau soll bei jedem Kamerastart neu
+// beginnen) - Scanner.vue kennt dabei weiterhin keine Modi, meldet nur den
+// eigenen Kamerazustand nach oben.
+const emit = defineEmits(['camera-started', 'camera-stopped'])
 
 const armband = useArmband()
 const configStore = useConfigStore()
 const feedback = useScannerFeedback()
+const settings = useScannerSettings()
 
 let html5QrCode = null
-
-// Gleicher Schluessel wie ScannerView.vue - die bevorzugte Kamera ist eine
-// Geraete-Praeferenz, kein View-spezifischer Zustand, daher gemeinsam nutzbar.
-const CAMERA_STORAGE_KEY = 'scanner_preferred_camera_id'
 
 const SCANNER_CONFIG = {
   fps: 10,
@@ -98,40 +107,23 @@ const SCANNER_CONFIG = {
   aspectRatio: 1.0
 }
 
-const cameraList = ref([])
-const currentCameraId = ref(null) // null = automatischer Modus (facingMode)
-const showCameraSelector = ref(false)
 const scannerActive = ref(false)
-// Sperrt Kamera-Steuerelemente waehrend eines html5QrCode.start()/stop()-Uebergangs.
-const isTransitioning = ref(false)
+// Spiegelt den Anfangszustand von autoStart, damit beim ersten Rendern kein
+// falscher Zwischenzustand (Scan-Button bzw. Spinner) kurz aufblitzt, bevor
+// onMounted/startCamera laeuft.
+const isTransitioning = ref(props.autoStart)
 // Sperrt neue Scans, waehrend der letzte Scan noch verarbeitet/angezeigt wird.
 const isProcessing = ref(false)
-
-const controlsDisabled = computed(() => isTransitioning.value || isProcessing.value)
-
-const currentCameraLabel = computed(() => {
-  if (currentCameraId.value === null) {
-    return 'Automatisch (Rückkamera)'
-  }
-  const cam = cameraList.value.find(c => c.id === currentCameraId.value)
-  return cam ? (cam.label || cam.id) : currentCameraId.value
-})
 
 const confirmation = reactive({
   show: false,
   variant: 'success',
   title: '',
   subtitle: '',
-  repeat: false
+  repeat: false,
+  persistent: false,
+  bandId: null
 })
-
-// Anzeigedauer des Bestaetigungsbildschirms - laut manuellem Test auf echten
-// Geraeten war eine einzige Konstante (0.8s) fuer beide Ergebnisarten zu kurz,
-// besonders um Fehlertexte zu lesen.
-const CONFIRMATION_DURATION_MS = {
-  success: 1600,
-  error: 3000
-}
 
 // ============================================
 // QR-Code Format (wie ScannerView.vue, unabhaengig neu implementiert)
@@ -166,34 +158,36 @@ const VIBRATION_LONG = [300]
 
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 
+const durationFor = (variant) => variant === 'success' ? settings.successDurationMs.value : settings.errorDurationMs.value
+
 // ============================================
 // KAMERA-STEUERUNG
 // ============================================
 const startScanningWithDeviceId = async (deviceId) => {
   await html5QrCode.start(deviceId, SCANNER_CONFIG, onScanSuccess, onScanError)
   scannerActive.value = true
-  currentCameraId.value = deviceId
+  emit('camera-started')
 }
 
 const startScanningWithDeviceListFallback = async () => {
-  if (!cameraList.value || cameraList.value.length === 0) {
+  if (!settings.cameraList.value || settings.cameraList.value.length === 0) {
     try {
-      cameraList.value = await Html5Qrcode.getCameras()
+      await settings.loadCameraList()
     } catch (accessError) {
       console.error('❌ Kein Zugriff auf die Kamera:', accessError)
       alert('Kein Zugriff auf die Kamera. Bitte Berechtigungen prüfen.')
       return
     }
   }
-  if (!cameraList.value || cameraList.value.length === 0) {
+  if (!settings.cameraList.value || settings.cameraList.value.length === 0) {
     alert('Keine Kamera gefunden!')
     return
   }
-  const backCamera = cameraList.value.find(device =>
+  const backCamera = settings.cameraList.value.find(device =>
       device.label.toLowerCase().includes('back') ||
       device.label.toLowerCase().includes('rear') ||
       device.label.includes('0')
-  ) || cameraList.value[0]
+  ) || settings.cameraList.value[0]
   await startScanningWithDeviceId(backCamera.id)
 }
 
@@ -201,13 +195,13 @@ const startScanningWithFacingMode = async () => {
   try {
     await html5QrCode.start({ facingMode: { exact: 'environment' } }, SCANNER_CONFIG, onScanSuccess, onScanError)
     scannerActive.value = true
-    currentCameraId.value = null
+    emit('camera-started')
   } catch (exactError) {
     console.warn('⚠️ facingMode { exact: "environment" } fehlgeschlagen:', exactError)
     try {
       await html5QrCode.start({ facingMode: 'environment' }, SCANNER_CONFIG, onScanSuccess, onScanError)
       scannerActive.value = true
-      currentCameraId.value = null
+      emit('camera-started')
     } catch (nonExactError) {
       console.warn('⚠️ facingMode "environment" fehlgeschlagen, Fallback auf Geräteliste:', nonExactError)
       await startScanningWithDeviceListFallback()
@@ -223,57 +217,40 @@ const stopScanning = async () => {
       console.warn('⚠️ Fehler beim Stoppen des Scanners:', error)
     } finally {
       scannerActive.value = false
+      emit('camera-stopped')
     }
   }
 }
 
-// Einheitliche Kamerawahl: deviceId einer konkreten Kamera oder null fuer den
-// automatischen Modus (facingMode) - beide Faelle sind gleichwertige Eintraege
-// derselben Liste (Ergebnis der manuellen UX-Tests, siehe REVIEW_REPORT.md).
-const chooseCamera = async (deviceId) => {
-  if (controlsDisabled.value) {
-    return
-  }
-  if (deviceId === currentCameraId.value) {
-    showCameraSelector.value = false
+// Startet die Kamera - sowohl beim automatischen Start (autoStart, onMounted)
+// als auch ueber den manuellen Scan-Button/expose start() (tickets/126/126.txt
+// Punkt 5). Liest die bevorzugte Kamera aus useScannerSettings statt sie
+// selbst zu verwalten.
+const startCamera = async () => {
+  if (scannerActive.value || isTransitioning.value) {
     return
   }
   isTransitioning.value = true
   try {
-    await stopScanning()
-    if (deviceId === null) {
-      await startScanningWithFacingMode()
-      localStorage.removeItem(CAMERA_STORAGE_KEY)
-    } else {
-      await startScanningWithDeviceId(deviceId)
-      localStorage.setItem(CAMERA_STORAGE_KEY, deviceId)
+    if (!html5QrCode) {
+      html5QrCode = new Html5Qrcode('qr-reader-proto')
     }
-    showCameraSelector.value = false
-  } catch (error) {
-    console.error('❌ Fehler beim Wechseln der Kamera:', error)
-    alert('Fehler beim Wechseln der Kamera.')
-  } finally {
-    isTransitioning.value = false
-  }
-}
-
-const initScanner = async () => {
-  isTransitioning.value = true
-  try {
-    html5QrCode = new Html5Qrcode('qr-reader-proto')
     await configStore.loadConfig()
 
-    try {
-      cameraList.value = await Html5Qrcode.getCameras()
-    } catch (listError) {
-      console.warn('⚠️ Kameraliste konnte nicht geladen werden:', listError)
+    if (!settings.cameraList.value || settings.cameraList.value.length === 0) {
+      try {
+        await settings.loadCameraList()
+      } catch (listError) {
+        console.warn('⚠️ Kameraliste konnte nicht geladen werden:', listError)
+      }
     }
 
-    const savedCameraId = localStorage.getItem(CAMERA_STORAGE_KEY)
-    const savedCameraStillExists = savedCameraId && cameraList.value.some(device => device.id === savedCameraId)
+    const preferredCameraId = settings.preferredCameraId.value
+    const preferredCameraStillExists = preferredCameraId &&
+        settings.cameraList.value.some(device => device.id === preferredCameraId)
 
-    if (savedCameraStillExists) {
-      await startScanningWithDeviceId(savedCameraId)
+    if (preferredCameraStillExists) {
+      await startScanningWithDeviceId(preferredCameraId)
     } else {
       await startScanningWithFacingMode()
     }
@@ -301,16 +278,43 @@ const defaultDisplayFor = (result) => {
   return { title: result.child.name, subtitle: `Gruppe ${result.child.group_id}` }
 }
 
-const showConfirmationScreen = (variant, display) => {
+const showConfirmationScreen = (variant, display, persistent = false, bandId = null) => {
   confirmation.variant = variant
   confirmation.title = display.title
   confirmation.subtitle = display.subtitle || ''
   confirmation.repeat = !!display.repeat
+  confirmation.persistent = persistent
+  confirmation.bandId = bandId
   confirmation.show = true
 }
 
 const hideConfirmationScreen = () => {
   confirmation.show = false
+  confirmation.persistent = false
+  confirmation.bandId = null
+}
+
+const resumeAfterConfirmation = () => {
+  hideConfirmationScreen()
+  try {
+    html5QrCode.resume()
+  } catch (error) {
+    console.warn('⚠️ Fehler beim Fortsetzen des Scanners:', error)
+  }
+  isProcessing.value = false
+}
+
+// Nicht-verbundenes Armband: Meldung bleibt stehen, bis der Nutzer Cancel
+// oder "Привязать бейдж" waehlt (tickets/126/126.txt Punkt 7) - kein Auto-Hide.
+const handleConfirmationCancel = () => {
+  resumeAfterConfirmation()
+}
+
+const handleConfirmationBind = () => {
+  const bandId = confirmation.bandId
+  hideConfirmationScreen()
+  isProcessing.value = false
+  props.onBindRequested?.(bandId)
 }
 
 const onScanSuccess = async (decodedText) => {
@@ -378,18 +382,19 @@ const onScanSuccess = async (decodedText) => {
   }
 
   const variant = display.variant || (result.status === 'found' ? 'success' : 'error')
-  showConfirmationScreen(variant, display)
 
-  await wait(CONFIRMATION_DURATION_MS[variant])
-  hideConfirmationScreen()
-
-  try {
-    html5QrCode.resume()
-  } catch (error) {
-    console.warn('⚠️ Fehler beim Fortsetzen des Scanners:', error)
+  // Persistenter Zweig fuer nicht-verbundenes Armband (Punkt 7): Bildschirm
+  // bleibt stehen, bis der Nutzer Cancel/"Привязать бейдж" waehlt - kein
+  // automatisches Fortsetzen. Nur aktiv, wenn die aufrufende Seite
+  // onBindRequested uebergeben hat (z. B. nicht in HeadcountView.vue).
+  if (result.status === 'not-found' && props.onBindRequested) {
+    showConfirmationScreen(variant, display, true, result.bandId)
+    return
   }
 
-  isProcessing.value = false
+  showConfirmationScreen(variant, display)
+  await wait(durationFor(variant))
+  resumeAfterConfirmation()
 }
 
 const onScanError = () => {
@@ -410,7 +415,7 @@ const showExternalMessage = async (variant, display, durationMs) => {
   }
 
   showConfirmationScreen(variant, display)
-  await wait(durationMs || CONFIRMATION_DURATION_MS[variant] || CONFIRMATION_DURATION_MS.success)
+  await wait(durationMs || durationFor(variant))
   hideConfirmationScreen()
 
   if (wasActive) {
@@ -428,7 +433,11 @@ const showExternalMessage = async (variant, display, durationMs) => {
 onMounted(() => {
   window.addEventListener('touchend', feedback.unlockAudioContext, { once: true })
   window.addEventListener('click', feedback.unlockAudioContext, { once: true })
-  initScanner()
+  if (props.autoStart) {
+    startCamera()
+  } else {
+    isTransitioning.value = false
+  }
 })
 
 onBeforeUnmount(async () => {
@@ -438,7 +447,7 @@ onBeforeUnmount(async () => {
   await stopScanning()
 })
 
-defineExpose({ stop: stopScanning, showMessage: showExternalMessage })
+defineExpose({ start: startCamera, stop: stopScanning, showMessage: showExternalMessage })
 </script>
 
 <style scoped>
@@ -481,6 +490,27 @@ defineExpose({ stop: stopScanning, showMessage: showExternalMessage })
   justify-content: center;
   gap: 15px;
   color: white;
+}
+
+.proto-scanner-off {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.proto-scan-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 60%;
+  aspect-ratio: 1 / 1;
+  border-radius: 50%;
+  font-size: 1.2rem;
+  font-weight: 700;
 }
 
 .proto-confirmation {
@@ -530,45 +560,9 @@ defineExpose({ stop: stopScanning, showMessage: showExternalMessage })
   opacity: 0.9;
 }
 
-.proto-scanner-controls {
-  flex: 0 0 auto;
-  background: #212529;
-  color: white;
-  padding: 12px 15px;
-}
-
-.proto-camera-picker-btn {
-  width: 100%;
-  padding: 14px 18px;
-  font-weight: 600;
-}
-
-.proto-camera-list {
-  list-style: none;
-  margin: 10px 0 0;
-  padding: 0;
-  max-height: 240px;
-  overflow-y: auto;
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
-}
-
-.proto-camera-list-item {
-  width: 100%;
-  text-align: left;
-  padding: 12px 16px;
-  background: transparent;
-  border: none;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  color: white;
-}
-
-.proto-camera-list-item:last-child {
-  border-bottom: none;
-}
-
-.proto-camera-list-item.active {
-  background: rgba(40, 167, 69, 0.4);
-  font-weight: 700;
+.proto-confirmation-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
 }
 </style>

@@ -36,15 +36,6 @@
     </div>
 
     <template v-else>
-      <button
-          v-if="!groupScanSession.isOpen.value"
-          class="btn btn-primary kz-scan-btn"
-          @click="groupScanSession.openPanel"
-      >
-        <font-awesome-icon :icon="['fas', 'qrcode']" class="me-2"/>
-        Scan
-      </button>
-
       <div v-if="groupScanSession.sendError.value" class="alert alert-danger kz-send-error py-1 px-2 d-flex justify-content-between align-items-center">
         <span>{{ groupScanSession.sendError.value }}</span>
         <button class="btn btn-sm btn-outline-danger" @click="groupScanSession.retrySend">
@@ -52,11 +43,18 @@
         </button>
       </div>
 
-      <transition name="kz-scanner-panel">
-        <div v-if="groupScanSession.isOpen.value" class="kz-scanner-panel">
-          <Scanner :on-child-resolved="groupScanSession.handleResolved"/>
-        </div>
-      </transition>
+      <!-- Bereich bleibt immer an Ort und Stelle (tickets/126/126.txt Punkt 5) -
+           es wird nur die Kamera an-/abgeschaltet (autoStart="false", interner
+           Scan-Button von Scanner.vue), nicht das Panel selbst gemountet/entfernt. -->
+      <div class="kz-scanner-panel">
+        <Scanner
+            ref="scannerRef"
+            :auto-start="false"
+            :on-child-resolved="groupScanSession.handleResolved"
+            @camera-started="groupScanSession.onCameraStarted"
+            @camera-stopped="groupScanSession.onCameraStopped"
+        />
+      </div>
 
       <div class="table-responsive kz-table-wrap">
         <table class="table table-sm kz-table mb-0">
@@ -118,13 +116,14 @@ const groupId = ref(null)
 const loadingInitialData = ref(true)
 const loadError = ref(null)
 const children = ref([])
+const scannerRef = ref(null)
 
 const presentCount = computed(() => children.value.filter(child => child.presentNow).length)
 // Punkt 5 der Anforderung: Spalte "Morgens" ausblenden, solange noch niemand
 // in der Gruppe heute presence_morning=1 hat (naeherungsweise, siehe Plan/Risiken).
 const showMorningColumn = computed(() => children.value.some(child => child.presenceMorning))
 
-const groupScanSession = useGroupScanSession(groupId, children)
+const groupScanSession = useGroupScanSession(groupId, children, scannerRef)
 
 const loadInitialData = async () => {
   loadingInitialData.value = true
@@ -215,11 +214,6 @@ init()
   font-weight: 700;
 }
 
-.kz-scan-btn {
-  width: 100%;
-  margin-bottom: 8px;
-}
-
 .kz-send-error {
   margin-bottom: 8px;
 }
@@ -230,16 +224,6 @@ init()
   overflow-x: hidden;
   margin-bottom: 8px;
   border-radius: 8px;
-}
-
-.kz-scanner-panel-enter-active,
-.kz-scanner-panel-leave-active {
-  transition: max-height 0.3s ease;
-}
-
-.kz-scanner-panel-enter-from,
-.kz-scanner-panel-leave-to {
-  max-height: 0;
 }
 
 .kz-table-wrap {

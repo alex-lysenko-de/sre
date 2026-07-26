@@ -23,6 +23,22 @@
         <!-- Main Menu -->
         <div v-else class="d-grid gap-3">
 
+          <!-- Daily Check-In Button (moved from navbar, tickets/126/126.txt Punkt 2) -->
+          <button
+              v-if="isAuthenticated && userStore.isCheckInRequired"
+              @click="showCheckInModal = true"
+              class="btn btn-warning btn-lg d-flex align-items-center justify-content-between fw-bold"
+          >
+            <span class="d-flex align-items-center">
+              <font-awesome-icon :icon="['fas', 'calendar-check']" class="me-3" size="2x" />
+              <span>
+                <div class="fw-bold text-start">Ich fahre heute mit!</div>
+                <small class="opacity-75">Tägliche Registrierung</small>
+              </span>
+            </span>
+            <font-awesome-icon :icon="['fas', 'arrow-right']" />
+          </button>
+
           <!-- User's Group Button -->
           <button
               v-if="isAuthenticated && userStore.userInfo.group_id"
@@ -90,7 +106,7 @@
 
           <!-- Bus Scan Button (for authenticated users, disabled without bus_id) -->
           <button
-              v-if="isAuthenticated"
+              v-if="isAuthenticated && !userStore.isCheckInRequired"
               :disabled="!userStore.userInfo.bus_id"
               @click="goToScanBus"
               class="btn btn-success btn-lg d-flex align-items-center justify-content-between"
@@ -109,7 +125,7 @@
 
           <!-- Group Scan Button (for authenticated users, disabled without group_id) -->
           <button
-              v-if="isAuthenticated"
+              v-if="isAuthenticated && !userStore.isCheckInRequired"
               :disabled="!userStore.userInfo.group_id"
               @click="goToScanGroup"
               class="btn btn-success btn-lg d-flex align-items-center justify-content-between"
@@ -128,7 +144,7 @@
 
           <!-- Checkin Scan Button (for authenticated users, no availability condition) -->
           <button
-              v-if="isAuthenticated"
+              v-if="isAuthenticated && !userStore.isCheckInRequired"
               @click="goToScanCheckin"
               class="btn btn-success btn-lg d-flex align-items-center justify-content-between"
           >
@@ -189,6 +205,14 @@
         </div>
       </div>
     </div>
+
+    <!-- Daily Check-In Modal (moved from App.vue, tickets/126/126.txt Punkt 2) -->
+    <DailyCheckInModal
+        :show="showCheckInModal"
+        @completed="onCheckInCompleted"
+        @error="onCheckInError"
+        @close="showCheckInModal = false"
+    />
   </div>
 </template>
 
@@ -197,12 +221,14 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { supabase } from '@/supabase'
+import DailyCheckInModal from '@/views/DailyCheckInModalView.vue'
 
 const router = useRouter()
 const userStore = useUserStore()
 
 const loading = ref(true)
 const isAuthenticated = ref(false)
+const showCheckInModal = ref(false)
 
 const userEmail = computed(() => userStore.userEmail)
 
@@ -262,6 +288,22 @@ function goToLogin() {
 
 function goToInfo() {
   router.push('/info')
+}
+
+/**
+ * Handle check-in completion (moved from App.vue unverändert)
+ */
+function onCheckInCompleted(data) {
+  console.log('✅ Daily registration completed', data)
+  showCheckInModal.value = false
+  userStore.loadUser(true) // Force reload user data
+}
+
+/**
+ * Handle check-in error
+ */
+function onCheckInError(error) {
+  console.error('❌ Fehler bei der Registrierung:', error)
 }
 
 /**

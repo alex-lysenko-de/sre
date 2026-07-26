@@ -8,7 +8,7 @@
 
 <template>
   <div class="scan-mode-view">
-    <Scanner ref="scannerRef" :on-child-resolved="handleResolved"/>
+    <Scanner ref="scannerRef" :on-child-resolved="handleResolved" :on-bind-requested="onBindRequested"/>
 
     <div class="mode-panel">
       <h5 class="mode-title">Freie Meldung</h5>
@@ -26,8 +26,8 @@
       </ul>
 
       <div class="mode-actions">
-        <button class="btn btn-secondary" :disabled="isSending" @click="handleReset">
-          Reset
+        <button class="btn btn-secondary" :disabled="isSending" @click="handleClose">
+          Close
         </button>
         <button class="btn btn-success" :disabled="scannedList.length === 0 || isSending" @click="handleSend">
           Senden
@@ -39,9 +39,11 @@
 
 <script setup>
 import { ref, reactive } from 'vue'
+import { useRouter } from 'vue-router'
 import Scanner from '@/components/scanner/Scanner.vue'
 import { useScanPacket } from '@/composables/useScanPacket'
 
+const router = useRouter()
 const scanPacket = useScanPacket()
 
 const scannerRef = ref(null)
@@ -74,6 +76,20 @@ const handleResolved = async (result) => {
 const handleReset = () => {
   scanPacket.resetPacket()
   scannedList.splice(0, scannedList.length)
+}
+
+// Beendet den Modus ohne Versand (tickets/126/126.txt Punkt 6) - Navigation
+// explizit statt router.back(), da dieser Screen nicht nur von /main erreicht
+// werden kann.
+const handleClose = () => {
+  router.push('/main')
+}
+
+// Nicht-verbundenes Armband -> Zuordnung anbieten (tickets/126/126.txt Punkt 7):
+// Session ohne Versand beenden, dann zum bestehenden Zuordnungs-Screen.
+const onBindRequested = (bandId) => {
+  handleReset()
+  router.push({ name: 'Armband', params: { id: bandId } })
 }
 
 const handleSend = async () => {
