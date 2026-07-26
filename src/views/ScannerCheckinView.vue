@@ -93,7 +93,7 @@ const handleSend = async () => {
     // "Senden" erneut klicken wiederholt denselben Request.
     await scannerRef.value?.showMessage('error', {
       title: 'Fehler beim Senden',
-      subtitle: 'Bitte erneut versuchen.'
+      subtitle: scanPacket.errorMessage.value || 'Bitte erneut versuchen.'
     })
   } finally {
     isSending.value = false

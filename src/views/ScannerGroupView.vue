@@ -5,7 +5,17 @@
      Kind, das nicht zur aktuellen Gruppe gehoert, ist laut Definition of Done
      (tickets/120/120.txt) ein Fehler der Geschaeftslogik - nicht des Scans:
      das Kind wird nicht ins Paket aufgenommen, stattdessen erscheint eine
-     eigene Meldung ("Kind gehört nicht zu dieser Gruppe"). -->
+     eigene Meldung ("Kind gehört nicht zu dieser Gruppe").
+
+     Bekannte Einschraenkung (Review 120, Major 1): Scanner.vue spielt den
+     Erfolgston/die Vibration bereits bei status 'found' ab, also bevor
+     onChildResolved aufgerufen wird - der Ton kann daher nicht mehr auf
+     'variant: error' reagieren. Dieser Fall (erfolgreicher Scan, aber
+     Geschaeftslogik-Fehler) existierte vor Ticket 120 nicht; Scanner.vue
+     bleibt laut Plan in diesem Ticket unveraendert. Bewusst akzeptiertes
+     Risiko - eine Erweiterung des Scanner.vue-Kontrakts (z.B. Ton an das
+     Ergebnis von onChildResolved statt an den Resolve-Status zu knuepfen)
+     waere ein separates Ticket. -->
 
 <template>
   <div class="scan-mode-view">
@@ -24,7 +34,10 @@
       </div>
 
       <div v-else-if="loadError" class="alert alert-danger">
-        {{ loadError }}
+        <div>{{ loadError }}</div>
+        <button class="btn btn-sm btn-outline-danger mt-2" @click="loadRoster">
+          Erneut versuchen
+        </button>
       </div>
 
       <ul v-else class="mode-roster-list">
@@ -155,7 +168,7 @@ const handleSend = async () => {
     // "Senden" erneut klicken wiederholt denselben Request.
     await scannerRef.value?.showMessage('error', {
       title: 'Fehler beim Senden',
-      subtitle: 'Bitte erneut versuchen.'
+      subtitle: scanPacket.errorMessage.value || 'Bitte erneut versuchen.'
     })
   } finally {
     isSending.value = false

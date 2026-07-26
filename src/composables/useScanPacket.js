@@ -81,7 +81,11 @@ export function useScanPacket() {
     const submitPacket = async () => {
         status.value = 'sending'
         errorMessage.value = ''
-        packet.finished_at = new Date().toISOString()
+        // Nur beim ersten Versuch setzen - ein Retry nach Fehler soll denselben
+        // finished_at (und damit denselben Request) wiederholen (Review 120, Minor 2).
+        if (!packet.finished_at) {
+            packet.finished_at = new Date().toISOString()
+        }
 
         try {
             const { data: { session } } = await supabase.auth.getSession()
