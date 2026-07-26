@@ -72,7 +72,25 @@ CREATE INDEX IF NOT EXISTS idx_scans_packet_id ON public.scans(packet_id) WHERE 
 
 CREATE OR REPLACE FUNCTION on_scan_insert_batch()
 RETURNS TRIGGER AS $$
+DECLARE
+  v_groupless_child_id bigint;
 BEGIN
+  -- A child with no group assigned is not a real-world state (children are
+  -- provisioned with a group up front, see vault/03-База-данных/children.md) -
+  -- same hard-fail contract as the old row-level on_scan_insert(), which did
+  -- "IF v_group_id IS NULL THEN RAISE EXCEPTION" for the same reason. Kept
+  -- explicit here instead of silently letting the JOIN below drop such rows,
+  -- so a violated assumption is loud, not a silently vanishing scan.
+  SELECT s.child_id INTO v_groupless_child_id
+  FROM new_table s
+  JOIN children c ON c.id = s.child_id
+  WHERE c.group_id IS NULL
+  LIMIT 1;
+
+  IF v_groupless_child_id IS NOT NULL THEN
+    RAISE EXCEPTION 'Child % has no group_id assigned - scan batch rejected', v_groupless_child_id;
+  END IF;
+
   -- DISTINCT ON guards against two rows for the same child_id within one
   -- statement (client dedupes within a round via isDuplicate(), but the
   -- server must not rely on that - INSERT ... ON CONFLICT fails outright if
@@ -155,6 +173,18 @@ DECLARE
   v_packet_id bigint;
   v_client_packet_id uuid := (payload->>'client_packet_id')::uuid;
 BEGIN
+  -- A children[] entry without child_id is not a real-world state (the
+  -- scanning client only ever adds a child it already resolved from its own
+  -- roster, see src/composables/useScanPacket.js) - fail loudly instead of
+  -- silently writing an orphan scans row, same reasoning as the group_id
+  -- guard in on_scan_insert_batch() above.
+  IF EXISTS (
+    SELECT 1 FROM jsonb_array_elements(COALESCE(payload->'children', '[]'::jsonb)) AS c
+    WHERE NULLIF(c->>'child_id', '') IS NULL
+  ) THEN
+    RAISE EXCEPTION 'Packet children[] contains an entry without child_id - payload malformed';
+  END IF;
+
   INSERT INTO scan_packets (
     client_packet_id, type, author_id, bus_id, group_id,
     date, started_at, finished_at, children_count
