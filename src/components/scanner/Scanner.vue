@@ -108,10 +108,12 @@ const SCANNER_CONFIG = {
 }
 
 const scannerActive = ref(false)
-// Spiegelt den Anfangszustand von autoStart, damit beim ersten Rendern kein
-// falscher Zwischenzustand (Scan-Button bzw. Spinner) kurz aufblitzt, bevor
-// onMounted/startCamera laeuft.
-const isTransitioning = ref(props.autoStart)
+// Muss mit false starten: startCamera() selbst prueft isTransitioning als
+// Guard gegen doppelte parallele Starts - waere der Initialwert bereits true
+// (z. B. gespiegelt von autoStart), wuerde der allererste Aufruf aus
+// onMounted() sich selbst blockieren, bevor die Kamera je angefragt wird
+// (siehe tickets/126/REVIEW_REPORT.md, Critical 1).
+const isTransitioning = ref(false)
 // Sperrt neue Scans, waehrend der letzte Scan noch verarbeitet/angezeigt wird.
 const isProcessing = ref(false)
 
@@ -314,7 +316,11 @@ const handleConfirmationBind = () => {
   const bandId = confirmation.bandId
   hideConfirmationScreen()
   isProcessing.value = false
-  props.onBindRequested?.(bandId)
+  try {
+    props.onBindRequested?.(bandId)
+  } catch (error) {
+    console.error('❌ Fehler in onBindRequested:', error)
+  }
 }
 
 const onScanSuccess = async (decodedText) => {
@@ -435,8 +441,6 @@ onMounted(() => {
   window.addEventListener('click', feedback.unlockAudioContext, { once: true })
   if (props.autoStart) {
     startCamera()
-  } else {
-    isTransitioning.value = false
   }
 })
 
@@ -447,6 +451,13 @@ onBeforeUnmount(async () => {
   await stopScanning()
 })
 
+// start() wird von keinem aktuellen Aufrufer verwendet - HeadcountView.vue
+// startet die Kamera ueber den eingebauten Scan-Button (siehe oben), nicht
+// per scannerRef.value.start(); stop() wird dagegen von closePanel() in
+// useGroupScanSession.js verwendet. start() bleibt trotzdem oeffentlich, als
+// symmetrisches Gegenstueck zu stop() fuer kuenftige Aufrufer, die die Kamera
+// programmatisch statt per Klick starten wollen (tickets/126/REVIEW_REPORT.md,
+// Minor 2).
 defineExpose({ start: startCamera, stop: stopScanning, showMessage: showExternalMessage })
 </script>
 
