@@ -1,483 +1,446 @@
-# Тикет 120 — архитектурный план
+# Тикет 120 — Архитектурный план: три режима сканирования
 
-Входные данные: `tickets/120/120.txt` (концепция трёх режимов, формат
-`PresencePacket`, диаграмма «Scanner → режим → пакет»),
-`tickets/120/DECISIONS.md` (батч-модель, разделение объёма 120/122,
-пересмотр 116), `tickets/116/DECISIONS.md` и
-`tickets/116/IMPLEMENTATION_PLAN.md` (архитектура 2-слойного сканера,
-готовая к переиспользованию), `tickets/121/IMPLEMENTATION_PLAN.md`
-(раздел 7 — уточнённый формат пакета; раздел 5 — Edge Function
-`submit-scan-packet`; раздел 11 — влияние на `AdminBusView.vue`),
-`tickets/dashboard.md` (объём тикета 122).
+Входные данные: `tickets/120/120.txt` (единственный актуальный источник
+требований — переработан, содержит уже дистиллированные решения, без
+истории обсуждений), `vault/` (архитектурные конвенции проекта,
+предметная область, схема БД), исходный код `src/`.
+`tickets/120/DECISIONS.md` — архивный документ, не используется как
+источник требований (полностью поглощён `120.txt`).
+
+Согласовано с параллельными архитектурными документами: `tickets/121/IMPLEMENTATION_PLAN.md`
+(серверное решение по хранению/идемпотентности) и `tickets/122/IMPLEMENTATION_PLAN.md`
+(детальный контракт Edge Function `submit-scan-packet`, включая точный
+маппинг `type`/`method`). Этот документ **не переопределяет** контракт
+121/122 — он фиксирует, что клиент 120 обязан отправлять данные строго
+по уже согласованному контракту.
 
 # Цель
 
-Заменить единственную сегодняшнюю кнопку «Scannen» (маршрут `/scanner`,
-`ScannerView.vue`, немедленная запись каждого скана в `scans`) на три
-клиентских подрежима — **Пересчёт в автобусе (BUS)**, **Перекличка
-группы (GROUP)**, **Свободные отметки (CHECKIN)** — реализующие
-двухуровневую архитектуру из `120.txt`: один переиспользуемый `Scanner`
-(камера + декод + резолв браслета в ребёнка) и три независимые
-«обёртки», каждая из которых отвечает за свой UI, накопление результатов
-в локальный пакет и его отправку.
-
-Ничего не пишется на сервер до нажатия «Отправить» (батч-модель,
-`DECISIONS.md` п.1). По нажатию клиент отправляет один `PresencePacket`
-на Edge Function `submit-scan-packet`, чей контракт и серверная
-реализация спроектированы в `tickets/121/IMPLEMENTATION_PLAN.md` и
-реализуются в тикете 122 — см. раздел «Уточнение объёма» ниже.
-
-**Явно не входит**: серверная сверка нескольких пересчётов, вычисление
-отсутствующих, итоговый экран Hauptbetreuer (`DECISIONS.md`, п.2, вынесено
-в будущий тикет); сама реализация Edge Function/миграции БД (тикет 122);
-рефакторинг `AdminBusView.vue` (см. ниже — переоценено относительно
-`DECISIONS.md`).
-
-## Уточнение объёма относительно `tickets/120/DECISIONS.md`
-
-`DECISIONS.md` (п.2, написан до исследования 121) относил к объёму 120
-«простое серверное сохранение пакета» и «переосмысление `AdminBusView.vue`
-под пакетную модель». К моменту написания этого плана оба пункта
-пересмотрены более поздними и более информированными документами:
-
-- **Серверное сохранение** — `tickets/121/IMPLEMENTATION_PLAN.md`
-  (раздел 5, «решено с пользователем») закрепляет за этим Edge Function
-  `submit-scan-packet`, а `tickets/dashboard.md` явно относит «приём/
-  хранение ScanPacket, идемпотентность» к тикету 122. Миграция схемы,
-  переработка триггеров (раздел 6 документа 121) и сама Edge Function —
-  не тривиальная работа «на один вечер», а именно то, ради чего заведён
-  отдельный исследовательский тикет 121 и архитектурный тикет 122.
-  Относить её одновременно и к 120 означало бы дублировать её
-  проектирование в двух планах.
-- **`AdminBusView.vue`** — `tickets/121/IMPLEMENTATION_PLAN.md` (раздел
-  11) прямо пишет: «реализуется в 122 вместе с серверной частью». Это
-  структурно верно: новый экран должен показывать *полученные пакеты*
-  (кто/когда/сколько прислал), а источник этих данных — таблица-заголовок
-  пакета, которая появляется только в миграции 122. Без неё
-  `AdminBusView.vue` физически нечего показывать взамен сегодняшнего
-  realtime-по-сканам.
-
-**Решение этого плана**: 120 — чисто клиентский тикет. Он строит три
-режима, сборку `PresencePacket` и реальный (не заглушка, в отличие от
-116) вызов `submit-scan-packet`, но не реализует саму функцию/миграцию и
-не трогает `AdminBusView.vue`. `122.txt` прямо требует одновременной
-разработки и внедрения 120/122 «в рамках одного релиза» — это и есть
-механизм, которым закрывается разрыв между «клиент вызывает функцию» и
-«функция существует». Формат тела запроса, который отправляет 120,
-обязан точно соответствовать `tickets/121/IMPLEMENTATION_PLAN.md`,
-раздел 7 (см. «API изменения» ниже) — это единственный контракт,
-согласовывающий два тикета.
-
-Если владелец тикета 120 предпочитает иной раздел объёма (например,
-всё-таки включить `AdminBusView.vue` в 120) — это меняет только
-последовательность работы, не архитектуру: сама переработка экрана в
-любом случае технически заблокирована миграцией 122.
+Заменить единственный сегодняшний сканер (`/scanner`, `ScannerView.vue`)
+тремя маршрутами-режимами («Bus zählen», «Gruppen-Appell», «Freie
+Meldung»), построенными поверх уже готового, протестированного и
+одобренного заказчиком компонента `Scanner.vue` (тикет 116). Каждый
+режим самостоятельно ведёт локальный `PresencePacket` и отправляет его
+целиком по кнопке «Отправить» на Edge Function `submit-scan-packet`
+(реализуется параллельно тикетом 122). Задача чисто клиентская: ни
+схема БД, ни серверная логика в объём 120 не входят.
 
 # Анализ текущей архитектуры
 
-- **`ScannerView.vue`** (`/scanner`) — сегодня единственный сканер в
-  проекте. Монолитный компонент: инициализация камеры, выбор/сохранение
-  устройства (`localStorage`, ключ `scanner_preferred_camera_id`), Web
-  Audio/vibration, очередь обработки декодированных URL, резолв через
-  `useArmband.getBraceletStatus(bandId)` и **немедленный** `INSERT` в
-  `scans` через `useArmband.recordChildPresence()` при каждом успешном
-  скане. Дедуп «в рамках захода» — через `Set` в замыкании компонента.
-  Единственный код, вызывающий `recordChildPresence()` (подтверждено
-  поиском по `src/`).
-- **`tickets/116/IMPLEMENTATION_PLAN.md`** (статус `ARCHITECT_DONE`, по
-  `tickets/120/DECISIONS.md` п.3 — **ещё не реализован** на момент
-  написания этого плана) уже спроектировал ровно ту базовую архитектуру,
-  которая нужна 120: `src/components/scanner/Scanner.vue` (камера +
-  декод + резолв браслета, проп-контракт `onChildResolved(result)` с
-  исходами `invalid`/`not-found`/`found`, таблица звук/вибрация/экран) и
-  `src/composables/useScannerFeedback.js` (Web Audio/vibration примитивы
-  без пресетов). Открытый вопрос «2 или 3 слоя» там уже решён в пользу 2
-  слоёв — 120 не пересматривает это решение, а строит поверх него.
-  116-й прототипный экран (`ScannerPrototypeView.vue`, кнопка
-  «Отправить» — заглушка, пакет всегда в форме GROUP) — одноразовый, не
-  переиспользуется; переиспользуется только `Scanner.vue` +
-  `useScannerFeedback.js`.
-- **`useArmband.js`** — методы на чтение уже готовы для 120 без
-  изменений: `getBraceletStatus(bandId)` (резолв браслета → ребёнок,
-  включая `group_id`, не фильтрует по группе — нужно для BUS/CHECKIN, где
-  дети «любых групп»), `getChildrenByGroup(groupId)` (полный список
-  детей группы — нужен для ростера режима GROUP). `recordChildPresence()`
-  — единственный метод, теряющий последнего вызывающего после удаления
-  `ScannerView.vue` (см. «Изменения существующих компонентов»).
-- **`useScan.js`** — `createScan()` используется не сканером, а
-  `ChildDetailView.vue` (админский ручной пересчёт/переназначение
-  автобуса ребёнку). Это не один из трёх «подрежимов сканирования»
-  120.txt и не трогается этим тикетом — см. «Риски».
-- **`userStore.userInfo`** уже содержит `group_id`/`bus_id` — поля *на
-  сегодня* из `user_group_day` (см. `CLAUDE.md`), готовый контекст для
-  режимов BUS (`bus_id`) и GROUP (`group_id`), без новой бизнес-логики
-  назначения.
-- **`MainView.vue`** — сегодня одна кнопка «Scannen» → `router.push('/scanner')`
-  (`goToScan()`, строки ~91-105, 209-211), видима при `isAuthenticated`.
-  Рядом уже есть паттерн предупреждения «Keine Gruppe zugewiesen», когда
-  `!userStore.userInfo.group_id` — тот же паттерн нужен для отсутствующего
-  `bus_id` в режиме BUS.
-- **`AdminBusView.vue`** — держит Realtime-подписку на
-  `children_today`/`user_group_day`/`reset_events`. 120 не пишет
-  напрямую ни в одну из этих таблиц (пишет только тело запроса в Edge
-  Function, реализуемую в 122) — поэтому в рамках именно 120 эта
-  подписка не меняется и не ломается. Она станет фактически
-  бессмысленной только когда 122 подключит Edge Function, которая
-  наполняет `children_today` пакетно, а не по одному скану — это
-  забота тикета 122, не 120.
-- **Формат Edge Function в проекте** — `supabase/functions/invite-generate/index.ts`
-  и вызов из `InviteGeneratorView.vue` (`fetch(`${SUPABASE_URL replace
-  .co→.co/functions/v1}/invite-generate`, { headers: { Authorization:
-  Bearer <session.access_token> }})`) — единственный существующий
-  клиентский прецедент вызова Edge Function в проекте, без
-  `supabase.functions.invoke()` (в `src/` не используется нигде). 120
-  повторяет этот же паттерн для `submit-scan-packet`.
+- **Слоистая конвенция проекта** (`CLAUDE.md`, `vault/04-.../stores-user.md`):
+  `stores/useXXX` (состояние) → `composables/useXXX` (бизнес-логика) →
+  прямой доступ к Supabase/Edge Function. Существующие примеры такого
+  разделения: `useBusData.js`, `useGroups.js`, `useArmband.js`. Тикет
+  120 обязан следовать этой же схеме, а не собирать логику пакета прямо
+  в шаблонах View, как это (в порядке исключения, единственный
+  прецедент в проекте) сделано в `InviteGeneratorView.vue`.
+- **`Scanner.vue` (`src/components/scanner/Scanner.vue`, тикет 116,
+  `DONE`)** — нижний, полностью переиспользуемый слой. Контракт:
+  единственный обязательный проп `onChildResolved(result) → Promise<override|undefined>`,
+  где `result` — один из `{status:'invalid'}` / `{status:'error', bandId}` /
+  `{status:'not-found', bandId}` / `{status:'found', child, bandId}`
+  (`child` = `{id, name, age, group_id, band_id, schwimmer, notes}`, поля
+  `children`). Компонент сам проигрывает сигнал/вибрацию/экран
+  подтверждения по умолчанию для каждого исхода; вызывающий может
+  переопределить `{title, subtitle, variant, repeat}` (уже
+  использованный в `ScannerPrototypeView.vue` паттерн для сигнала
+  «уже отсканирован» — `variant:'success', repeat:true`). Экспортирует
+  `defineExpose({ stop, showMessage })`. Не содержит бизнес-логики
+  режимов, не знает про `PresencePacket` — это ответственность слоя
+  выше, что и подтверждает `120.txt`, раздел «Базовая реализация».
+- **`useScannerFeedback.js`** — примитивы Web Audio/vibration без
+  пресетов, используется `Scanner.vue`; режимам он не нужен напрямую
+  (весь фидбек уже инкапсулирован в `Scanner.vue`), кроме случая,
+  описанного в `120.txt` («сигнал «уже отсканирован»») — который
+  реализуется через override `onChildResolved`, а не прямой вызов
+  `useScannerFeedback`.
+- **`ScannerView.vue` (боевой, удаляется)** — держит собственную камеру/
+  decode/фидбек-логику (дублирует то, что уже вынесено в `Scanner.vue`
+  тикетом 116) и единственный прямой писатель `useArmband.recordChildPresence()`
+  → `INSERT INTO scans` без пакетной модели. Других вызывающих
+  `recordChildPresence()` в `src/` нет.
+- **`ScannerPrototypeView.vue` (прототип 116, удаляется)** — уже
+  собирает объект по форме `PresencePacket` (жёстко как `GROUP`,
+  осознанное упрощение прототипа) и уже реализует дедупликацию «в
+  рамках захода» через override `onChildResolved`. Это готовый образец
+  паттерна для трёх боевых режимов 120 — их `handleResolved`
+  реализуется по тому же образцу, просто с реальной сборкой всех трёх
+  типов пакета и реальной отправкой вместо заглушки.
+- **`MainView.vue`** — меню кнопок-карточек (иконка + заголовок +
+  подпись + стрелка), `v-if`-условия на `isAuthenticated`/
+  `userStore.userInfo.group_id`/`userStore.isAdmin`. Кнопка «Scannen»
+  (`goToScan()` → `/scanner`) и временная кнопка-ссылка на прототип
+  (`goToScanPrototype()` → `/scanner-prototype`) — обе заменяются.
+  Готовый образец предупреждения «Keine Gruppe zugewiesen» (блок под
+  меню) — используется как образец для новых предупреждений о
+  недоступности BUS/GROUP без переизобретения паттерна.
+- **`src/router/index.js`** — маршруты `/scanner`
+  (`() => import('@/views/ScannerView.vue')`) и `/scanner-prototype`
+  (`() => import('@/views/ScannerPrototypeView.vue')`), оба
+  `{ requiresAuth: true, requiresAdmin: false }`, lazy-loaded — новые
+  три маршрута следуют этому же образцу.
+- **`useArmband.js`** — `getBraceletStatus(bandId)` (используется
+  `Scanner.vue`, без изменений), `getChildrenByGroup(groupId)`
+  (единственный вызывающий — `ArmbandView.vue`, сортировка по `name` —
+  предназначена для формы привязки браслета, не для ростера GROUP-
+  режима, поэтому не переиспользуется как есть, см. «Новые
+  компоненты»), `recordChildPresence()` (удаляется).
+- **`useScan.js`/`ChildDetailView.vue`** — `createScan()`, единственный
+  оставшийся после 120 прямой путь `INSERT INTO scans` (админский
+  ручной пересчёт). Явно вне рамок 120 (`120.txt`, «Базовая
+  реализация») — подтверждено также `tickets/122/IMPLEMENTATION_PLAN.md`
+  (риски): этот путь сознательно не трогается ни 120, ни 122.
+- **Контракт `submit-scan-packet`** (уже детально специфицирован
+  `tickets/122/IMPLEMENTATION_PLAN.md`, раздел «API изменения» —
+  120 обязан ему соответствовать буква в букву): `POST`,
+  `Authorization: Bearer <session.access_token>`, тело — JSON
+  `PresencePacket` (см. «API изменения» ниже); ответ `{ packet_id,
+  status: 'created'|'duplicate' }` (200) либо структурированная ошибка
+  (400/401/403/500). Единственный существующий прецедент вызова Edge
+  Function из `src/` — `InviteGeneratorView.vue` (`generateInvite()`):
+  `fetch()` напрямую (не `supabase.functions.invoke()`, этот метод в
+  `src/` не используется нигде), URL строится из
+  `import.meta.env.VITE_SUPABASE_URL.replace('.co', '.co/functions/v1')`,
+  заголовки `Content-Type`, `Authorization: Bearer <access_token>`,
+  `apikey: VITE_SUPABASE_KEY`.
+- **`config.total_groups`/`config.total_buses`** (`useConfigStore`) —
+  группы/автобусы не отдельные таблицы, а диапазон `1..N` (`vault/03-.../Обзор-схемы-БД.md`).
+  Для GROUP-режима это означает, что ростер группы — не отдельная
+  сущность, а просто `children`, отфильтрованные по `group_id`.
+- **`scans.type`** (smallint, справочник `scan_type`) — существующее
+  поле, семантически **не связанное** с новым `PresencePacket.type`
+  (`BUS`/`GROUP`/`CHECKIN`) и с будущим `scan_packets.type` из плана
+  122. Совпадение имени поля — источник потенциальной путаницы при
+  реализации, зафиксировано отдельно в «Рисках».
 
 # Затрагиваемые модули
 
 **Новые:**
-- `src/components/scanner/Scanner.vue` (если 116 к моменту реализации 120
-  ещё не сделан — см. «План реализации», шаг 0)
-- `src/composables/useScannerFeedback.js` (аналогично)
-- `src/composables/useScanPacket.js`
-- `src/views/scanner/BusCountView.vue`
-- `src/views/scanner/GroupRollCallView.vue`
-- `src/views/scanner/FreeCheckinView.vue`
+- `src/composables/useScanPacket.js` — сборка и отправка `PresencePacket`,
+  общая для всех трёх режимов.
+- `src/views/ScannerBusView.vue`, `src/views/ScannerGroupView.vue`,
+  `src/views/ScannerCheckinView.vue` — три экрана-режима.
 
 **Изменяемые:**
-- `src/views/MainView.vue` (подменю из 3 кнопок вместо одной «Scannen»)
-- `src/router/index.js` (3 новых маршрута, удаление `/scanner`)
-- `src/composables/useArmband.js` (удаление `recordChildPresence()`)
+- `src/composables/useArmband.js` — удаление `recordChildPresence()`,
+  добавление `getChildrenByGroupOrderedById(groupId)`.
+- `src/views/MainView.vue` — три новые кнопки меню вместо «Scannen» и
+  ссылки на прототип.
+- `src/router/index.js` — три новых маршрута вместо `/scanner` и
+  `/scanner-prototype`.
 
 **Удаляемые:**
-- `src/views/ScannerView.vue`
+- `src/views/ScannerView.vue`.
+- `src/views/ScannerPrototypeView.vue`.
 
-**Не затрагиваемые** (см. «Уточнение объёма»): `AdminBusView.vue`,
-`useBusData.js`, схема БД, `supabase/functions/*` (кроме потребления
-контракта `submit-scan-packet`, которую создаёт 122),
-`useScan.createScan()`/`ChildDetailView.vue`.
+**Не затрагиваемые** (обоснование — раздел «Анализ» и `120.txt`,
+«Базовая реализация»): `src/components/scanner/Scanner.vue`,
+`src/composables/useScannerFeedback.js`, `src/composables/useScan.js`,
+`src/views/ChildDetailView.vue`, `src/views/AdminBusView.vue`, схема
+БД, любые Edge Functions (в т.ч. сама функция `submit-scan-packet` —
+её реализация принадлежит 122, 120 только вызывает её по готовому
+контракту).
 
 # Изменения существующих компонентов
 
 ## `src/composables/useArmband.js`
 
-Удалить `recordChildPresence()`. Единственный вызывающий —
-`ScannerView.vue`, удаляемый этим тикетом. Метод писал `INSERT` в
-`scans` напрямую, в обход батч/пакетной модели — оставлять его значило
-бы держать в кодовой базе путь, прямо запрещённый решением 121 («не
-останется сканеров/путей, кроме перечисленных в 120.txt»). Остальные
-методы (`getBraceletStatus`, `getChildrenByGroup`, `getChildDetails`,
-`checkBraceletAlreadyBound`, `assignBraceletToChild`) не меняются —
-используются и вне сканера (`ArmbandView.vue` и т.д.).
-
-## `src/router/index.js`
-
-Удалить запись маршрута `/scanner` (`name: 'Scanner'`,
-`ScannerView.vue`). Добавить три новых маршрута (см. «UI изменения»),
-рядом со старой записью, с тем же `meta: { requiresAuth: true,
-requiresAdmin: false }`.
+- Удалить `recordChildPresence(userId, childId, bandId, busId)` и её
+  экспорт — единственный вызывающий (`ScannerView.vue`) удаляется этим
+  же тикетом, других вызывающих в `src/` нет (проверено).
+- Добавить `getChildrenByGroupOrderedById(groupId)` — тот же запрос к
+  `children` по `group_id`, что и в существующем `getChildrenByGroup()`,
+  но с `order('id', { ascending: true })` вместо `order('name')`.
+  **Не переиспользовать и не менять** существующий `getChildrenByGroup()` —
+  он используется `ArmbandView.vue` для формы привязки браслета, где
+  сортировка по имени осмысленна и не должна незаметно измениться из-за
+  требования 120.txt («список выводится в порядке `id`»). Отдельная
+  функция — с полностью совпадающим сигнатурным стилем, отличается
+  только `order()` и (при необходимости) набором выбираемых колонок под
+  нужды ростера GROUP-режима (`id, name, band_id` — без `age`/`schwimmer`,
+  если UI режима их не показывает; точный список — на усмотрение
+  реализации, не архитектурная развилка).
 
 ## `src/views/MainView.vue`
 
-Заменить единственную кнопку «Scannen» (`goToScan()` →
-`router.push('/scanner')`) на блок из трёх кнопок — по одной на режим,
-видимых при `isAuthenticated`, по образцу существующей карточки-кнопки
-(иконка + заголовок + подпись + стрелка). Предлагаемые подписи (де,
-по аналогии с существующими "Kinder im Bus zählen"):
+Кнопка «Scannen» (`goToScan()`) и кнопка-ссылка на прототип
+(`goToScanPrototype()`) удаляются вместе со своими обработчиками.
+Добавляются три кнопки по образцу существующего паттерна
+карточки-кнопки (иконка + заголовок + подпись + стрелка,
+как у «Kopfzählung»/«Busse»):
 
-| Режим | Заголовок | Подпись | Маршрут |
+| Кнопка | `v-if` | Заголовок/подпись | Переход |
 |---|---|---|---|
-| BUS | Bus zählen | Kinder im Bus scannen | `/scanner/bus` |
-| GROUP | Gruppen-Appell | Anwesenheit der Gruppe prüfen | `/scanner/group` |
-| CHECKIN | Freie Meldung | Kinder frei melden | `/scanner/checkin` |
+| BUS | `isAuthenticated && userStore.userInfo.bus_id` | Bus zählen / Kinder im Bus scannen | `/scanner/bus` |
+| GROUP | `isAuthenticated && userStore.userInfo.group_id` | Gruppen-Appell / Anwesenheit der Gruppe prüfen | `/scanner/group` |
+| CHECKIN | `isAuthenticated` | Freie Meldung / Kinder frei melden | `/scanner/checkin` |
 
-Режим BUS недоступен/дисабл + предупреждение (по образцу существующего
-`v-if="isAuthenticated && !userStore.userInfo.group_id && !userStore.isAdmin"`
-для группы), если `!userStore.userInfo.bus_id`; аналогично GROUP —
-если `!userStore.userInfo.group_id`. CHECKIN не требует ни того ни
-другого — доступен всем аутентифицированным.
+Условие недоступности BUS/GROUP реализуется тем же паттерном, что уже
+существует для блока «Keine Gruppe zugewiesen» под меню (алерт вместо
+кнопки или задизейбленная кнопка с поясняющим текстом — конкретная
+верстка не архитектурная развилка, решается при реализации по образцу
+уже существующего блока). CHECKIN не имеет условия недоступности
+(`120.txt`, «Меню»).
 
-Точное расположение (три кнопки прямо в общем списке против отдельного
-подэкрана-меню) — деталь реализации, не архитектурное решение; выбрана
-первая форма («Scannen» и так уже пункт меню — расширение до трёх
-пунктов буквально реализует формулировку 120.txt «расширить меню
-Scannen»), но замена на промежуточный `ScanModeMenuView.vue` не
-потребовала бы изменений ни в одном другом разделе этого плана.
+## `src/router/index.js`
+
+Записи `/scanner` (`name: 'Scanner'`) и `/scanner-prototype`
+(`name: 'ScannerPrototype'`) удаляются. Добавляются три записи по тому
+же образцу (`meta: { requiresAuth: true, requiresAdmin: false }`,
+lazy `component: () => import(...)`):
+
+| Path | Name | Компонент |
+|---|---|---|
+| `/scanner/bus` | `ScannerBus` | `ScannerBusView.vue` |
+| `/scanner/group` | `ScannerGroup` | `ScannerGroupView.vue` |
+| `/scanner/checkin` | `ScannerCheckin` | `ScannerCheckinView.vue` |
 
 # Новые компоненты
 
-## 1. `src/components/scanner/Scanner.vue` — базовый слой (переиспользуемый)
+## `src/composables/useScanPacket.js`
 
-Если тикет 116 уже реализован к началу работы над 120 — переиспользуется
-как есть, без изменений (это и есть цель 116 — проверенный UX-прототип,
-готовый стать боевым слоем). Если ещё не реализован — 120 обязан
-построить этот компонент сам по спецификации
-`tickets/116/IMPLEMENTATION_PLAN.md` (не по прежней, отменённой версии
-плана 116, а по актуальной, переиспользующей 2-слойную модель): камера
-(инициализация/старт/стоп, выбор устройства, `localStorage`-сохранение,
-индикатор + «Automatisch»), декод QR, резолв через
-`useArmband.getBraceletStatus()`, встроенные сигналы для исходов
-`invalid`/`not-found`/`found` через `useScannerFeedback`, проп-контракт
-`onChildResolved(result) → { title, subtitle }`. В этом случае —
-отдельный этап («шаг 0») в плане реализации, не дублирование работы 116
-(код пишется один раз, независимо от того, в рамках какого тикета).
+Единственное место, где реализована сборка/отправка `PresencePacket` —
+все три режима используют его, а не дублируют логику в каждом View
+(следование слоистой конвенции проекта). Отвечает и за бизнес-логику
+пакета, и за сам вызов `submit-scan-packet` (по аналогии с тем, что
+другие composables проекта сами обращаются к Supabase — здесь тем же
+образом инкапсулируется обращение к Edge Function; вынесение сетевого
+вызова из View сюда — не архитектурная прихоть, а устранение
+трёхкратного дублирования кода вызова, который иначе пришлось бы
+повторить в каждом из трёх View по образцу `InviteGeneratorView.vue`).
 
-Не содержит: сборку пакета, список «отсканировано в этом заходе»,
-понятие режима BUS/GROUP/CHECKIN, HTTP-вызовы.
+Предлагаемая форма API (сигнатуры, не реализация):
 
-## 2. `src/composables/useScannerFeedback.js`
+| Функция | Назначение |
+|---|---|
+| `createPacket(type, context)` | Инициализирует пустой пакет: новый `client_packet_id` (`crypto.randomUUID()`), `type`, `date` (сегодня), `author_id` из `userStore.userInfo.id`, `bus_id`/`group_id` из `context` (по типу). `started_at`/`finished_at` — `null` до первого добавления/до отправки. |
+| `isDuplicate(childId)` | Есть ли уже такой `child_id` в `packet.children`. |
+| `addScanned(child)` | Если не дубликат — добавляет `{ child_id, timestamp: now, method: 'SCAN' }`; фиксирует `started_at`, если это первая запись. Дубликат — no-op (сигнал «уже отсканирован» формирует вызывающий View через override `onChildResolved`, не этот composable). |
+| `addManual(child)` | Только для GROUP: то же самое с `method: 'MANUAL'`. Повторный тап по уже найденному в ростере — no-op (не снимает отметку — в `120.txt` нет операции «отменить ручную отметку»). |
+| `resetPacket()` | Отбрасывает текущий пакет, вызывает `createPacket()` заново с новым `client_packet_id`. |
+| `submitPacket()` | Фиксирует `finished_at`, выполняет `fetch()` к `submit-scan-packet` (см. «API изменения»). Успех → состояние `sent` (View решает, что делать дальше — обычно `resetPacket()`). Ошибка → состояние `error` с сообщением, **пакет и `client_packet_id` не изменяются** — повторный вызов `submitPacket()` переотправляет тот же объект. |
 
-Без изменений относительно спецификации 116: `getAudioContext()`/
-`unlockAudioContext()`, `playTone(frequencies, duration)`,
-`vibrate(pattern)` — используется и `Scanner.vue`, и тремя
-mode-обёртками (для сигнала «duplicate»/«already marked», специфичного
-для верхнего слоя — см. таблицу сигналов в плане 116, тот же принцип
-здесь).
+Внутреннее состояние: `packet` (reactive), `status`
+(`'idle'|'sending'|'sent'|'error'`), `errorMessage`. Существует только
+в памяти текущего экземпляра composable — не пишется в
+`localStorage`/LocalForage (`120.txt`, «Логика работы», сознательное
+ограничение).
 
-## 3. `src/composables/useScanPacket.js` — сборка и отправка `PresencePacket`
+## `src/views/ScannerBusView.vue`
 
-Новый композабл, инкапсулирующий всё, что общее для трёх режимов и не
-зависит от конкретного UI:
+Монтирует `<Scanner :onChildResolved="handleResolved" />` +
+`useScanPacket()` с `createPacket('BUS', { bus_id: userStore.userInfo.bus_id })`
+при монтировании. `handleResolved`: `result.status !== 'found'` →
+`undefined` (стандартный экран `Scanner.vue`); иначе —
+`isDuplicate` → override «уже отсканирован» (`variant:'success', repeat:true`,
+по образцу `ScannerPrototypeView.vue`); иначе `addScanned(result.child)`,
+`undefined` (стандартный экран успеха). UI — по мокапу `120.txt`:
+счётчик, последний найденный, кнопки `[Reset] [Отправить]`, под ними
+полный список без дублей.
 
-- `createPacket(type, context)` — создаёт пустой пакет:
-  `client_packet_id` (`crypto.randomUUID()`), `type`
-  (`'BUS'|'GROUP'|'CHECKIN'`), `date` (формат `useScan.getTodayDate()`),
-  `author_id` (`userStore.userInfo.id`), `bus_id`/`group_id` из
-  `context` (только для BUS/GROUP), `started_at: null`, `finished_at:
-  null`, `children: []`.
-- `addChild(packet, child, method)` — добавляет `{ child_id, timestamp:
-  new Date().toISOString(), method }` в `packet.children`, если
-  `child.id` там ещё нет (идемпотентно на клиенте — дедуп «в рамках
-  этого захода», требование 120.txt для всех трёх режимов); фиксирует
-  `packet.started_at`, если это первый элемент.
-- `resetPacket(packet)` — возвращает новый пустой пакет того же типа с
-  новым `client_packet_id` (кнопка «reset» из мокапов 120.txt — это не
-  повторная отправка старого пакета, а начало нового захода).
-- `submitPacket(packet)` — фиксирует `packet.finished_at = new
-  Date().toISOString()`, затем `fetch` на `submit-scan-packet` (см. «API
-  изменения») с `Authorization: Bearer <access_token>` по образцу
-  `InviteGeneratorView.vue`. Возвращает `{ ok: true }` или `{ ok: false,
-  error }` — **не бросает** исключение наружу, чтобы вызывающий UI мог
-  единообразно показать «Fehler beim Senden» + кнопку повтора, не
-  оборачивая каждый вызов в try/catch.
-- **Повтор после ошибки** — вызывающий код держит тот же объект `packet`
-  (с тем же `client_packet_id`) и просто вызывает `submitPacket(packet)`
-  повторно. Идемпотентность гарантируется сервером (тикет 122, раздел 8
-  документа 121) по `client_packet_id` — клиенту не нужно ничего решать
-  самостоятельно, только не терять объект и не создавать новый id между
-  попытками.
-- Пакет живёт только в памяти компонента режима (`ref`), не
-  персистируется в `localStorage`/LocalForage — если приложение
-  перезапущено посреди захода, накопленный пакет теряется (см.
-  «Риски»).
+## `src/views/ScannerGroupView.vue`
 
-## 4-6. Три экрана-режима (`src/views/scanner/*.vue`)
+Дополнительно к паттерну BUS: при монтировании параллельно с
+`createPacket('GROUP', { group_id: userStore.userInfo.group_id })`
+загружает ростер через
+`useArmband().getChildrenByGroupOrderedById(userStore.userInfo.group_id)`.
+UI — чек-лист (найден/не найден по `isDuplicate(child.id)` после
+скана), счётчик `N / Total`, тап по ненайденному в списке →
+`addManual(child)`. Скан резолвит `Scanner.vue` независимо от того,
+из этой ли группы ребёнок — `120.txt` не описывает отдельной проверки
+принадлежности группе для GROUP-режима (в отличие от явного запрета
+такой фильтрации для BUS/CHECKIN); поведение при сканировании ребёнка
+не из текущей группы — открытый вопрос, см. «Риски».
 
-Общая для всех трёх структура (различается контекстом и списком):
+## `src/views/ScannerCheckinView.vue`
 
-- Монтирует `<Scanner :onChildResolved="handleResolved" />`.
-- Держит `packet = useScanPacket().createPacket(TYPE, context)`.
-- `handleResolved(result)`: при `status === 'found'` — если
-  `child.id` уже в `packet.children` → сигнал «duplicate» (см. таблицу
-  сигналов 116) и возврат `{ title: 'Bereits gescannt', subtitle:
-  child.name }`; иначe → `addChild(packet, child, 'SCAN')`, возврат
-  `{ title: child.name, subtitle: ... }`. Исходы `invalid`/`not-found`
-  обрабатываются полностью внутри `Scanner.vue` (см. компонент 1),
-  режим не переопределяет их.
-- Кнопка «Отправить»: `submitPacket(packet)`; при успехе — экран
-  подтверждения + переход в меню либо предложение начать новый заход
-  (`resetPacket`); при ошибке — красный алерт с текстом ошибки + кнопка
-  «Erneut versuchen», сам пакет не теряется.
-- Кнопка «Reset»/выход — как в 120.txt-мокапах.
+Структурно ближе всего к BUS (без ростера, без ручной отметки), но
+список строится сразу (не под кнопками) и каждая строка показывает
+группу ребёнка (`child.group_id`, уже приходит в `result.child` от
+`Scanner.vue`) — по мокапу `120.txt`. `createPacket('CHECKIN', {})` —
+без `bus_id`/`group_id` в контексте.
 
-Различия:
-
-| | BUS (`BusCountView.vue`) | GROUP (`GroupRollCallView.vue`) | CHECKIN (`FreeCheckinView.vue`) |
-|---|---|---|---|
-| Контекст | `context.bus_id = userStore.userInfo.bus_id` | `context.group_id = userStore.userInfo.group_id` | нет |
-| Предзагрузка ростера | нет | да — `useArmband.getChildrenByGroup(group_id)` при монтировании, для чек-листа «найден/не найден» | нет |
-| Ручная отметка | нет | да — тап по ребёнку в списке → `addChild(packet, child, 'MANUAL')`, эквивалентно успешному скану (120.txt, Режим 2) | нет |
-| Интерфейс | счётчик + «последний» (120.txt, Режим 1) | `N / Total`, список с сортировкой «сначала ненайденные» (опционально) | список «✓ Имя — Gruppe N» (нужен `child.group_id`, уже есть в `getBraceletStatus()`) |
-| Блокировка входа | если `!bus_id` | если `!group_id` | нет |
+**Почему три отдельных View, а не один параметризуемый компонент**:
+BUS и CHECKIN похожи, но не идентичны (разное расположение списка,
+разный набор колонок в строке, разный заголовок), GROUP качественно
+отличается (ростер + чек-лист + ручная отметка). Общая часть уже
+вынесена — `Scanner.vue` (сканирование) и `useScanPacket.js` (сборка/
+отправка пакета); оставшаяся разница — исключительно в разметке и
+порядке элементов каждого экрана, где искусственное объединение в один
+компонент с ветвлением по `mode` увеличило бы сложность шаблона без
+сокращения реального дублирования кода.
 
 # Изменения БД
 
-Нет — вся работа со схемой (таблица-заголовок пакета, поля в `scans`,
-переработка триггеров) спроектирована в
-`tickets/121/IMPLEMENTATION_PLAN.md` и реализуется тикетом 122 (см.
-«Уточнение объёма»).
+Нет. Схема, миграции, серверные функции — целиком в объёме тикета 122
+(`tickets/122/IMPLEMENTATION_PLAN.md`).
 
 # API изменения
 
-**Новое (потребляется 120, реализуется 122):** вызов Edge Function
-`submit-scan-packet`, `POST ${SUPABASE_URL replace .co→.co/functions/v1}/submit-scan-packet`,
-`Authorization: Bearer <session.access_token>` (паттерн —
-`InviteGeneratorView.vue`). Тело запроса — `PresencePacket` в формате,
-согласованном `tickets/121/IMPLEMENTATION_PLAN.md`, раздел 7:
+120 не реализует и не изменяет ни одного серверного API — только
+впервые начинает **реально вызывать** Edge Function
+`submit-scan-packet`, чья реализация принадлежит тикету 122. Ниже —
+контракт запроса, обязательный для клиента 120 (совпадает буква в
+букву с `tickets/122/IMPLEMENTATION_PLAN.md`, разделы «API изменения»;
+воспроизведён здесь как обязательный к реализации на стороне клиента,
+не повторное решение):
 
-```json
-{
-  "client_packet_id": "uuid",
-  "type": "BUS | GROUP | CHECKIN",
-  "date": "YYYY-MM-DD",
-  "author_id": null,
-  "started_at": "ISO-8601",
-  "finished_at": "ISO-8601",
-  "bus_id": 2,
-  "group_id": null,
-  "children": [
-    { "child_id": 123, "timestamp": "ISO-8601", "method": "SCAN" }
-  ]
-}
+```
+POST {VITE_SUPABASE_URL с .co → .co/functions/v1}/submit-scan-packet
+Headers:
+  Content-Type: application/json
+  Authorization: Bearer <session.access_token>
+  apikey: <VITE_SUPABASE_KEY>
 ```
 
-- `bus_id` присутствует только для `type = BUS`, `group_id` — только для
-  `type = GROUP`, оба `null`/отсутствуют для `CHECKIN`.
-- `method` — обязателен для каждого ребёнка (`SCAN` всегда для
-  BUS/CHECKIN, `SCAN`|`MANUAL` для GROUP) — закреплено 121 §7 как
-  общее для всех трёх типов, а не только для GROUP, как в буквальном
-  тексте 120.txt.
-- `author_id`, присланный клиентом, по решению 121 §7 сервер обязан
-  игнорировать и подставлять из аутентифицированной личности сам — 120
-  тем не менее заполняет поле (`userStore.userInfo.id`) для полноты
-  формата/возможной клиентской диагностики, не полагаясь на то, что
-  сервер его использует.
+Тело запроса:
 
-**Удалено:** прямой `INSERT` в `scans` через
-`useArmband.recordChildPresence()` (единственный вызывающий удалён
-вместе с `ScannerView.vue`).
+| Поле | Обязательность |
+|---|---|
+| `client_packet_id` (uuid) | всегда |
+| `type` (`'BUS'\|'GROUP'\|'CHECKIN'`) | всегда |
+| `date` (`'YYYY-MM-DD'`) | всегда |
+| `author_id` | всегда заполняется клиентом, сервер значение игнорирует |
+| `started_at`, `finished_at` (ISO timestamp) | всегда |
+| `bus_id` | при `type='BUS'` |
+| `group_id` | при `type='GROUP'` |
+| `children[].child_id` | всегда, для каждого элемента |
+| `children[].timestamp` (ISO) | всегда |
+| `children[].method` (`'SCAN'\|'MANUAL'`) | всегда |
 
-**Не изменено:** `useScan.createScan()` — остаётся единственным
-оставшимся в проекте прямым путём записи в `scans`, используется только
-`ChildDetailView.vue` (админское ручное переназначение автобуса
-ребёнку) — не один из трёх «подрежимов сканирования» 120.txt и явно не
-переработан в рамках этого тикета (см. «Риски»).
+Ответ: `200 { packet_id, status: 'created'|'duplicate' }` — оба случая
+клиент трактует как успех (в т.ч. `'duplicate'` — результат повтора
+после сети, уже описано в `120.txt`, «Идемпотентность — забота
+сервера»). Ошибка — `400/401/403/500` со структурированным телом
+(формат по образцу существующих функций, например `{ error: string }`)
+→ клиент показывает сообщение с кнопкой «Повторить», не изменяя
+`client_packet_id`.
 
 # UI изменения
 
-- **`MainView.vue`** — одна кнопка «Scannen» заменена тремя (см.
-  «Изменения существующих компонентов»).
-- **Три новых экрана**, макеты — прямо по 120.txt (тройной ASCII-мокап в
-  разделах «Режим 1/2/3»): счётчик/список сверху, кнопки `[reset]
-  [Отправить]` снизу, у GROUP — счётчик `N / Total` и чек-лист.
-  Layout самой сканирующей части (камера сверху, элементы управления
-  снизу, индикатор камеры) — как в 116 (`Scanner.vue` уже это
-  реализует).
-- **Три новых маршрута:**
-
-  | Путь | `name` | Компонент |
-  |---|---|---|
-  | `/scanner/bus` | `ScannerBus` | `BusCountView.vue` |
-  | `/scanner/group` | `ScannerGroup` | `GroupRollCallView.vue` |
-  | `/scanner/checkin` | `ScannerCheckin` | `FreeCheckinView.vue` |
-
-  все с `meta: { requiresAuth: true, requiresAdmin: false }`, по
-  образцу удаляемой записи `/scanner`.
-- **`/scanner`** — маршрут удалён. Прямые переходы по старой ссылке
-  (например, из закладки/PWA-шортката) получат обычное поведение
-  vue-router для несуществующего пути в этом проекте (без специального
-  редиректа — не требуется 120.txt).
-- **`AdminBusView.vue`** — без изменений в рамках 120 (см. «Уточнение
-  объёма»).
+- `MainView.vue` — три новые кнопки вместо «Scannen»/ссылки на
+  прототип (см. «Изменения существующих компонентов»).
+- Три новых экрана (`/scanner/bus`, `/scanner/group`, `/scanner/checkin`) —
+  раскладка по образцу `Scanner.vue`/`ScannerPrototypeView.vue`: камера
+  сверху, под ней — область режима (счётчик/список/ростер), кнопки
+  `[Reset] [Отправить]`, точный вид каждого экрана — по мокапам
+  `120.txt`, раздел «Экраны режимов».
+- Удаляются экраны `ScannerView.vue`, `ScannerPrototypeView.vue`
+  целиком (не архивируются).
+- `AdminBusView.vue` — без изменений (подтверждено `120.txt` и планом
+  122).
 
 # План реализации
 
-0. **(Условно)** Если `src/components/scanner/Scanner.vue` и
-   `src/composables/useScannerFeedback.js` ещё не существуют на момент
-   начала работы (116 не реализован) — реализовать их по спецификации
-   `tickets/116/IMPLEMENTATION_PLAN.md`. Если существуют — переиспользовать
-   без изменений. Первый шаг, ничего не зависит от 120-специфичного кода.
-1. `src/composables/useScanPacket.js` — сборка/дедуп/сохранение/отправка
-   пакета, независимо от конкретного экрана. Зависит от шага 0
-   (типов `child`, возвращаемых `Scanner.vue`) только по форме данных,
-   не по коду — можно вести параллельно с шагом 0.
-2. `src/views/scanner/BusCountView.vue` — первый и самый простой из трёх
-   режимов (нет ростера, нет ручной отметки) — сквозная проверка связки
-   `Scanner.vue` + `useScanPacket.js` + реальный вызов
-   `submit-scan-packet` (см. п.5 про координацию с 122).
-3. `src/views/scanner/GroupRollCallView.vue` — то же плюс ростер
-   (`getChildrenByGroup`) и ручная отметка.
-4. `src/views/scanner/FreeCheckinView.vue` — вариант BUS без `bus_id`,
-   с отображением `group_id` найденного ребёнка.
-5. Router (добавить 3 маршрута, удалить `/scanner`) + `MainView.vue`
-   (заменить кнопку на три) — после того как все три экрана существуют.
-6. Удалить `src/views/ScannerView.vue`, удалить
-   `recordChildPresence()` из `useArmband.js`.
-7. **Координация с тикетом 122**: до этого шага `submit-scan-packet`
-   ещё не обязан существовать (можно вести разработку 1-6 против
-   локального мока/заглушки Edge Function); реальная сквозная проверка
-   («Отправить» действительно долетает и сохраняется) возможна только
-   когда 122 развёрнут хотя бы в тестовом окружении — координировать
-   таймлайн с исполнителем 122, `122.txt` прямо требует одновременного
-   релиза.
-8. Ручное тестирование на реальных Android/iPhone устройствах: все три
-   режима, дедуп в рамках захода, ручная отметка (GROUP), повтор
-   отправки после смоделированной сетевой ошибки, поведение при
-   отсутствии `bus_id`/`group_id` у текущего пользователя.
-9. Обновить `tickets/120/state.txt` и `tickets/dashboard.md`.
+1. `useArmband.js` — удалить `recordChildPresence()`, добавить
+   `getChildrenByGroupOrderedById()`. Независимый первый шаг.
+2. `useScanPacket.js` — сборка пакета + вызов `submit-scan-packet`.
+   Зависит от контракта из раздела «API изменения» (уже зафиксирован,
+   реализация Edge Function — тикет 122, может отставать по времени;
+   на период параллельной разработки допустима работа против мока
+   эндпоинта, `120.txt`, «Границы задачи»). Не зависит от шага 1.
+3. `ScannerBusView.vue` — зависит от шага 2 (не от шага 1 — не
+   использует ростер).
+4. `ScannerCheckinView.vue` — зависит от шага 2, независим от шага 3
+   (можно параллельно).
+5. `ScannerGroupView.vue` — зависит от шагов 1 и 2 (единственный,
+   использующий ростер и ручную отметку) — самый сложный экран,
+   разумно делать последним из трёх.
+6. `router/index.js` — три новых маршрута, удаление `/scanner` и
+   `/scanner-prototype`. Зависит от шагов 3-5 (нужны готовые
+   компоненты для монтирования).
+7. `MainView.vue` — новые кнопки/условия доступности, удаление старых
+   обработчиков. Зависит от шага 6 (нужны существующие маршруты).
+8. Удалить `src/views/ScannerView.vue` и
+   `src/views/ScannerPrototypeView.vue` из кодовой базы. После шага 7
+   (когда на них не осталось ссылок ни из роутера, ни из меню).
+9. Сквозная ручная проверка на реальных Android/iPhone-устройствах
+   (см. «Definition of Done» — как в `120.txt`) — после интеграции с
+   реально задеплоенной Edge Function из тикета 122, не против мока.
 
 # Риски
 
-- **Межтикетная зависимость от 122.** «Отправить» не может быть
-  end-to-end проверено без развёрнутого `submit-scan-packet` —
-  структурный риск, признанный и самим `122.txt` («оба тикета должны
-  разрабатываться и внедряться одновременно»). Смягчение — шаг 7 плана
-  реализации (мок на время разработки, реальная проверка ближе к
-  релизу).
-- **Зависимость от статуса 116.** Если 116 не реализован к началу 120,
-  шаг 0 плана реализации добавляет объём, изначально спроектированный
-  для другого тикета — риск дублирования усилий, если оба тикета
-  окажутся в работе параллельно у разных исполнителей. Смягчение —
-  сверка со `state.txt` тикета 116 перед стартом реализации 120.
-- **Расхождение объёма с `DECISIONS.md`.** Этот план сознательно сужает
-  объём 120 относительно `tickets/120/DECISIONS.md` п.2 (см.
-  «Уточнение объёма») на основании более поздних `121`/`dashboard.md`.
-  Если формально решение зафиксировано и не подлежит пересмотру без
-  явного разговора с пользователем — стоит явно подтвердить это сужение
-  до начала реализации, а не только зафиксировать в архитектурном плане.
-- **Оставшийся не-пакетный путь записи (`useScan.createScan()`,
-  `ChildDetailView.vue`).** Сознательно не тронут этим тикетом (не
-  входит в «три подрежима сканирования» 120.txt), но это означает, что
-  утверждение 121 §"Решение принято" («не останется сканеров/путей,
-  кроме перечисленных в 120.txt») после 120/122 будет верно только для
-  *сканеров*, не для админских ручных правок — согласуется с тем, что
-  121 §9 сознательно оставляет `packet_id` nullable, а не `NOT NULL`,
-  именно из-за таких остаточных путей.
-- **Отсутствие персистентности пакета между перезапусками приложения.**
-  `useScanPacket` хранит пакет только в памяти компонента — если
-  вкладка/приложение перезапущено посреди захода (до нажатия
-  «Отправить»), накопленные сканы теряются, нужно начинать заново.
-  120.txt/DECISIONS.md не требуют персистентности явно (акцент был на
-  повторе после сбоя *отправки*, не на переживании перезапуска
-  приложения) — принято как осознанное ограничение, не устраняется в
-  этом тикете.
-- **BUS/CHECKIN без ограничения по группе.** По 120.txt дети могут
-  принадлежать любым группам — `getBraceletStatus()` уже не фильтрует
-  по группе, риска нет, но стоит явно проверить в реализации, что
-  никакой промежуточный код (например, копипаста из GROUP-режима) не
-  добавит фильтр по `group_id`, ломая эту часть требований.
-- **iOS Safari mute switch / Web Audio ограничения** — тот же
-  унаследованный от 103/116 риск, не решается кодом, экран
-  подтверждения остаётся единственным надёжным каналом обратной связи.
+- **Рассинхронизация контракта с тикетом 122.** Формат `PresencePacket`
+  зафиксирован в трёх документах (`120.txt`, план 121, план 122) и
+  здесь ещё раз воспроизведён дословно — риск того же рода, что уже
+  явно назван в `tickets/122/IMPLEMENTATION_PLAN.md` («Риски»);
+  снижается требованием одновременного релиза 120/122 и сквозной
+  проверкой на шаге 9, но не устраняется архитектурно.
+- **Копипаста фильтра по группе в BUS/CHECKIN.** Явно предупреждено
+  `120.txt` — при написании `handleResolved` для этих двух режимов по
+  образцу GROUP легко случайно скопировать проверку
+  `child.group_id === context.group_id`, которой там быть не должно.
+- **Скан ребёнка не из текущей группы в GROUP-режиме — не описано
+  `120.txt`.** Открытый вопрос: добавлять ли такого ребёнка в пакет
+  (он не в ростере, чек-лист не обновится для него, но запись в пакете
+  формально корректна) или отклонять с отдельным сигналом. Нужно явное
+  решение перед реализацией `ScannerGroupView.vue` (шаг 5) — не
+  архитектурная развилка уровня всего тикета, но зафиксировать ответ
+  стоит до написания кода, а не по ходу.
+- **Пакет только в памяти — потеря при перезапуске приложения
+  посреди захода.** Сознательное ограничение `120.txt`, не смягчается
+  этим тикетом (обсуждалось и принято на уровне требований, не
+  архитектурное упущение).
+- **Путаница `scans.type` vs `PresencePacket.type`/`scan_packets.type`.**
+  Разные по смыслу поля с похожими именами в разных слоях (клиентский
+  пакет / будущая серверная таблица 122 / устаревшее поле `scans`) —
+  риск не для 120 напрямую (120 не пишет в `scans.type`), но стоит
+  держать в уме при совместной проверке с 122.
+- **iOS Safari mute switch / ограничения Web Audio** — унаследованный
+  от 103/116 риск, не решается в этом тикете; экран подтверждения
+  `Scanner.vue` остаётся надёжным каналом обратной связи независимо от
+  звука.
+- **Удаление `/scanner` и `/scanner-prototype`** — если у кого-то есть
+  сохранённая ссылка/ярлык PWA на старый маршрут, переход по нему
+  после этого тикета приведёт к 404/редиректу. Внутреннее приложение
+  с малым числом пользователей — риск принят, отдельная миграция
+  ссылок не требуется.
 
 # Definition of Done
 
-- В `MainView.vue` вместо одной кнопки «Scannen» — три кнопки,
-  открывающие три новых маршрута; маршрут `/scanner` и
-  `ScannerView.vue` удалены.
-- Каждый из трёх режимов: сканирует через переиспользованный `Scanner.vue`,
-  корректно резолвит браслет → ребёнок, дедуплицирует «в рамках захода»,
-  собирает `PresencePacket` в формате `tickets/121/IMPLEMENTATION_PLAN.md`
-  §7 (проверяется вручную через консоль/devtools).
-- GROUP: ростер группы загружается, отображает найденных/ненайденных,
-  поддерживает ручную отметку с `method: 'MANUAL'`.
-- Кнопка «Отправить» выполняет реальный `fetch` на `submit-scan-packet`
-  с `Authorization`-токеном и телом-пакетом; ошибка сети/сервера
-  показывает алерт с кнопкой повтора, сохраняя тот же `client_packet_id`;
-  успех очищает локальное состояние.
-- `useArmband.recordChildPresence()` удалён из кодовой базы; поиск по
-  `src/` не находит вызывающих.
-- `AdminBusView.vue` не изменён этим тикетом.
+Совпадает по существу с `120.txt`, раздел «Definition of Done»; здесь
+— как контрольный список для архитектурной готовности к реализации:
+
+- `useScanPacket.js` реализован и покрывает все три режима без
+  дублирования логики сборки/отправки пакета в самих View.
+- `useArmband.recordChildPresence()` удалён, вызывающих в `src/` не
+  осталось; `getChildrenByGroupOrderedById()` добавлен, существующий
+  `getChildrenByGroup()` не изменён (регрессия по `ArmbandView.vue`
+  исключена).
+- Три маршрута (`/scanner/bus`, `/scanner/group`, `/scanner/checkin`)
+  реализованы через отдельные View, реиспользующие `Scanner.vue`
+  без изменений; `/scanner` и `/scanner-prototype` удалены из роутера,
+  `ScannerView.vue`/`ScannerPrototypeView.vue` удалены из кодовой базы.
+- `MainView.vue` показывает три новые кнопки с условиями доступности
+  по `bus_id`/`group_id`; старые кнопка/обработчики удалены.
+- Кнопка «Отправить» во всех трёх режимах выполняет реальный запрос к
+  `submit-scan-packet` по контракту раздела «API изменения»; ошибка
+  сохраняет `client_packet_id` и предлагает повтор; успех очищает
+  локальный пакет.
+- `AdminBusView.vue`, `useScan.js`, `ChildDetailView.vue` не изменены.
+- Открытый вопрос «скан не из текущей группы в GROUP-режиме» (раздел
+  «Риски») разрешён явным решением до или в процессе шага 5 плана
+  реализации.
+  **Ответ** 
+  >>>
+  Если при групповой перекличке был отсканирован ребенок, который не относится к текущей группе, это считается ошибкой.
+
+Важно разделять два этапа обработки:
+
+Сканер успешно считывает браслет и определяет ребенка. Для него операция выполнена успешно.
+Режим "Перекличка группы" проверяет, принадлежит ли ребенок текущей группе. Если ребенок относится к другой группе, возникает ошибка бизнес-логики.
+
+В этом случае ребенок не должен добавляться в список текущей группы. Пользователю необходимо вывести понятное сообщение, например:
+
+Ребенок не относится к текущей группе.
+
+или
+
+Невозможно отметить ребенка: выбрана другая группа.
+
+Таким образом, ошибка связана не со сканированием браслета, а с тем, что ребенок не соответствует выбранному режиму работы сканера. Это различие важно сохранить как в архитектуре системы, так и в пользовательском интерфейсе.
+<<<
 - Ручная проверка на реальных Android- и iPhone-устройствах выполнена
-  для всех трёх режимов (камера, звук/вибрация/экран подтверждения,
-  повтор отправки, поведение без `bus_id`/`group_id`).
+  для всех трёх режимов против реально задеплоенной (не мок)
+  `submit-scan-packet`.
+
