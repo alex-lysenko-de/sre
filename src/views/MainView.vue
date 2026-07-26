@@ -88,33 +88,55 @@
             <font-awesome-icon :icon="['fas', 'arrow-right']" />
           </button>
 
-          <!-- Scan Button (for authenticated users) -->
+          <!-- Bus Scan Button (for authenticated users, disabled without bus_id) -->
           <button
               v-if="isAuthenticated"
-              @click="goToScan"
+              :disabled="!userStore.userInfo.bus_id"
+              @click="goToScanBus"
               class="btn btn-success btn-lg d-flex align-items-center justify-content-between"
           >
             <span class="d-flex align-items-center">
-              <font-awesome-icon :icon="['fas', 'qrcode']" class="me-3" size="2x" />
+              <font-awesome-icon :icon="['fas', 'bus']" class="me-3" size="2x" />
               <span>
-                <div class="fw-bold text-start">Scannen</div>
-                <small class="text-white-50">Kinder im Bus zählen</small>
+                <div class="fw-bold text-start">Bus zählen</div>
+                <small class="text-white-50">
+                  {{ userStore.userInfo.bus_id ? 'Kinder im Bus scannen' : 'Kein Bus zugewiesen' }}
+                </small>
               </span>
             </span>
             <font-awesome-icon :icon="['fas', 'arrow-right']" />
           </button>
 
-          <!-- Scanner Prototype Button (Ticket 116, for authenticated users) -->
+          <!-- Group Scan Button (for authenticated users, disabled without group_id) -->
           <button
               v-if="isAuthenticated"
-              @click="goToScanPrototype"
-              class="btn btn-outline-success btn-lg d-flex align-items-center justify-content-between"
+              :disabled="!userStore.userInfo.group_id"
+              @click="goToScanGroup"
+              class="btn btn-success btn-lg d-flex align-items-center justify-content-between"
+          >
+            <span class="d-flex align-items-center">
+              <font-awesome-icon :icon="['fas', 'users']" class="me-3" size="2x" />
+              <span>
+                <div class="fw-bold text-start">Gruppen-Appell</div>
+                <small class="text-white-50">
+                  {{ userStore.userInfo.group_id ? 'Anwesenheit der Gruppe prüfen' : 'Keine Gruppe zugewiesen' }}
+                </small>
+              </span>
+            </span>
+            <font-awesome-icon :icon="['fas', 'arrow-right']" />
+          </button>
+
+          <!-- Checkin Scan Button (for authenticated users, no availability condition) -->
+          <button
+              v-if="isAuthenticated"
+              @click="goToScanCheckin"
+              class="btn btn-success btn-lg d-flex align-items-center justify-content-between"
           >
             <span class="d-flex align-items-center">
               <font-awesome-icon :icon="['fas', 'qrcode']" class="me-3" size="2x" />
               <span>
-                <div class="fw-bold text-start">Scannen (Neu, Prototyp)</div>
-                <small class="text-muted">Testet die neue Scanner-Oberfläche</small>
+                <div class="fw-bold text-start">Freie Meldung</div>
+                <small class="text-white-50">Kinder frei melden</small>
               </span>
             </span>
             <font-awesome-icon :icon="['fas', 'arrow-right']" />
@@ -222,12 +244,16 @@ function goToAdminOverview() {
   router.push('/children')
 }
 
-function goToScan() {
-  router.push('/scanner')
+function goToScanBus() {
+  router.push('/scanner/bus')
 }
 
-function goToScanPrototype() {
-  router.push('/scanner-prototype')
+function goToScanGroup() {
+  router.push('/scanner/group')
+}
+
+function goToScanCheckin() {
+  router.push('/scanner/checkin')
 }
 
 function goToLogin() {

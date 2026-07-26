@@ -47,6 +47,31 @@ export function useArmband() {
     }
 
     /**
+     * Получить список детей по группе, отсортированный по id
+     * (для ростера режима "Gruppen-Appell", тикет 120 — порядок как в БД,
+     * в отличие от getChildrenByGroup(), отсортированного по имени для формы
+     * привязки браслета в ArmbandView.vue)
+     * @param {number} groupId - ID группы
+     * @returns {Array} Список детей
+     */
+    const getChildrenByGroupOrderedById = async (groupId) => {
+        try {
+            const { data, error } = await supabase
+                .from('children')
+                .select('id, name, band_id')
+                .eq('group_id', groupId)
+                .order('id', { ascending: true })
+
+            if (error) throw error
+
+            return data || []
+        } catch (err) {
+            console.error('Fehler beim Abrufen der Kinder nach Gruppe (nach id sortiert):', err)
+            throw err
+        }
+    }
+
+    /**
      * Получить подробные данные о ребенке
      * @param {number} childId - ID ребенка
      * @returns {Object} Данные ребенка
@@ -126,46 +151,12 @@ export function useArmband() {
         }
     }
 
-    /**
-     * Создать запись в таблице scans (отметить присутствие)
-     * @param {int} userId - ID пользователя (воспитателя)
-     * @param {int} childId - ID ребенка
-     * @param {int} bandId - ID браслета
-     * @param {int|null} busId - ID автобуса (необязательно)
-     * @returns {Object} Созданная запись
-     */
-    const recordChildPresence = async (userId, childId, bandId, busId = null) => {
-        try {
-            const today = new Date().toISOString().split('T')[0]
-
-            const { data, error } = await supabase
-                .from('scans')
-                .insert({
-                    date: today,
-                    user_id: userId,
-                    child_id: childId,
-                    band_id: bandId,
-                    bus_id: busId
-                })
-                .select()
-                .single()
-
-            if (error) throw error
-
-            console.log(`✅ Präsenz für Kind ${childId} registriert`)
-            return data
-        } catch (err) {
-            console.error('Fehler beim Registrieren der Präsenz:', err)
-            throw err
-        }
-    }
-
     return {
         getBraceletStatus,
         getChildrenByGroup,
+        getChildrenByGroupOrderedById,
         getChildDetails,
         checkBraceletAlreadyBound,
-        assignBraceletToChild,
-        recordChildPresence
+        assignBraceletToChild
     }
 }

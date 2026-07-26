@@ -90,16 +90,23 @@ const routes = [
     },
 
     {
-        path: '/scanner',
-        name: 'Scanner',
-        component: () => import('@/views/ScannerView.vue'),
+        path: '/scanner/bus',
+        name: 'ScannerBus',
+        component: () => import('@/views/ScannerBusView.vue'),
         meta: { requiresAuth: true, requiresAdmin: false }
     },
 
     {
-        path: '/scanner-prototype',
-        name: 'ScannerPrototype',
-        component: () => import('@/views/ScannerPrototypeView.vue'),
+        path: '/scanner/group',
+        name: 'ScannerGroup',
+        component: () => import('@/views/ScannerGroupView.vue'),
+        meta: { requiresAuth: true, requiresAdmin: false }
+    },
+
+    {
+        path: '/scanner/checkin',
+        name: 'ScannerCheckin',
+        component: () => import('@/views/ScannerCheckinView.vue'),
         meta: { requiresAuth: true, requiresAdmin: false }
     },
 
