@@ -148,9 +148,22 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Postgres rejects REFERENCING NEW TABLE on a trigger with more than one
+-- event ("transition tables cannot be specified for triggers with more than
+-- one event") - AFTER INSERT OR UPDATE with a transition table must be split
+-- into two single-event triggers sharing the same function.
 DROP TRIGGER IF EXISTS trg_on_children_today_change ON children_today;
-CREATE TRIGGER trg_on_children_today_change
-  AFTER INSERT OR UPDATE ON children_today
+DROP TRIGGER IF EXISTS trg_on_children_today_insert ON children_today;
+DROP TRIGGER IF EXISTS trg_on_children_today_update ON children_today;
+
+CREATE TRIGGER trg_on_children_today_insert
+  AFTER INSERT ON children_today
+  REFERENCING NEW TABLE AS new_table
+  FOR EACH STATEMENT
+  EXECUTE FUNCTION on_children_today_change_batch();
+
+CREATE TRIGGER trg_on_children_today_update
+  AFTER UPDATE ON children_today
   REFERENCING NEW TABLE AS new_table
   FOR EACH STATEMENT
   EXECUTE FUNCTION on_children_today_change_batch();

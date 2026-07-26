@@ -23,6 +23,24 @@ DDL, деплой функции, ручные и регрессионные п�
 цикл пересчёта», «идемпотентность подтверждена») пока не верифицированы
 фактически.
 
+При первой реальной попытке применить `doc/db/scan_packets.sql` к Supabase
+(вне этой сессии) обнаружился ещё один дефект, уже не логический, а
+синтаксический — Postgres отклонил `CREATE TRIGGER trg_on_children_today_change
+... AFTER INSERT OR UPDATE ... REFERENCING NEW TABLE AS new_table` с ошибкой
+`0A000: transition tables cannot be specified for triggers with more than one
+event`. Это ограничение Postgres не было учтено ни планом (`IMPLEMENTATION_PLAN.md`,
+раздел «Изменения БД»), ни первоначальной реализацией — соответствующий SQL
+физически не мог быть применён ни разу, что означает: строка «`npm run build`
+— успешно... без ошибок» в `IMPLEMENTATION_REPORT.md` подтверждает только
+компиляцию клиентского кода, а не работоспособность SQL-скрипта — тот при
+первом же реальном запуске падал на этом операторе, до `submit_scan_packet()`
+и RLS-политик включительно (они шли в скрипте после сломанного триггера и не
+были применены). Исправлено тем же способом, которым Postgres требует
+обходить это ограничение — триггер с двумя событиями и transition table разбит
+на два триггера с одним событием каждый (`trg_on_children_today_insert`/
+`trg_on_children_today_update`), оба вызывают ту же функцию
+`on_children_today_change_batch()`. См. «Правки после ревью».
+
 # Правки после ревью
 
 - `doc/db/scan_packets.sql`, `on_scan_insert_batch()` — добавлена проверка
@@ -43,6 +61,15 @@ DDL, деплой функции, ручные и регрессионные п�
   graceful-деградации или дополнительной валидации на стороне Edge Function:
   оба случая — нарушение инварианта данных, а не штатный путь, который нужно
   «обрабатывать».
+- `doc/db/scan_packets.sql`, `trg_on_children_today_change` — разбит на два
+  триггера `trg_on_children_today_insert` (`AFTER INSERT`) и
+  `trg_on_children_today_update` (`AFTER UPDATE`), каждый со своим
+  `REFERENCING NEW TABLE AS new_table`, оба вызывают
+  `on_children_today_change_batch()` без изменений в теле функции — единственный
+  способ обойти ограничение Postgres `0A000` на transition tables у
+  многособытийных триггеров. Функциональность не меняется (это то же самое
+  «один вызов на статемент», просто раздельно для INSERT и UPDATE), только
+  синтаксис регистрации.
 - Minor 1 (`TYPE_CODE[body.type]`) и Minor 2 (CRLF в `ChildrenView.vue`) не
   затронуты этой правкой — оставлены как необязательные улучшения, см. ниже.
 
