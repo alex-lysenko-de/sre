@@ -18,7 +18,6 @@ import ChildDetailView from "@/views/ChildDetailView.vue"
 import ChildEditView from "@/views/ChildEditView.vue"
 import MainView from "@/views/MainView.vue"
 import AdminBusView from "@/views/AdminBusView.vue";
-import HeadcountView from "@/views/HeadcountView.vue";
 
 // Define routes
 const routes = [
@@ -85,7 +84,10 @@ const routes = [
     {
         path: '/headcount',
         name: 'Headcount',
-        component: HeadcountView,
+        // Lazy wie die Scanner-Routen (Ticket 120) - HeadcountView bindet seit
+        // Ticket 123 Scanner.vue ein, das ueber html5-qrcode einen grossen
+        // Teil zum Bundle beitraegt (siehe tickets/123/IMPLEMENTATION_REPORT.md).
+        component: () => import('@/views/HeadcountView.vue'),
         meta: { requiresAuth: true, requiresAdmin: false }
     },
 

@@ -104,7 +104,7 @@ export function useChildren() {
             .from('children')
             .select('id, name, age, band_id')
             .eq('group_id', groupId)
-            .order('name', { ascending : true });
+            .order('id', { ascending : true });
 
         if (error) {
             console.error('Fehler beim Abrufen der Kinder der Gruppe:', error);
