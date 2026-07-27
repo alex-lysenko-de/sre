@@ -10,12 +10,16 @@
       <div v-if="show" class="modal-backdrop" @click.self="close">
         <div class="modal-dialog">
           <div class="modal-content">
+            <DebugTag variant="page" label="Page 5" />
+
             <div class="modal-header">
+              <DebugTag label="el1" />
               <h5 class="modal-title">Neuen Checkpoint erstellen</h5>
               <button type="button" class="btn-close" @click="close"></button>
             </div>
 
             <div class="modal-body">
+              <DebugTag label="el2" />
               <div class="d-grid gap-2">
                 <button
                     v-for="option in typeOptions"
@@ -37,6 +41,7 @@
             </div>
 
             <div class="modal-footer">
+              <DebugTag label="el3" />
               <button type="button" class="btn btn-secondary" @click="close">
                 Abbrechen
               </button>
@@ -50,6 +55,7 @@
 
 <script setup>
 import { CHECKPOINT_TYPE } from '@/composables/useCheckpointsMock'
+import DebugTag from '@/components/checkpoints-prototype/DebugTag.vue'
 
 defineProps({
   show: {

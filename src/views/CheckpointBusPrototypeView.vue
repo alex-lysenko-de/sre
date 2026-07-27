@@ -5,7 +5,10 @@
      siehe tickets/130_2/IMPLEMENTATION_PLAN.md, "Anализ"). -->
 <template>
   <div class="cp-detail-view">
+    <DebugTag variant="page" label="Page 2" />
+
     <div class="d-flex align-items-center mb-3">
+      <DebugTag label="el1" />
       <button class="btn btn-sm btn-outline-secondary me-2" @click="goBack">
         <font-awesome-icon :icon="['fas', 'arrow-left']" />
       </button>
@@ -22,7 +25,8 @@
     </div>
 
     <template v-else-if="checkpoint">
-      <div class="d-flex gap-2 mb-3">
+      <div class="d-flex align-items-center gap-2 mb-3">
+        <DebugTag label="el2" />
         <button
             class="btn btn-success"
             :disabled="checkpoint.status !== OPEN"
@@ -43,6 +47,7 @@
 
       <div class="card">
         <div class="card-body">
+          <DebugTag label="el3" />
           <h5 class="card-title">
             <font-awesome-icon :icon="['fas', 'bus']" class="me-2" />
             Busse
@@ -127,6 +132,7 @@ import {
 import CheckpointTypeBadge from '@/components/checkpoints-prototype/CheckpointTypeBadge.vue'
 import CheckpointStatusBadge from '@/components/checkpoints-prototype/CheckpointStatusBadge.vue'
 import CheckpointOriginBadge from '@/components/checkpoints-prototype/CheckpointOriginBadge.vue'
+import DebugTag from '@/components/checkpoints-prototype/DebugTag.vue'
 
 const OPEN = CHECKPOINT_STATUS.OPEN
 

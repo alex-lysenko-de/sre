@@ -7,7 +7,10 @@
      "UI изменения" / "Главный экран". -->
 <template>
   <div class="cp-list-view">
+    <DebugTag variant="page" label="Page 1" />
+
     <div class="d-flex align-items-center mb-3">
+      <DebugTag label="el1" />
       <button class="btn btn-sm btn-outline-secondary me-2" @click="goBack">
         <font-awesome-icon :icon="['fas', 'arrow-left']" />
       </button>
@@ -17,6 +20,7 @@
     <!-- Gesamt-Summe (synthetisch, nicht aus useBusData/useGroups) -->
     <div class="card mb-3">
       <div class="card-body">
+        <DebugTag label="el2" />
         <h5 class="mb-3 text-center">Gesamt</h5>
         <div class="row text-center">
           <div class="col-6">
@@ -31,6 +35,7 @@
       </div>
     </div>
 
+    <DebugTag label="el3" />
     <button class="btn btn-success w-100 mb-3" @click="showCreateModal = true">
       <font-awesome-icon :icon="['fas', 'plus']" class="me-2" />
       Neuen Checkpoint erstellen
@@ -44,6 +49,7 @@
 
     <div class="card">
       <div class="card-body">
+        <DebugTag label="el4" />
         <h5 class="card-title">
           <font-awesome-icon :icon="['fas', 'chart-line']" class="me-2" />
           Checkpoints (heute)
@@ -115,6 +121,7 @@ import CheckpointTypeBadge from '@/components/checkpoints-prototype/CheckpointTy
 import CheckpointStatusBadge from '@/components/checkpoints-prototype/CheckpointStatusBadge.vue'
 import CheckpointOriginBadge from '@/components/checkpoints-prototype/CheckpointOriginBadge.vue'
 import CheckpointCreateModal from '@/components/checkpoints-prototype/CheckpointCreateModal.vue'
+import DebugTag from '@/components/checkpoints-prototype/DebugTag.vue'
 
 const router = useRouter()
 

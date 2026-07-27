@@ -7,7 +7,10 @@
      (decision.md, Punkt 2, gilt explizit auch fuer Lazy). -->
 <template>
   <div class="cp-detail-view">
+    <DebugTag variant="page" label="Page 4" />
+
     <div class="d-flex align-items-center mb-3">
+      <DebugTag label="el1" />
       <button class="btn btn-sm btn-outline-secondary me-2" @click="goBack">
         <font-awesome-icon :icon="['fas', 'arrow-left']" />
       </button>
@@ -24,7 +27,8 @@
     </div>
 
     <template v-else-if="checkpoint">
-      <div class="d-flex gap-2 mb-3">
+      <div class="d-flex align-items-center gap-2 mb-3">
+        <DebugTag label="el2" />
         <button
             class="btn btn-success"
             :disabled="checkpoint.status !== OPEN"
@@ -45,6 +49,7 @@
 
       <div class="card mb-3">
         <div class="card-body text-center">
+          <DebugTag label="el3" />
           <div class="text-muted">Letzte Meldung</div>
           <div class="fs-5 fw-bold">{{ progress?.lastScanAt ? formatTime(progress.lastScanAt) : '—' }}</div>
         </div>
@@ -54,6 +59,7 @@
         <div class="col-md-6 mb-3">
           <div class="card h-100">
             <div class="card-body">
+              <DebugTag label="el4" />
               <h5 class="card-title">
                 <font-awesome-icon :icon="['fas', 'check-circle']" class="me-2 text-success" />
                 Gemeldet ({{ progress?.checkedIn.length || 0 }})
@@ -71,6 +77,7 @@
         <div class="col-md-6 mb-3">
           <div class="card h-100">
             <div class="card-body">
+              <DebugTag label="el5" />
               <h5 class="card-title">
                 <font-awesome-icon :icon="['fas', 'exclamation-triangle']" class="me-2 text-warning" />
                 Noch nicht gemeldet ({{ progress?.notYet.length || 0 }})
@@ -104,6 +111,7 @@ import { fetchLazyCheckpointProgress } from '@/composables/useLazyCheckpointProg
 import CheckpointTypeBadge from '@/components/checkpoints-prototype/CheckpointTypeBadge.vue'
 import CheckpointStatusBadge from '@/components/checkpoints-prototype/CheckpointStatusBadge.vue'
 import CheckpointOriginBadge from '@/components/checkpoints-prototype/CheckpointOriginBadge.vue'
+import DebugTag from '@/components/checkpoints-prototype/DebugTag.vue'
 
 const OPEN = CHECKPOINT_STATUS.OPEN
 
