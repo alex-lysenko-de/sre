@@ -20,12 +20,13 @@
 
             <div class="modal-body">
               <DebugTag label="el2" />
-              <div class="d-grid gap-2">
+              <div class="d-grid gap-3 cp-type-buttons">
                 <button
                     v-for="option in typeOptions"
                     :key="option.type"
                     type="button"
-                    class="btn btn-outline-primary d-flex justify-content-between align-items-center"
+                    class="btn cp-type-btn d-flex justify-content-between align-items-center"
+                    :class="option.btnClass"
                     :disabled="openTypes.includes(option.type)"
                     @click="choose(option.type)"
                 >
@@ -70,10 +71,12 @@ defineProps({
 
 const emit = defineEmits(['close', 'create'])
 
+// Eigene, kraeftige Farbe je Typ (UX-Feedback: Buttons staerker
+// voneinander unterscheiden) - dieselbe Farbzuordnung wie CheckpointTypeBadge.
 const typeOptions = [
-  { type: CHECKPOINT_TYPE.BUS, label: 'Bus', icon: ['fas', 'bus'] },
-  { type: CHECKPOINT_TYPE.GROUP, label: 'Group', icon: ['fas', 'users'] },
-  { type: CHECKPOINT_TYPE.LAZY, label: 'Lazy', icon: ['fas', 'clipboard-check'] }
+  { type: CHECKPOINT_TYPE.BUS, label: 'Bus', icon: ['fas', 'bus'], btnClass: 'btn-primary' },
+  { type: CHECKPOINT_TYPE.GROUP, label: 'Group', icon: ['fas', 'users'], btnClass: 'btn-info text-dark' },
+  { type: CHECKPOINT_TYPE.LAZY, label: 'Lazy', icon: ['fas', 'clipboard-check'], btnClass: 'btn-secondary' }
 ]
 
 function choose(type) {
@@ -125,12 +128,26 @@ function close() {
   padding: 1.5rem;
 }
 
+.cp-type-btn {
+  min-height: 64px;
+  font-size: 1.2rem;
+  font-weight: 700;
+  padding: 16px 20px;
+  border-radius: 12px;
+}
+
 .modal-footer {
   padding: 1rem 1.5rem;
   border-top: 1px solid #dee2e6;
   display: flex;
   justify-content: flex-end;
   gap: 0.5rem;
+}
+
+.modal-footer .btn {
+  min-height: 52px;
+  font-size: 1.1rem;
+  padding: 12px 20px;
 }
 
 .modal-enter-active,

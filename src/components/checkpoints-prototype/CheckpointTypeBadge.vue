@@ -50,7 +50,8 @@ const typeClass = computed(() => {
 
 <style scoped>
 .cp-type-badge {
-  font-size: 0.85rem;
-  padding: 0.35rem 0.6rem;
+  font-size: 1rem;
+  font-weight: 700;
+  padding: 0.5rem 0.8rem;
 }
 </style>

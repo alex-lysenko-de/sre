@@ -2,21 +2,36 @@
 <!-- Ticket 130_2 - Detail-/Monitoring-Bildschirm fuer eine Bus-Checkpoint,
      ausschliesslich Mock-Daten. Raster orientiert sich visuell an
      AdminBusView.vue/BusDetailModal.vue (nicht wiederverwendet als Code,
-     siehe tickets/130_2/IMPLEMENTATION_PLAN.md, "Anализ"). -->
+     siehe tickets/130_2/IMPLEMENTATION_PLAN.md, "Anализ").
+
+     UX-Feedback Runde 1:
+     - EL1: mehrzeilige Kopfzeile statt einzeiliger Ueberschrift.
+     - EL2: "Cancel" ersetzt durch Schliessen/Oeffnen (reopenCheckpoint) und
+       Entfernen (removeCheckpoint, mit Bestaetigung).
+     - EL3: Tabelle durch Kartenraster ersetzt; ein Bus kann > 8 Betreuer
+       haben (Bus 1 demonstriert das) - Details (Betreuer/Kinder/Scanzeiten)
+       stehen daher nicht mehr direkt in der Karte, sondern im Detailpanel.
+     - EL4: Detailpanel mit Betreuer-/Kinderliste und Scanzeiten je Bus,
+       inkl. "Kopieren"-Button (Text in die Zwischenablage). -->
 <template>
   <div class="cp-detail-view">
     <DebugTag variant="page" label="Page 2" />
 
-    <div class="d-flex align-items-center mb-3">
+    <div class="cp-header">
       <DebugTag label="el1" />
-      <button class="btn btn-sm btn-outline-secondary me-2" @click="goBack">
-        <font-awesome-icon :icon="['fas', 'arrow-left']" />
-      </button>
-      <h4 class="mb-0 me-2">Bus Checkpoint #{{ checkpoint?.seq }}</h4>
+      <div class="cp-header-top">
+        <button class="btn btn-sm btn-outline-secondary me-2" @click="goBack">
+          <font-awesome-icon :icon="['fas', 'arrow-left']" />
+        </button>
+        <span class="cp-header-title">Bus Checkpoint #{{ checkpoint?.seq }}</span>
+      </div>
       <template v-if="checkpoint">
-        <CheckpointTypeBadge :type="checkpoint.type" class="me-1" />
-        <CheckpointStatusBadge :status="checkpoint.status" :day="checkpoint.day" class="me-1" />
-        <CheckpointOriginBadge :created-by="checkpoint.created_by" />
+        <div class="cp-header-line">
+          <CheckpointStatusBadge :status="checkpoint.status" :day="checkpoint.day" />
+        </div>
+        <div class="cp-header-line">
+          <CheckpointOriginBadge :created-by="checkpoint.created_by" />
+        </div>
       </template>
     </div>
 
@@ -25,24 +40,36 @@
     </div>
 
     <template v-else-if="checkpoint">
-      <div class="d-flex align-items-center gap-2 mb-3">
+      <div class="cp-actions">
         <DebugTag label="el2" />
+
         <button
-            class="btn btn-success"
-            :disabled="checkpoint.status !== OPEN"
+            v-if="checkpoint.status === OPEN"
+            class="btn btn-success cp-action-btn"
             @click="onFinish"
         >
           <font-awesome-icon :icon="['fas', 'check-circle']" class="me-2" />
-          Finish
+          Schließen
         </button>
         <button
-            class="btn btn-outline-danger"
-            :disabled="checkpoint.status !== OPEN"
-            @click="onCancel"
+            v-else
+            class="btn btn-primary cp-action-btn"
+            @click="onReopen"
         >
-          <font-awesome-icon :icon="['fas', 'times']" class="me-2" />
-          Cancel
+          <font-awesome-icon :icon="['fas', 'redo']" class="me-2" />
+          Öffnen
         </button>
+
+        <button class="btn btn-outline-danger cp-action-btn" @click="onRemove">
+          <font-awesome-icon :icon="['fas', 'trash-alt']" class="me-2" />
+          Entfernen
+        </button>
+      </div>
+
+      <div v-if="actionError" class="alert alert-danger">
+        <template v-if="actionError.error === 'ALREADY_OPEN'">
+          Es ist bereits ein anderer Bus-Checkpoint offen (#{{ actionError.existingId }}). Zuerst diesen schließen.
+        </template>
       </div>
 
       <div class="card">
@@ -53,64 +80,55 @@
             Busse
           </h5>
 
-          <div class="table-responsive">
-            <table class="table table-hover align-middle">
-              <thead>
-              <tr>
-                <th>Bus</th>
-                <th>Kinder</th>
-                <th>Betreuer</th>
-                <th>Verantwortliche</th>
-                <th></th>
-              </tr>
-              </thead>
-              <tbody>
-              <template v-for="bus in checkpoint.buses" :key="bus.busNumber">
-                <tr :class="{ 'table-secondary': !bus.hasData }">
-                  <td class="fw-bold">
-                    <span class="status-indicator me-2" :class="bus.hasData ? 'bg-success' : 'bg-secondary'"></span>
-                    {{ bus.busNumber }}
-                  </td>
-                  <td>
-                    <span v-if="bus.hasData" class="badge bg-primary">{{ bus.kinderCount }}</span>
-                    <span v-else class="text-muted">-</span>
-                  </td>
-                  <td>
-                    <span v-if="bus.hasData" class="badge bg-success">{{ bus.betreuerCount }}</span>
-                    <span v-else class="text-muted">-</span>
-                  </td>
-                  <td>
-                    <span v-if="bus.betreuerNames.length">{{ bus.betreuerNames.join(', ') }}</span>
-                    <span v-else class="text-muted">
-                      {{ bus.hasData ? '—' : 'Keine Kinder zugeordnet' }}
-                    </span>
-                  </td>
-                  <td>
-                    <button
-                        v-if="bus.packets.length"
-                        class="btn btn-sm btn-link"
-                        @click="toggleExpand(bus.busNumber)"
-                    >
-                      <font-awesome-icon :icon="['fas', 'inbox']" />
-                    </button>
-                  </td>
-                </tr>
-                <tr v-if="expandedBus === bus.busNumber">
-                  <td colspan="5">
-                    <div class="list-group">
-                      <div v-for="packet in bus.packets" :key="packet.id" class="list-group-item d-flex justify-content-between">
-                        <div>
-                          <strong>{{ packet.authorName }}</strong>
-                          <span class="text-muted ms-2">{{ formatTime(packet.receivedAt) }}</span>
-                        </div>
-                        <span class="badge bg-primary">{{ packet.childrenCount }} Kinder</span>
-                      </div>
-                    </div>
-                  </td>
-                </tr>
-              </template>
-              </tbody>
-            </table>
+          <div class="cp-bus-grid">
+            <div
+                v-for="bus in checkpoint.buses"
+                :key="bus.busNumber"
+                class="cp-bus-card"
+                :class="bus.hasData ? 'cp-bus-card-ok' : 'cp-bus-card-none'"
+                role="button"
+                @click="toggleExpand(bus)"
+            >
+              <div class="cp-bus-num">Bus {{ bus.busNumber }}</div>
+              <div class="cp-bus-count">{{ bus.hasData ? bus.kinderCount : '—' }}</div>
+              <div class="cp-bus-status-text">
+                {{ bus.hasData ? `${bus.betreuerCount} Betreuer` : 'Keine Kinder zugeordnet' }}
+              </div>
+            </div>
+          </div>
+
+          <div v-if="expandedBus" class="cp-expand-panel">
+            <DebugTag label="el4" />
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <div class="fw-bold">Bus {{ expandedBus.busNumber }}</div>
+              <button class="btn btn-sm btn-outline-secondary" @click="copyBusSummary(expandedBus)">
+                {{ copied ? 'Kopiert!' : 'Kopieren' }}
+              </button>
+            </div>
+
+            <template v-if="expandedBus.hasData">
+              <div class="mb-2">
+                <div class="fw-bold">Betreuer ({{ expandedBus.betreuerNames.length }})</div>
+                <div class="cp-scroll-list">
+                  <div v-for="(name, idx) in expandedBus.betreuerNames" :key="idx">{{ name }}</div>
+                </div>
+              </div>
+              <div class="mb-2">
+                <div class="fw-bold">Kinder ({{ expandedBus.children.length }})</div>
+                <div class="cp-scroll-list">
+                  <div v-for="(name, idx) in expandedBus.children" :key="idx">{{ name }}</div>
+                </div>
+              </div>
+              <div>
+                <div class="fw-bold">Scans</div>
+                <div class="cp-scroll-list">
+                  <div v-for="packet in expandedBus.packets" :key="packet.id">
+                    {{ formatTime(packet.receivedAt) }} — {{ packet.authorName }} ({{ packet.childrenCount }} Kinder)
+                  </div>
+                </div>
+              </div>
+            </template>
+            <div v-else class="text-muted">Keine Kinder zugeordnet.</div>
           </div>
         </div>
       </div>
@@ -127,9 +145,9 @@ import {
   CHECKPOINT_STATUS,
   fetchCheckpointDetail,
   finishCheckpoint,
-  cancelCheckpoint
+  reopenCheckpoint,
+  removeCheckpoint
 } from '@/composables/useCheckpointsMock'
-import CheckpointTypeBadge from '@/components/checkpoints-prototype/CheckpointTypeBadge.vue'
 import CheckpointStatusBadge from '@/components/checkpoints-prototype/CheckpointStatusBadge.vue'
 import CheckpointOriginBadge from '@/components/checkpoints-prototype/CheckpointOriginBadge.vue'
 import DebugTag from '@/components/checkpoints-prototype/DebugTag.vue'
@@ -141,14 +159,46 @@ const router = useRouter()
 
 const loading = ref(true)
 const checkpoint = ref(null)
+const expandedBusNumber = ref(null)
 const expandedBus = ref(null)
+const actionError = ref(null)
+const copied = ref(false)
 
 function formatTime(isoString) {
   return new Date(isoString).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
 }
 
-function toggleExpand(busNumber) {
-  expandedBus.value = expandedBus.value === busNumber ? null : busNumber
+function toggleExpand(bus) {
+  if (expandedBusNumber.value === bus.busNumber) {
+    expandedBusNumber.value = null
+    expandedBus.value = null
+  } else {
+    expandedBusNumber.value = bus.busNumber
+    expandedBus.value = bus
+  }
+  copied.value = false
+}
+
+async function copyBusSummary(bus) {
+  const lines = [
+    `Bus ${bus.busNumber}`,
+    `Kinder: ${bus.kinderCount}`,
+    `Betreuer: ${bus.betreuerCount}`,
+    ...bus.betreuerNames.map(name => `- ${name}`),
+    '',
+    'Kinder:',
+    ...bus.children.map(name => `- ${name}`),
+    '',
+    'Scans:',
+    ...bus.packets.map(p => `${formatTime(p.receivedAt)} - ${p.authorName} (${p.childrenCount} Kinder)`)
+  ]
+
+  try {
+    await navigator.clipboard.writeText(lines.join('\n'))
+    copied.value = true
+  } catch (err) {
+    console.error('Fehler beim Kopieren:', err)
+  }
 }
 
 async function load() {
@@ -158,13 +208,27 @@ async function load() {
 }
 
 async function onFinish() {
+  actionError.value = null
   await finishCheckpoint(checkpoint.value.id)
   await load()
 }
 
-async function onCancel() {
-  await cancelCheckpoint(checkpoint.value.id)
+async function onReopen() {
+  actionError.value = null
+  const result = await reopenCheckpoint(checkpoint.value.id)
+  if (result?.error) {
+    actionError.value = result
+    return
+  }
   await load()
+}
+
+async function onRemove() {
+  if (!confirm('Diesen Checkpoint wirklich entfernen? Das kann nicht rückgängig gemacht werden.')) {
+    return
+  }
+  await removeCheckpoint(checkpoint.value.id)
+  goBack()
 }
 
 function goBack() {
@@ -179,12 +243,98 @@ onMounted(load)
   max-width: 900px;
   margin: 0 auto;
   padding: 16px;
+  font-size: 1.05rem;
 }
 
-.status-indicator {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
+.cp-header {
+  margin-bottom: 8px;
+}
+
+.cp-header-top {
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.cp-header-title {
+  font-size: 1.4rem;
+  font-weight: 700;
+}
+
+.cp-header-line {
+  margin-bottom: 6px;
+}
+
+.cp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 16px 0;
+}
+
+.cp-action-btn {
+  min-height: 56px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  padding: 12px 20px;
+  flex: 1 1 auto;
+}
+
+.cp-bus-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.cp-bus-card {
+  border-radius: 12px;
+  padding: 14px 8px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.cp-bus-num {
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.cp-bus-count {
+  font-size: 1.8rem;
+  font-weight: 800;
+  margin-top: 4px;
+}
+
+.cp-bus-status-text {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+.cp-bus-card-ok {
+  background-color: #d1e7dd;
+  color: #0f5132;
+}
+
+.cp-bus-card-none {
+  background-color: #e9ecef;
+  color: #495057;
+}
+
+.cp-expand-panel {
+  margin-top: 16px;
+  padding: 14px;
+  border-radius: 12px;
+  background-color: #fff3cd;
+  font-size: 1.05rem;
+}
+
+.cp-scroll-list {
+  max-height: 160px;
+  overflow-y: auto;
+  background: white;
+  border-radius: 8px;
+  padding: 8px 10px;
+  user-select: text;
 }
 </style>

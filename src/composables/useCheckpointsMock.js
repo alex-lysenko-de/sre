@@ -9,11 +9,20 @@
 //
 // Keine einzige Netzwerkanfrage, kein Supabase-Import. Alle Funktionen sind
 // async/Promise-basiert wie das zukuenftige Pendant, loesen aber sofort auf.
+//
+// UX-Feedback-Runde 1 (siehe tickets/130_2/UX_FEEDBACK.md): "Cancel" wurde
+// durch die Nutzerin als verwirrend empfunden (Abgebrochen sah visuell wie
+// Abgeschlossen aus, blieb aber sichtbar in der Liste). Ersetzt durch zwei
+// klar getrennte Aktionen: reopenCheckpoint() (Gegenteil von finish, fuer
+// versehentliches Schliessen) und removeCheckpoint() (entfernt eine
+// irrtuemlich angelegte Checkpoint komplett aus der sichtbaren Liste, statt
+// sie mit einem verwirrenden Status weiterzufuehren). CHECKPOINT_STATUS hat
+// dadurch nur noch OPEN/FINISHED - CANCELLED entfaellt ersatzlos.
 
 import { reactive } from 'vue'
 
 export const CHECKPOINT_TYPE = { BUS: 1, GROUP: 2, LAZY: 3 }
-export const CHECKPOINT_STATUS = { OPEN: 1, FINISHED: 2, CANCELLED: 3 }
+export const CHECKPOINT_STATUS = { OPEN: 1, FINISHED: 2 }
 
 // Bewusst hartcodiert statt aus useConfigStore gelesen (siehe "Risiken" im
 // Plan) - jede Netzwerkabhaengigkeit soll im Prototyp komplett entfallen.
@@ -25,6 +34,13 @@ const ADMIN_USER = { id: 1, name: 'Hauptadministrator', isAdmin: true }
 const BETREUER_MUELLER = { id: 101, name: 'Müller', isAdmin: false }
 const BETREUER_SCHMIDT = { id: 102, name: 'Schmidt', isAdmin: false }
 const BETREUER_FISCHER = { id: 103, name: 'Fischer', isAdmin: false }
+
+// Pool fuer Busse mit vielen Betreuern (UX-Feedback: ein Bus kann > 8
+// Betreuer haben) - eigene, von den Kindernamen unabhaengige Namen.
+const BETREUER_NAME_POOL = [
+    'Müller', 'Schmidt', 'Fischer', 'Weber', 'Meyer', 'Wagner',
+    'Becker', 'Schulz', 'Hoffmann', 'Koch', 'Richter', 'Klein'
+]
 
 function todayString() {
     return new Date().toISOString().split('T')[0]
@@ -42,13 +58,13 @@ function makeId() {
     return nextId++
 }
 
-// Namen fuer die synthetischen Kinder-Roster (Group/Lazy) - klein gehalten,
-// reicht fuer die Demonstration der geforderten Zustaende.
+// Namen fuer die synthetischen Kinder-Roster (Group/Lazy/Bus) - klein
+// gehalten, reicht fuer die Demonstration der geforderten Zustaende.
 const CHILD_NAMES = [
-    'Anna', 'Ben', 'Clara', 'David', 'Emma', 'Finn',
-    'Greta', 'Hannes', 'Ida', 'Jonas', 'Klara', 'Leo',
-    'Mia', 'Noah', 'Olivia', 'Paul', 'Quirin', 'Rosa',
-    'Sara', 'Tom', 'Ute', 'Vincent', 'Wanda', 'Xaver'
+    'Anna Krause', 'Ben Vogel', 'Clara Wolf', 'David Fuchs', 'Emma Braun', 'Finn Berger',
+    'Greta Lang', 'Hannes Roth', 'Ida Herrmann', 'Jonas Baur', 'Klara Schuster', 'Leo Franke',
+    'Mia Winkler', 'Noah Kraus', 'Olivia Peters', 'Paul Sommer', 'Quirin Graf', 'Rosa Horn',
+    'Sara Busch', 'Tom Seidel', 'Ute Kaiser', 'Vincent Ludwig', 'Wanda Krüger', 'Xaver Otto'
 ]
 
 function buildGroupRoster() {
@@ -67,7 +83,6 @@ function buildGroupRoster() {
 const GROUP_ROSTER = buildGroupRoster()
 
 function buildBusesMock({ allReceived, includeEmptyBus }) {
-    const names = [BETREUER_MUELLER.name, BETREUER_SCHMIDT.name, BETREUER_FISCHER.name]
     const buses = []
     for (let busNumber = 1; busNumber <= MOCK_TOTAL_BUSES; busNumber++) {
         // Ein Bus zeigt bewusst den Zustand "keine Kinder zugeordnet"
@@ -76,17 +91,25 @@ function buildBusesMock({ allReceived, includeEmptyBus }) {
         const hasData = allReceived ? !isEmptyBus : (busNumber % 2 === 1 && !isEmptyBus)
 
         const kinderCount = hasData ? 4 + (busNumber % 3) : 0
-        const betreuerCount = hasData ? 1 : 0
-        const betreuerNames = hasData ? [names[busNumber % names.length]] : []
+        // UX-Feedback: ein Bus kann mehr als einen, oft > 8 Betreuer haben -
+        // ein Bus (Nr. 1) demonstriert das explizit.
+        const betreuerCount = hasData ? (busNumber === 1 ? 9 : 1) : 0
+        const betreuerNames = hasData
+            ? Array.from({ length: betreuerCount }, (_, i) => BETREUER_NAME_POOL[(busNumber - 1 + i) % BETREUER_NAME_POOL.length])
+            : []
 
-        const packets = hasData ? [{
+        const children = hasData
+            ? CHILD_NAMES.slice((busNumber * 3) % CHILD_NAMES.length).slice(0, kinderCount)
+            : []
+
+        const packets = hasData ? betreuerNames.map((authorName, i) => ({
             id: makeId(),
-            authorName: betreuerNames[0],
-            receivedAt: timeToday(9, (busNumber * 5) % 60),
-            childrenCount: kinderCount
-        }] : []
+            authorName,
+            receivedAt: timeToday(9, (busNumber * 5 + i * 3) % 60),
+            childrenCount: Math.max(1, Math.round(kinderCount / betreuerNames.length))
+        })) : []
 
-        buses.push({ busNumber, hasData, kinderCount, betreuerCount, betreuerNames, packets })
+        buses.push({ busNumber, hasData, kinderCount, betreuerCount, betreuerNames, children, packets })
     }
     return buses
 }
@@ -99,7 +122,9 @@ function buildGroupsMock({ allComplete }) {
         const morning = roster.length
 
         // Gruppe 1: keine Daten ("keine Kinder"-Zustand). Gruppe 2: fehlende
-        // Kinder (Differenz > 0). Alle anderen: vollstaendig sauber.
+        // Kinder (Differenz > 0). Gruppe 3: mehr Kinder als am Morgen (Kind
+        // kam spaeter dazu, UX-Feedback explizit gefordert). Alle anderen:
+        // vollstaendig sauber.
         let hasData = true
         let current = morning
         let missingChildren = []
@@ -110,6 +135,8 @@ function buildGroupsMock({ allComplete }) {
         } else if (groupId === 2 && !allComplete) {
             current = Math.max(0, morning - 2)
             missingChildren = roster.slice(current)
+        } else if (groupId === 3 && !allComplete) {
+            current = morning + 1
         }
 
         groups.push({
@@ -125,6 +152,12 @@ function buildGroupsMock({ allComplete }) {
 }
 
 const checkpoints = reactive([])
+// Archiv fuer entfernte (Remove) Checkpoints - erscheinen nicht mehr in
+// fetchCheckpointsForDay(), bleiben aber erhalten statt geloescht zu werden.
+// Aktuell von keinem Bildschirm gelesen (kein Archiv-UI in diesem
+// Feedback-Zyklus gefordert) - Funktion liegt bereit fuer eine spaetere
+// Archiv-Ansicht.
+const removedCheckpoints = reactive([])
 
 function seed() {
     // 1. Bus FINISHED - heute Morgen, automatisch durch ersten Bus-Packet
@@ -138,8 +171,6 @@ function seed() {
         created_at: timeToday(9, 0),
         finished_at: timeToday(9, 5),
         finished_by: ADMIN_USER,
-        cancelled_at: null,
-        cancelled_by: null,
         baseline_children_count: MOCK_BASELINE_CHILDREN_COUNT,
         buses: buildBusesMock({ allReceived: true, includeEmptyBus: false })
     }
@@ -155,8 +186,6 @@ function seed() {
         created_at: timeToday(9, 20),
         finished_at: null,
         finished_by: null,
-        cancelled_at: null,
-        cancelled_by: null,
         baseline_children_count: null,
         buses: buildBusesMock({ allReceived: false, includeEmptyBus: true })
     })
@@ -171,8 +200,6 @@ function seed() {
         created_at: timeToday(9, 15),
         finished_at: null,
         finished_by: null,
-        cancelled_at: null,
-        cancelled_by: null,
         baseline_children_count: null,
         groups: buildGroupsMock({ allComplete: false })
     })
@@ -190,8 +217,6 @@ function seed() {
         created_at: timeToday(9, 16),
         finished_at: null,
         finished_by: null,
-        cancelled_at: null,
-        cancelled_by: null,
         baseline_children_count: null,
         groups: buildGroupsMock({ allComplete: true })
     })
@@ -206,8 +231,6 @@ function seed() {
         created_at: timeToday(12, 45),
         finished_at: timeToday(13, 0),
         finished_by: ADMIN_USER,
-        cancelled_at: null,
-        cancelled_by: null,
         baseline_children_count: null
     })
 }
@@ -225,7 +248,8 @@ function withSeq(list) {
  * Liste/Historie der Checkpoints eines Tages, inkl. berechneter
  * fortlaufender Nummer (seq) - wird nicht gespeichert, sondern wie im
  * echten Plan (ROW_NUMBER() OVER (PARTITION BY day ORDER BY id)) beim Lesen
- * berechnet.
+ * berechnet. Entfernte (removeCheckpoint()) Checkpoints tauchen hier nicht
+ * mehr auf.
  *
  * @param {string} day - Datum im Format YYYY-MM-DD
  * @returns {Promise<Array>}
@@ -261,8 +285,6 @@ export async function createCheckpoint(type) {
         created_at: new Date().toISOString(),
         finished_at: null,
         finished_by: null,
-        cancelled_at: null,
-        cancelled_by: null,
         baseline_children_count: null
     }
 
@@ -303,24 +325,68 @@ export async function finishCheckpoint(id) {
 }
 
 /**
- * Bricht eine offene Checkpoint ab. Bereits empfangene Pakete werden - wie
- * im echten Plan spezifiziert - nicht zurueckgerollt (hier gibt es im Mock
- * ohnehin keine echten Pakete, nur die synthetische Anzeige).
+ * Gegenteil von finishCheckpoint() - fuer versehentlich geschlossene
+ * Checkpoints (UX-Feedback Runde 1). Nur fuer FINISHED moeglich. Da pro Typ
+ * und Tag nur eine OFFENE Checkpoint erlaubt ist (decision.md, Punkt 4),
+ * wird das Wiedereroeffnen abgelehnt, falls in der Zwischenzeit bereits eine
+ * andere Checkpoint desselben Typs geoeffnet wurde - gleiche Fehlerform wie
+ * createCheckpoint().
  *
  * @param {number} id
- * @returns {Promise<Object>} Aktualisierte Checkpoint oder { error: 'NOT_OPEN' }
+ * @returns {Promise<Object>} Aktualisierte Checkpoint oder { error: 'NOT_FINISHED' | 'ALREADY_OPEN', existingId? }
  */
-export async function cancelCheckpoint(id) {
+export async function reopenCheckpoint(id) {
     const cp = checkpoints.find(c => c.id === id)
-    if (!cp || cp.status !== CHECKPOINT_STATUS.OPEN) {
-        return { error: 'NOT_OPEN' }
+    if (!cp || cp.status !== CHECKPOINT_STATUS.FINISHED) {
+        return { error: 'NOT_FINISHED' }
     }
 
-    cp.status = CHECKPOINT_STATUS.CANCELLED
-    cp.cancelled_at = new Date().toISOString()
-    cp.cancelled_by = ADMIN_USER
+    const openOfType = checkpoints.filter(c => c.day === cp.day && c.type === cp.type && c.status === CHECKPOINT_STATUS.OPEN)
+    if (openOfType.length > 0) {
+        return { error: 'ALREADY_OPEN', existingId: openOfType[openOfType.length - 1].id }
+    }
+
+    cp.status = CHECKPOINT_STATUS.OPEN
+    cp.finished_at = null
+    cp.finished_by = null
 
     return cp
+}
+
+/**
+ * Entfernt eine irrtuemlich angelegte Checkpoint vollstaendig aus der
+ * sichtbaren Liste (ersetzt das verwirrende "Cancel" aus Runde 1 des
+ * UX-Feedbacks). Die Bestaetigung ("wirklich entfernen?") liegt beim
+ * aufrufenden UI, nicht hier. Die Checkpoint wird nicht geloescht, sondern
+ * in ein Archiv verschoben (siehe removedCheckpoints) - falls spaeter eine
+ * Archiv-Ansicht gewuenscht wird, ist die Information noch vorhanden.
+ *
+ * @param {number} id
+ * @returns {Promise<Object>} Entfernte Checkpoint oder { error: 'NOT_FOUND' }
+ */
+export async function removeCheckpoint(id) {
+    const idx = checkpoints.findIndex(c => c.id === id)
+    if (idx === -1) {
+        return { error: 'NOT_FOUND' }
+    }
+
+    const [cp] = checkpoints.splice(idx, 1)
+    cp.removed_at = new Date().toISOString()
+    cp.removed_by = ADMIN_USER
+    removedCheckpoints.push(cp)
+
+    return cp
+}
+
+/**
+ * Archiv der entfernten Checkpoints eines Tages - aktuell ohne eigenes UI,
+ * siehe removedCheckpoints.
+ *
+ * @param {string} day
+ * @returns {Promise<Array>}
+ */
+export async function fetchRemovedCheckpointsForDay(day) {
+    return removedCheckpoints.filter(cp => cp.day === day)
 }
 
 /**
@@ -349,7 +415,9 @@ export default {
     fetchCheckpointsForDay,
     createCheckpoint,
     finishCheckpoint,
-    cancelCheckpoint,
+    reopenCheckpoint,
+    removeCheckpoint,
+    fetchRemovedCheckpointsForDay,
     fetchCheckpointDetail,
     isOverdue
 }

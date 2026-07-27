@@ -5,7 +5,7 @@
      den bestehenden Bildschirmen keine Entsprechung gibt). Reiner
      Presentational-Baustein. -->
 <template>
-  <span class="badge" :class="createdBy?.isAdmin ? 'bg-warning text-dark' : 'bg-light text-dark border'">
+  <span class="badge cp-origin-badge" :class="createdBy?.isAdmin ? 'bg-warning text-dark' : 'bg-light text-dark border'">
     <font-awesome-icon :icon="['fas', 'user']" class="me-1" />
     <template v-if="createdBy?.isAdmin">
       Admin
@@ -24,3 +24,11 @@ defineProps({
   }
 })
 </script>
+
+<style scoped>
+.cp-origin-badge {
+  font-size: 1rem;
+  font-weight: 700;
+  padding: 0.5rem 0.8rem;
+}
+</style>

@@ -2,22 +2,37 @@
 <!-- Ticket 130_2 - Detail-/Monitoring-Bildschirm fuer eine Group-Checkpoint,
      ausschliesslich Mock-Daten. Raster orientiert sich visuell an
      ChildrenView.vue/GroupDetailModal.vue (nicht wiederverwendet als Code).
-     Neu gegenueber dem Vorbild: Einklappen "sauberer" Gruppen (130_2.txt,
-     "различные состояния интерфейса"). -->
+
+     UX-Feedback Runde 1:
+     - EL1: Kopfzeile war einzeilig und lief aus dem Bildschirm - jetzt
+       mehrzeilig (Titel/Status/Erstellt von je eigene Zeile).
+     - EL2: "Cancel" durch getrennte Aktionen ersetzt - Schliessen/Oeffnen
+       (reopenCheckpoint, Gegenteil von Finish) und Entfernen
+       (removeCheckpoint, mit Bestaetigung, verschwindet aus der Liste statt
+       mit verwirrendem Status weiterzulaufen).
+     - EL3: Tabelle durch Kartenraster ersetzt (eine Karte pro Gruppe, Farbe
+       zeigt Status, kein separater Status-Punkt mehr noetig); zeigt jetzt
+       auch den Fall "mehr Kinder als am Morgen" (Kind kam spaeter dazu).
+     - EL4: Detailpanel fuer fehlende Kinder einer angeklickten Gruppe. -->
 <template>
   <div class="cp-detail-view">
     <DebugTag variant="page" label="Page 3" />
 
-    <div class="d-flex align-items-center mb-3">
+    <div class="cp-header">
       <DebugTag label="el1" />
-      <button class="btn btn-sm btn-outline-secondary me-2" @click="goBack">
-        <font-awesome-icon :icon="['fas', 'arrow-left']" />
-      </button>
-      <h4 class="mb-0 me-2">Group Checkpoint #{{ checkpoint?.seq }}</h4>
+      <div class="cp-header-top">
+        <button class="btn btn-sm btn-outline-secondary me-2" @click="goBack">
+          <font-awesome-icon :icon="['fas', 'arrow-left']" />
+        </button>
+        <span class="cp-header-title">Group Checkpoint #{{ checkpoint?.seq }}</span>
+      </div>
       <template v-if="checkpoint">
-        <CheckpointTypeBadge :type="checkpoint.type" class="me-1" />
-        <CheckpointStatusBadge :status="checkpoint.status" :day="checkpoint.day" class="me-1" />
-        <CheckpointOriginBadge :created-by="checkpoint.created_by" />
+        <div class="cp-header-line">
+          <CheckpointStatusBadge :status="checkpoint.status" :day="checkpoint.day" />
+        </div>
+        <div class="cp-header-line">
+          <CheckpointOriginBadge :created-by="checkpoint.created_by" />
+        </div>
       </template>
     </div>
 
@@ -26,24 +41,36 @@
     </div>
 
     <template v-else-if="checkpoint">
-      <div class="d-flex align-items-center gap-2 mb-3">
+      <div class="cp-actions">
         <DebugTag label="el2" />
+
         <button
-            class="btn btn-success"
-            :disabled="checkpoint.status !== OPEN"
+            v-if="checkpoint.status === OPEN"
+            class="btn btn-success cp-action-btn"
             @click="onFinish"
         >
           <font-awesome-icon :icon="['fas', 'check-circle']" class="me-2" />
-          Finish
+          Schließen
         </button>
         <button
-            class="btn btn-outline-danger"
-            :disabled="checkpoint.status !== OPEN"
-            @click="onCancel"
+            v-else
+            class="btn btn-primary cp-action-btn"
+            @click="onReopen"
         >
-          <font-awesome-icon :icon="['fas', 'times']" class="me-2" />
-          Cancel
+          <font-awesome-icon :icon="['fas', 'redo']" class="me-2" />
+          Öffnen
         </button>
+
+        <button class="btn btn-outline-danger cp-action-btn" @click="onRemove">
+          <font-awesome-icon :icon="['fas', 'trash-alt']" class="me-2" />
+          Entfernen
+        </button>
+      </div>
+
+      <div v-if="actionError" class="alert alert-danger">
+        <template v-if="actionError.error === 'ALREADY_OPEN'">
+          Es ist bereits ein anderer Group-Checkpoint offen (#{{ actionError.existingId }}). Zuerst diesen schließen.
+        </template>
       </div>
 
       <div class="card">
@@ -54,63 +81,28 @@
             Gruppen
           </h5>
 
-          <div class="table-responsive">
-            <table class="table table-hover align-middle">
-              <thead>
-              <tr>
-                <th>Status</th>
-                <th>Gruppe</th>
-                <th>Morgen</th>
-                <th>Aktuell</th>
-                <th>Betreuer</th>
-                <th>Differenz</th>
-              </tr>
-              </thead>
-              <tbody>
-              <template v-for="group in problematicGroups" :key="group.groupId">
-                <tr role="button" @click="toggleExpand(group)">
-                  <td><span class="status-dot" :class="statusClass(group)"></span></td>
-                  <td>Gruppe {{ group.groupId }}</td>
-                  <td>{{ group.hasData ? group.morning : '-' }}</td>
-                  <td>{{ group.hasData ? group.current : '-' }}</td>
-                  <td>
-                    <span v-if="group.betreuer.length">{{ group.betreuer.join(', ') }}</span>
-                    <span v-else class="text-muted">
-                      {{ group.hasData ? '—' : 'Keine Kinder erfasst' }}
-                    </span>
-                  </td>
-                  <td v-html="formatDifference(group)"></td>
-                </tr>
-                <tr v-if="expandedGroupId === group.groupId && group.missingChildren.length">
-                  <td colspan="6">
-                    <div class="alert alert-warning mb-0">
-                      Fehlende Kinder: {{ group.missingChildren.map(c => c.name).join(', ') }}
-                    </div>
-                  </td>
-                </tr>
-              </template>
-              </tbody>
-            </table>
+          <div class="cp-group-grid">
+            <div
+                v-for="group in checkpoint.groups"
+                :key="group.groupId"
+                class="cp-group-card"
+                :class="groupCardClass(group)"
+                role="button"
+                @click="toggleExpand(group)"
+            >
+              <div class="cp-group-num">{{ group.groupId }}</div>
+              <div class="cp-group-count">{{ groupCountText(group) }}</div>
+              <div class="cp-group-status-text">{{ groupStatusText(group) }}</div>
+            </div>
           </div>
 
-          <DebugTag label="el4" />
-          <button v-if="cleanGroups.length" class="btn btn-sm btn-outline-secondary mt-2" @click="showClean = !showClean">
-            {{ showClean ? 'Saubere Gruppen ausblenden' : `${cleanGroups.length} saubere Gruppe(n) anzeigen` }}
-          </button>
-
-          <div v-if="showClean" class="table-responsive mt-2">
-            <table class="table table-sm align-middle">
-              <tbody>
-              <tr v-for="group in cleanGroups" :key="group.groupId">
-                <td><span class="status-dot bg-success"></span></td>
-                <td>Gruppe {{ group.groupId }}</td>
-                <td>{{ group.morning }}</td>
-                <td>{{ group.current }}</td>
-                <td>{{ group.betreuer.join(', ') }}</td>
-                <td><span class="text-success fw-bold">Komplett</span></td>
-              </tr>
-              </tbody>
-            </table>
+          <div v-if="expandedGroup" class="cp-expand-panel">
+            <DebugTag label="el4" />
+            <div class="fw-bold mb-2">Gruppe {{ expandedGroup.groupId }}</div>
+            <div v-if="expandedGroup.missingChildren.length">
+              Fehlende Kinder: {{ expandedGroup.missingChildren.map(c => c.name).join(', ') }}
+            </div>
+            <div v-else class="text-muted">Keine fehlenden Kinder.</div>
           </div>
         </div>
       </div>
@@ -121,15 +113,15 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   CHECKPOINT_STATUS,
   fetchCheckpointDetail,
   finishCheckpoint,
-  cancelCheckpoint
+  reopenCheckpoint,
+  removeCheckpoint
 } from '@/composables/useCheckpointsMock'
-import CheckpointTypeBadge from '@/components/checkpoints-prototype/CheckpointTypeBadge.vue'
 import CheckpointStatusBadge from '@/components/checkpoints-prototype/CheckpointStatusBadge.vue'
 import CheckpointOriginBadge from '@/components/checkpoints-prototype/CheckpointOriginBadge.vue'
 import DebugTag from '@/components/checkpoints-prototype/DebugTag.vue'
@@ -142,31 +134,37 @@ const router = useRouter()
 const loading = ref(true)
 const checkpoint = ref(null)
 const expandedGroupId = ref(null)
-const showClean = ref(false)
+const actionError = ref(null)
 
-const isCleanGroup = (group) => group.hasData && group.current === group.morning
+const expandedGroup = ref(null)
 
-const cleanGroups = computed(() => (checkpoint.value?.groups || []).filter(isCleanGroup))
-const problematicGroups = computed(() => (checkpoint.value?.groups || []).filter(g => !isCleanGroup(g)))
-
-function statusClass(group) {
-  if (!group.hasData) return 'bg-secondary'
-  if (group.current === group.morning) return 'bg-success'
-  if (group.current < group.morning) return 'bg-danger'
-  return 'bg-info'
+function groupCardClass(group) {
+  if (!group.hasData) return 'cp-group-card-none'
+  if (group.current === group.morning) return 'cp-group-card-ok'
+  if (group.current < group.morning) return 'cp-group-card-missing'
+  return 'cp-group-card-extra'
 }
 
-function formatDifference(group) {
-  if (!group.hasData) return '<span class="text-muted">—</span>'
-  const diff = group.morning - group.current
-  if (diff === 0) return '<span class="text-success fw-bold">Komplett</span>'
-  if (diff > 0) return `<span class="text-danger fw-bold">-${diff}</span>`
-  return `<span class="text-info fw-bold">+${Math.abs(diff)}</span>`
+function groupCountText(group) {
+  if (!group.hasData) return '—'
+  return `${group.morning} → ${group.current}`
+}
+
+function groupStatusText(group) {
+  if (!group.hasData) return 'Keine Daten'
+  if (group.current === group.morning) return 'OK'
+  if (group.current < group.morning) return `Fehlen: ${group.morning - group.current}`
+  return `+${group.current - group.morning} mehr`
 }
 
 function toggleExpand(group) {
-  if (!group.missingChildren.length) return
-  expandedGroupId.value = expandedGroupId.value === group.groupId ? null : group.groupId
+  if (expandedGroupId.value === group.groupId) {
+    expandedGroupId.value = null
+    expandedGroup.value = null
+  } else {
+    expandedGroupId.value = group.groupId
+    expandedGroup.value = group
+  }
 }
 
 async function load() {
@@ -176,13 +174,27 @@ async function load() {
 }
 
 async function onFinish() {
+  actionError.value = null
   await finishCheckpoint(checkpoint.value.id)
   await load()
 }
 
-async function onCancel() {
-  await cancelCheckpoint(checkpoint.value.id)
+async function onReopen() {
+  actionError.value = null
+  const result = await reopenCheckpoint(checkpoint.value.id)
+  if (result?.error) {
+    actionError.value = result
+    return
+  }
   await load()
+}
+
+async function onRemove() {
+  if (!confirm('Diesen Checkpoint wirklich entfernen? Das kann nicht rückgängig gemacht werden.')) {
+    return
+  }
+  await removeCheckpoint(checkpoint.value.id)
+  goBack()
 }
 
 function goBack() {
@@ -197,12 +209,100 @@ onMounted(load)
   max-width: 900px;
   margin: 0 auto;
   padding: 16px;
+  font-size: 1.05rem;
 }
 
-.status-dot {
-  display: inline-block;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
+.cp-header {
+  margin-bottom: 8px;
+}
+
+.cp-header-top {
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.cp-header-title {
+  font-size: 1.4rem;
+  font-weight: 700;
+}
+
+.cp-header-line {
+  margin-bottom: 6px;
+}
+
+.cp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 16px 0;
+}
+
+.cp-action-btn {
+  min-height: 56px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  padding: 12px 20px;
+  flex: 1 1 auto;
+}
+
+.cp-group-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.cp-group-card {
+  border-radius: 12px;
+  padding: 14px 8px;
+  text-align: center;
+  cursor: pointer;
+  border: 2px solid transparent;
+}
+
+.cp-group-num {
+  font-size: 1.6rem;
+  font-weight: 800;
+}
+
+.cp-group-count {
+  font-size: 1.3rem;
+  font-weight: 700;
+  margin-top: 4px;
+}
+
+.cp-group-status-text {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+.cp-group-card-ok {
+  background-color: #d1e7dd;
+  color: #0f5132;
+}
+
+.cp-group-card-missing {
+  background-color: #f8d7da;
+  color: #842029;
+}
+
+.cp-group-card-extra {
+  background-color: #cff4fc;
+  color: #055160;
+}
+
+.cp-group-card-none {
+  background-color: #e9ecef;
+  color: #495057;
+}
+
+.cp-expand-panel {
+  margin-top: 16px;
+  padding: 14px;
+  border-radius: 12px;
+  background-color: #fff3cd;
+  font-size: 1.05rem;
 }
 </style>
