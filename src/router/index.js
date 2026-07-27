@@ -168,6 +168,34 @@ const routes = [
         component: ResetPasswordView,
         meta: { requiresAuth: true }
     },
+
+    // Ticket 130_2 - UI-Prototyp "Checkpoint" (mock-Daten, kein Supabase-
+    // Zugriff). Isolierter Namensraum, ersetzt /admin-busses/-children
+    // nicht - siehe tickets/130_2/IMPLEMENTATION_PLAN.md.
+    {
+        path: '/admin/checkpoints-prototype',
+        name: 'CheckpointListPrototype',
+        component: () => import('@/views/CheckpointListPrototypeView.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
+        path: '/admin/checkpoints-prototype/bus/:id',
+        name: 'CheckpointBusPrototype',
+        component: () => import('@/views/CheckpointBusPrototypeView.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
+        path: '/admin/checkpoints-prototype/group/:id',
+        name: 'CheckpointGroupPrototype',
+        component: () => import('@/views/CheckpointGroupPrototypeView.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
+        path: '/admin/checkpoints-prototype/lazy/:id',
+        name: 'CheckpointLazyPrototype',
+        component: () => import('@/views/CheckpointLazyPrototypeView.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true }
+    },
 ]
 
 const router = createRouter({
