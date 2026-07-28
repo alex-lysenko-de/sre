@@ -18,31 +18,29 @@
 // irrtuemlich angelegte Checkpoint komplett aus der sichtbaren Liste, statt
 // sie mit einem verwirrenden Status weiterzufuehren). CHECKPOINT_STATUS hat
 // dadurch nur noch OPEN/FINISHED - CANCELLED entfaellt ersatzlos.
+//
+// UX-Feedback Runde 4 ("Entity-zentrierte" Ueberarbeitung): der Kinder-Pool
+// (vormals private CHILD_NAMES/GROUP_ROSTER/CHILD_GROUP_MAP) und der
+// Betreuer-Pool (vormals BETREUER_NAME_POOL) sind jetzt kanonische Roster
+// mit stabiler Id in useChildEntityMock.js/useBetreuerEntityMock.js -
+// Kinder/Betreuer sind eigene Entitaeten mit eigener Karte/Route und werden
+// ueberall (Bus, Gruppe, Breakdown) per Id statt per Name referenziert.
 
 import { reactive } from 'vue'
 import { fetchLazyCheckpointProgress } from './useLazyCheckpointProgressMock'
+import { MOCK_TOTAL_BUSES, MOCK_TOTAL_GROUPS } from './useMockConstants'
+import { CHILD_ROSTER, getChildrenByGroup } from './useChildEntityMock'
+import { BETREUER_ROSTER } from './useBetreuerEntityMock'
 
 export const CHECKPOINT_TYPE = { BUS: 1, GROUP: 2, LAZY: 3 }
 export const CHECKPOINT_STATUS = { OPEN: 1, FINISHED: 2 }
-
-// Bewusst hartcodiert statt aus useConfigStore gelesen (siehe "Risiken" im
-// Plan) - jede Netzwerkabhaengigkeit soll im Prototyp komplett entfallen.
-const MOCK_TOTAL_BUSES = 5
-const MOCK_TOTAL_GROUPS = 6
 
 const ADMIN_USER = { id: 1, name: 'Hauptadministrator', isAdmin: true }
 const BETREUER_MUELLER = { id: 101, name: 'Müller', isAdmin: false }
 const BETREUER_SCHMIDT = { id: 102, name: 'Schmidt', isAdmin: false }
 const BETREUER_FISCHER = { id: 103, name: 'Fischer', isAdmin: false }
 
-// Pool fuer Busse mit vielen Betreuern (UX-Feedback: ein Bus kann > 8
-// Betreuer haben) - eigene, von den Kindernamen unabhaengige Namen.
-const BETREUER_NAME_POOL = [
-    'Müller', 'Schmidt', 'Fischer', 'Weber', 'Meyer', 'Wagner',
-    'Becker', 'Schulz', 'Hoffmann', 'Koch', 'Richter', 'Klein'
-]
-
-function todayString() {
+export function todayString() {
     return new Date().toISOString().split('T')[0]
 }
 
@@ -58,37 +56,12 @@ function makeId() {
     return nextId++
 }
 
-// Namen fuer die synthetischen Kinder-Roster (Group/Lazy/Bus) - klein
-// gehalten, reicht fuer die Demonstration der geforderten Zustaende.
-const CHILD_NAMES = [
-    'Anna Krause', 'Ben Vogel', 'Clara Wolf', 'David Fuchs', 'Emma Braun', 'Finn Berger',
-    'Greta Lang', 'Hannes Roth', 'Ida Herrmann', 'Jonas Baur', 'Klara Schuster', 'Leo Franke',
-    'Mia Winkler', 'Noah Kraus', 'Olivia Peters', 'Paul Sommer', 'Quirin Graf', 'Rosa Horn',
-    'Sara Busch', 'Tom Seidel', 'Ute Kaiser', 'Vincent Ludwig', 'Wanda Krüger', 'Xaver Otto'
-]
-
-function buildGroupRoster() {
-    // Verteilt die Namen gleichmaessig auf MOCK_TOTAL_GROUPS Gruppen.
-    const roster = {}
-    for (let g = 1; g <= MOCK_TOTAL_GROUPS; g++) {
-        roster[g] = []
-    }
-    CHILD_NAMES.forEach((name, idx) => {
-        const groupId = (idx % MOCK_TOTAL_GROUPS) + 1
-        roster[groupId].push({ id: idx + 1, name })
-    })
-    return roster
+// Kurzform {id,name} eines Roster-Eintrags fuer Checkpoint-Schnappschuesse
+// (Bus/Gruppe) - dort wird bewusst nicht der volle Betreuer/Kind-Datensatz
+// (email/phone/age/...) kopiert, nur die zum Verlinken noetigen Felder.
+function shortRef(entity) {
+    return { id: entity.id, name: entity.name }
 }
-
-const GROUP_ROSTER = buildGroupRoster()
-
-// UX-Feedback Runde 2: im Bus-Detail muss der Name eines Kindes immer mit
-// seiner Gruppennummer angezeigt werden (Verwechslungsgefahr bei gleichen
-// Namen). Gruppenzuordnung folgt derselben Regel wie buildGroupRoster(),
-// damit ein Kind in Bus- und Group-Ansicht dieselbe Gruppe zeigt.
-const CHILD_GROUP_MAP = new Map(
-    CHILD_NAMES.map((name, idx) => [name, (idx % MOCK_TOTAL_GROUPS) + 1])
-)
 
 function buildBusesMock({ allReceived, includeEmptyBus }) {
     const buses = []
@@ -102,32 +75,33 @@ function buildBusesMock({ allReceived, includeEmptyBus }) {
         // UX-Feedback: ein Bus kann mehr als einen, oft > 8 Betreuer haben -
         // ein Bus (Nr. 1) demonstriert das explizit.
         const betreuerCount = hasData ? (busNumber === 1 ? 9 : 1) : 0
-        const betreuerNames = hasData
-            ? Array.from({ length: betreuerCount }, (_, i) => BETREUER_NAME_POOL[(busNumber - 1 + i) % BETREUER_NAME_POOL.length])
+        const betreuer = hasData
+            ? Array.from({ length: betreuerCount }, (_, i) => shortRef(BETREUER_ROSTER[(busNumber - 1 + i) % BETREUER_ROSTER.length]))
             : []
 
         const children = hasData
-            ? CHILD_NAMES.slice((busNumber * 3) % CHILD_NAMES.length).slice(0, kinderCount)
-                .map(name => ({ name, groupId: CHILD_GROUP_MAP.get(name) }))
+            ? CHILD_ROSTER.slice((busNumber * 3) % CHILD_ROSTER.length).slice(0, kinderCount)
+                .map(c => ({ id: c.id, name: c.name, groupId: c.groupId }))
             : []
 
-        const packets = hasData ? betreuerNames.map((authorName, i) => ({
+        const packets = hasData ? betreuer.map((author, i) => ({
             id: makeId(),
-            authorName,
+            authorId: author.id,
+            authorName: author.name,
             receivedAt: timeToday(9, (busNumber * 5 + i * 3) % 60),
-            childrenCount: Math.max(1, Math.round(kinderCount / betreuerNames.length))
+            childrenCount: Math.max(1, Math.round(kinderCount / betreuer.length))
         })) : []
 
-        buses.push({ busNumber, hasData, kinderCount, betreuerCount, betreuerNames, children, packets })
+        buses.push({ busNumber, hasData, kinderCount, betreuerCount, betreuer, children, packets })
     }
     return buses
 }
 
 function buildGroupsMock({ allComplete }) {
-    const names = [BETREUER_MUELLER.name, BETREUER_SCHMIDT.name, BETREUER_FISCHER.name]
+    const betreuerPool = [BETREUER_MUELLER, BETREUER_SCHMIDT, BETREUER_FISCHER]
     const groups = []
     for (let groupId = 1; groupId <= MOCK_TOTAL_GROUPS; groupId++) {
-        const roster = GROUP_ROSTER[groupId] || []
+        const roster = getChildrenByGroup(groupId)
         const morning = roster.length
 
         // Gruppe 1: keine Daten ("keine Kinder"-Zustand). Gruppe 2: fehlende
@@ -143,7 +117,7 @@ function buildGroupsMock({ allComplete }) {
             current = 0
         } else if (groupId === 2 && !allComplete) {
             current = Math.max(0, morning - 2)
-            missingChildren = roster.slice(current)
+            missingChildren = roster.slice(current).map(shortRef)
         } else if (groupId === 3 && !allComplete) {
             current = morning + 1
         }
@@ -153,7 +127,7 @@ function buildGroupsMock({ allComplete }) {
             hasData,
             morning,
             current,
-            betreuer: hasData ? [names[groupId % names.length]] : [],
+            betreuer: hasData ? [shortRef(betreuerPool[groupId % betreuerPool.length])] : [],
             missingChildren
         })
     }
@@ -450,16 +424,30 @@ async function computePresentCount(cp) {
 }
 
 /**
- * Basiszahl des Tages - stammt von der ersten FINISHED-Checkpoint des Tages
- * (unabhaengig vom Typ, siehe finishCheckpoint()). Liefert null, solange noch
- * keine Checkpoint des Tages geschlossen wurde.
+ * Die Checkpoint, die am Tag die Tagesbasis gesetzt hat (die erste
+ * FINISHED-Checkpoint des Tages, unabhaengig vom Typ - siehe
+ * finishCheckpoint()). Liefert null, solange noch keine Checkpoint des
+ * Tages geschlossen wurde. Anders als die reine Zahl (getDayBaseline())
+ * wird hier die ganze Checkpoint gebraucht, um pro-Bus/pro-Gruppe
+ * vergleichen zu koennen (getBusDelta()/getGroupDelta()).
+ *
+ * @param {string} day
+ * @returns {Object|null}
+ */
+export function getDayBaselineCheckpoint(day) {
+    return checkpoints.find(c => c.day === day && c.baseline_children_count != null) || null
+}
+
+/**
+ * Basiszahl des Tages - duenner Wrapper um getDayBaselineCheckpoint() fuer
+ * bestehende Aufrufstellen (summarizeCheckpoint()), die nur die Zahl
+ * brauchen.
  *
  * @param {string} day
  * @returns {number|null}
  */
 function getDayBaseline(day) {
-    const withBaseline = checkpoints.find(c => c.day === day && c.baseline_children_count != null)
-    return withBaseline ? withBaseline.baseline_children_count : null
+    return getDayBaselineCheckpoint(day)?.baseline_children_count ?? null
 }
 
 /**
@@ -479,7 +467,7 @@ export async function summarizeCheckpoint(cp) {
         result.kinder = present
         result.betreuer = cp.buses.filter(b => b.hasData).reduce((sum, b) => sum + b.betreuerCount, 0)
     } else if (cp.type === CHECKPOINT_TYPE.GROUP) {
-        result.total = CHILD_NAMES.length
+        result.total = CHILD_ROSTER.length
     } else if (cp.type === CHECKPOINT_TYPE.LAZY) {
         const progress = await fetchLazyCheckpointProgress(cp.id)
         result.total = progress.checkedIn.length + progress.notYet.length
@@ -531,19 +519,21 @@ export async function checkpointHasOpenIssues(cp) {
 
 /**
  * Anwesend/fehlend-Aufschluesselung einer BUS-Checkpoint gegen den vollen
- * Kinder-Pool (CHILD_NAMES) - UX-Feedback Runde 3, Punkt 4 (kopierbare
- * Listen). "Fehlend" schliesst auch Kinder aus Bussen ohne Daten ein.
+ * Kinder-Roster (CHILD_ROSTER) - UX-Feedback Runde 3, Punkt 4 (kopierbare
+ * Listen). "Fehlend" schliesst auch Kinder aus Bussen ohne Daten ein. Jeder
+ * Eintrag traegt seit Runde 4 eine id, damit die aufrufende Liste zur
+ * Kind-Karte verlinken kann.
  *
  * @param {Object} cp
- * @returns {{present:Array<{name:string,groupId:number}>, absent:Array<{name:string,groupId:number}>}}
+ * @returns {{present:Array<{id:number,name:string,groupId:number}>, absent:Array<{id:number,name:string,groupId:number}>}}
  */
 export function getBusChildrenBreakdown(cp) {
-    const presentNames = new Set(cp.buses.flatMap(b => b.children.map(c => c.name)))
+    const presentIds = new Set(cp.buses.flatMap(b => b.children.map(c => c.id)))
     const present = []
     const absent = []
-    for (const name of CHILD_NAMES) {
-        const entry = { name, groupId: CHILD_GROUP_MAP.get(name) }
-        if (presentNames.has(name)) {
+    for (const child of CHILD_ROSTER) {
+        const entry = { id: child.id, name: child.name, groupId: child.groupId }
+        if (presentIds.has(child.id)) {
             present.push(entry)
         } else {
             absent.push(entry)
@@ -555,35 +545,158 @@ export function getBusChildrenBreakdown(cp) {
 /**
  * Anwesend/fehlend-Aufschluesselung einer GROUP-Checkpoint - Gruppen ohne
  * Daten (hasData=false) zaehlen komplett als "fehlend" (unbestaetigt), siehe
- * UX-Feedback Runde 3, Punkt 4.
+ * UX-Feedback Runde 3, Punkt 4. Ids seit Runde 4 fuer die Kind-Karten-Links.
  *
  * @param {Object} cp
- * @returns {{present:Array<{name:string,groupId:number}>, absent:Array<{name:string,groupId:number}>}}
+ * @returns {{present:Array<{id:number,name:string,groupId:number}>, absent:Array<{id:number,name:string,groupId:number}>}}
  */
 export function getGroupChildrenBreakdown(cp) {
     const present = []
     const absent = []
     for (const group of cp.groups) {
-        const roster = GROUP_ROSTER[group.groupId] || []
+        const roster = getChildrenByGroup(group.groupId)
         if (!group.hasData) {
-            absent.push(...roster.map(c => ({ name: c.name, groupId: group.groupId })))
+            absent.push(...roster.map(c => ({ id: c.id, name: c.name, groupId: group.groupId })))
             continue
         }
-        const missingSet = new Set(group.missingChildren.map(c => c.name))
+        const missingSet = new Set(group.missingChildren.map(c => c.id))
         for (const child of roster) {
-            if (missingSet.has(child.name)) {
-                absent.push({ name: child.name, groupId: group.groupId })
+            const entry = { id: child.id, name: child.name, groupId: group.groupId }
+            if (missingSet.has(child.id)) {
+                absent.push(entry)
             } else {
-                present.push({ name: child.name, groupId: group.groupId })
+                present.push(entry)
             }
         }
     }
     return { present, absent }
 }
 
+// UX-Feedback Runde 4 ("Entity-zentrierte" Ueberarbeitung): Bus/Gruppe
+// bekommen eigene Karten (Bus-Zahl-Links, Gruppen-Link) mit Abweichung
+// gegen die Tagesbasis auf ihrer eigenen Ebene (nicht nur aggregiert ueber
+// die ganze Checkpoint wie summarizeCheckpoint() das schon tut).
+
+/**
+ * Abweichung eines einzelnen Busses gegen den Bus gleicher Nummer in der
+ * Tagesbasis-Checkpoint. Liefert hasComparison:false, wenn kein Vergleich
+ * moeglich ist (noch keine Tagesbasis, Basis ist keine BUS-Checkpoint, diese
+ * Checkpoint ist selbst die Basis, oder einer der beiden Busse hat keine
+ * Daten) - bewusst kein Crash bei unpassendem Basistyp.
+ *
+ * @param {Object} cp
+ * @param {number} busNumber
+ * @returns {{hasComparison:boolean, missingCount?:number, extraCount?:number}}
+ */
+export function getBusDelta(cp, busNumber) {
+    const baselineCp = getDayBaselineCheckpoint(cp.day)
+    const bus = cp.buses?.find(b => b.busNumber === busNumber)
+    if (!baselineCp || baselineCp.id === cp.id || baselineCp.type !== CHECKPOINT_TYPE.BUS || !bus || !bus.hasData) {
+        return { hasComparison: false }
+    }
+    const baselineBus = baselineCp.buses.find(b => b.busNumber === busNumber)
+    if (!baselineBus || !baselineBus.hasData) {
+        return { hasComparison: false }
+    }
+    return {
+        hasComparison: true,
+        missingCount: Math.max(0, baselineBus.kinderCount - bus.kinderCount),
+        extraCount: Math.max(0, bus.kinderCount - baselineBus.kinderCount)
+    }
+}
+
+/**
+ * Abweichung einer einzelnen Gruppe gegen dieselbe Gruppe in der
+ * Tagesbasis-Checkpoint - Gegenstueck zu getBusDelta() fuer GROUP-
+ * Checkpoints.
+ *
+ * @param {Object} cp
+ * @param {number} groupId
+ * @returns {{hasComparison:boolean, missingCount?:number, extraCount?:number}}
+ */
+export function getGroupDelta(cp, groupId) {
+    const baselineCp = getDayBaselineCheckpoint(cp.day)
+    const group = cp.groups?.find(g => g.groupId === groupId)
+    if (!baselineCp || baselineCp.id === cp.id || baselineCp.type !== CHECKPOINT_TYPE.GROUP || !group || !group.hasData) {
+        return { hasComparison: false }
+    }
+    const baselineGroup = baselineCp.groups.find(g => g.groupId === groupId)
+    if (!baselineGroup || !baselineGroup.hasData) {
+        return { hasComparison: false }
+    }
+    return {
+        hasComparison: true,
+        missingCount: Math.max(0, baselineGroup.current - group.current),
+        extraCount: Math.max(0, group.current - baselineGroup.current)
+    }
+}
+
+/**
+ * Alle Betreuer einer BUS- oder GROUP-Checkpoint, ueber saemtliche Busse/
+ * Gruppen dedupliziert - fuer die aggregierte "Betreuer gesamt"-Liste auf
+ * der Bus-/Group-Checkpoint-Seite (Punkt 2 des Runde-4-Feedbacks: EL2 muss
+ * auch die Betreuerzahl zeigen, nicht nur die Kinderzahl).
+ *
+ * @param {Object} cp
+ * @returns {Array<{id:number,name:string}>}
+ */
+export function getCheckpointBetreuerList(cp) {
+    const byId = new Map()
+    if (cp.type === CHECKPOINT_TYPE.BUS) {
+        for (const bus of cp.buses) {
+            for (const b of bus.betreuer) {
+                byId.set(b.id, b)
+            }
+        }
+    } else if (cp.type === CHECKPOINT_TYPE.GROUP) {
+        for (const group of cp.groups) {
+            for (const b of group.betreuer) {
+                byId.set(b.id, b)
+            }
+        }
+    }
+    return Array.from(byId.values())
+}
+
+/**
+ * Heutige Zuordnung eines Betreuers - welchem Bus/welcher Gruppe er/sie in
+ * den heutigen Checkpoints zugeordnet ist (fuer die neue Betreuer-Karte,
+ * Punkt 7 des Runde-4-Feedbacks). Rein aus den bereits erzeugten
+ * Checkpoint-Daten abgeleitet, keine neue Zuordnungslogik.
+ *
+ * @param {number} betreuerId
+ * @param {string} [day]
+ * @returns {{busNumber:?number, busCheckpointId:?number, groupId:?number, groupCheckpointId:?number}}
+ */
+export function getBetreuerTodayAssignment(betreuerId, day = todayString()) {
+    let busNumber = null
+    let busCheckpointId = null
+    let groupId = null
+    let groupCheckpointId = null
+
+    for (const cp of checkpoints.filter(c => c.day === day)) {
+        if (cp.type === CHECKPOINT_TYPE.BUS) {
+            const bus = cp.buses.find(b => b.betreuer.some(x => x.id === betreuerId))
+            if (bus) {
+                busNumber = bus.busNumber
+                busCheckpointId = cp.id
+            }
+        } else if (cp.type === CHECKPOINT_TYPE.GROUP) {
+            const group = cp.groups.find(g => g.betreuer.some(x => x.id === betreuerId))
+            if (group) {
+                groupId = group.groupId
+                groupCheckpointId = cp.id
+            }
+        }
+    }
+
+    return { busNumber, busCheckpointId, groupId, groupCheckpointId }
+}
+
 export default {
     CHECKPOINT_TYPE,
     CHECKPOINT_STATUS,
+    todayString,
     fetchCheckpointsForDay,
     createCheckpoint,
     finishCheckpoint,
@@ -595,5 +708,10 @@ export default {
     summarizeCheckpoint,
     checkpointHasOpenIssues,
     getBusChildrenBreakdown,
-    getGroupChildrenBreakdown
+    getGroupChildrenBreakdown,
+    getDayBaselineCheckpoint,
+    getBusDelta,
+    getGroupDelta,
+    getCheckpointBetreuerList,
+    getBetreuerTodayAssignment
 }

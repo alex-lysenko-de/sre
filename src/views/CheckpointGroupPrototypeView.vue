@@ -10,32 +10,28 @@
        (reopenCheckpoint, Gegenteil von Finish) und Entfernen
        (removeCheckpoint, mit Bestaetigung, verschwindet aus der Liste statt
        mit verwirrendem Status weiterzulaufen).
-     - EL3: Tabelle durch Kartenraster ersetzt (eine Karte pro Gruppe, Farbe
-       zeigt Status, kein separater Status-Punkt mehr noetig); zeigt jetzt
-       auch den Fall "mehr Kinder als am Morgen" (Kind kam spaeter dazu).
-     - EL4: Detailpanel fuer fehlende Kinder einer angeklickten Gruppe.
 
      UX-Feedback Runde 2:
      - EL1/EL2: Status und Schliessen/Oeffnen stehen jetzt nebeneinander in
        einer Zeile; Entfernen ist ein kleiner Icon-Button neben dem Titel
        (seltene, gefaehrliche Aktion - soll nicht dominieren).
-     - EL3/EL4: Kartenraster durch eine Akkordeon-Liste ersetzt - Gruppen
-       ohne Probleme bleiben einzeilig kompakt, Gruppen mit fehlenden/
-       zusaetzlichen Kindern nehmen die volle Breite ein und klappen beim
-       Anklicken direkt an Ort und Stelle auf (kein Panel mehr unterhalb des
-       gesamten Rasters).
 
      UX-Feedback Runde 3:
-     - Bugfix EL3/EL4: das Detailpanel war nur fuer Gruppen mit
-       missingChildren.length > 0 sichtbar - Klick auf eine OK- oder
-       "mehr Kinder"-Gruppe klappte sichtbar nichts auf. Jetzt klappt jede
-       Gruppe auf und zeigt je nach Zustand Fehlend-/OK-/Kein-Daten-Text.
      - EL2: zeigt jetzt zusaetzlich das Ergebnis (anwesend/gesamt) und die
        Abweichung zur Tagesbasis (summarizeCheckpoint()).
      - Schliessen warnt jetzt vorher bei fehlenden Kindern oder Gruppen ohne
        Daten (checkpointHasOpenIssues()).
-     - Neuer Block "Kinder gesamt": anwesend/fehlend-Liste ueber alle
-       Gruppen (getGroupChildrenBreakdown()), je mit Kopieren-Button. -->
+
+     UX-Feedback Runde 4 ("Entity-zentrierte" Ueberarbeitung):
+     - Das vormalige Akkordeon (Gruppen-Reihe klappt beim Anklicken inline
+       auf) entfaellt: die Gruppennummer ist jetzt ein GroupLink (fuehrt zur
+       neuen, tagesuebergreifenden Gruppen-Karte, GroupEntityPrototypeView),
+       die Kinderzahl ein CountLink (fuehrt zur universellen Liste,
+       EntityListPrototypeView) - Detailinformationen leben jetzt auf diesen
+       eigenen Entitaeten-Seiten statt redundant inline auf dieser Seite.
+     - Die vormalige "Kinder gesamt"-Breakdown-Karte mit Kopieren-Buttons ist
+       durch eine CountLink-Zeile ersetzt (Anwesend/Fehlend/Betreuer gesamt),
+       analog zur Bus-Checkpoint-Seite. -->
 <template>
   <div class="cp-detail-view">
     <DebugTag variant="page" label="Page 3" />
@@ -75,18 +71,11 @@
         </div>
 
         <div v-if="resultSummary" class="cp-result-row">
-          <span class="cp-result-stat-present">
-            <font-awesome-icon :icon="['fas', 'child']" /> {{ resultSummary.present }} / {{ resultSummary.total }}
-          </span>
-          <span
-              v-if="!resultSummary.isBaselineCheckpoint && (resultSummary.missing > 0 || resultSummary.extra > 0)"
-              class="cp-result-delta"
-          >
-            <font-awesome-icon :icon="['fas', 'exclamation-triangle']" class="me-1" />
-            <template v-if="resultSummary.missing > 0">{{ resultSummary.missing }} fehlen</template>
-            <template v-if="resultSummary.missing > 0 && resultSummary.extra > 0">, </template>
-            <template v-if="resultSummary.extra > 0">{{ resultSummary.extra }} mehr</template>
-          </span>
+          <CountLink :count="`${resultSummary.present} / ${resultSummary.total}`" :icon="['fas', 'child']" variant="default" @click="openList({ kind: 'child', scope: 'checkpoint', filter: 'present' })" />
+          <template v-if="!resultSummary.isBaselineCheckpoint && (resultSummary.missing > 0 || resultSummary.extra > 0)">
+            <CountLink v-if="resultSummary.missing > 0" :count="resultSummary.missing" label="fehlen" :icon="['fas', 'exclamation-triangle']" variant="warning" @click="openList({ kind: 'child', scope: 'checkpoint', filter: 'missing' })" />
+            <CountLink v-if="resultSummary.extra > 0" :count="resultSummary.extra" label="mehr" :icon="['fas', 'exclamation-triangle']" variant="warning" @click="openList({ kind: 'child', scope: 'checkpoint', filter: 'extra' })" />
+          </template>
         </div>
 
         <div v-if="actionError" class="alert alert-danger py-2">
@@ -108,38 +97,11 @@
     <template v-else-if="checkpoint">
       <div class="card mb-3">
         <div class="card-body">
-          <h5 class="card-title">
-            <font-awesome-icon :icon="['fas', 'child']" class="me-2" />
-            Kinder gesamt
-          </h5>
-          <div class="cp-breakdown-row">
-            <div class="cp-breakdown-block cp-breakdown-absent">
-              <div class="cp-breakdown-header">
-                <span>Fehlend ({{ breakdown.absent.length }})</span>
-                <button class="btn btn-sm cp-copy-btn" @click="copyChildList(breakdown.absent, 'absent')">
-                  {{ copiedList === 'absent' ? 'Kopiert!' : 'Kopieren' }}
-                </button>
-              </div>
-              <div class="cp-scroll-list">
-                <div v-for="child in breakdown.absent" :key="child.name">
-                  {{ child.name }} <span class="cp-child-group-tag">G-{{ child.groupId }}</span>
-                </div>
-                <div v-if="!breakdown.absent.length" class="text-muted">Keine.</div>
-              </div>
-            </div>
-            <div class="cp-breakdown-block">
-              <div class="cp-breakdown-header">
-                <span>Anwesend ({{ breakdown.present.length }})</span>
-                <button class="btn btn-sm cp-copy-btn" @click="copyChildList(breakdown.present, 'present')">
-                  {{ copiedList === 'present' ? 'Kopiert!' : 'Kopieren' }}
-                </button>
-              </div>
-              <div class="cp-scroll-list">
-                <div v-for="child in breakdown.present" :key="child.name">
-                  {{ child.name }} <span class="cp-child-group-tag">G-{{ child.groupId }}</span>
-                </div>
-              </div>
-            </div>
+          <h5 class="card-title">Kinder &amp; Betreuer gesamt</h5>
+          <div class="cp-aggregate-row">
+            <CountLink :count="breakdownCounts.present" label="Anwesend" :icon="['fas', 'child']" variant="kinder" @click="openList({ kind: 'child', scope: 'checkpoint', filter: 'present' })" />
+            <CountLink :count="breakdownCounts.absent" label="Fehlend" :icon="['fas', 'exclamation-triangle']" variant="warning" @click="openList({ kind: 'child', scope: 'checkpoint', filter: 'absent' })" />
+            <CountLink :count="breakdownCounts.betreuer" label="Betreuer" :icon="['fas', 'user']" variant="betreuer" @click="openList({ kind: 'betreuer', scope: 'checkpoint' })" />
           </div>
         </div>
       </div>
@@ -152,44 +114,32 @@
             Gruppen
           </h5>
 
-          <div class="cp-group-accordion">
+          <div class="cp-group-list">
             <div
                 v-for="group in checkpoint.groups"
                 :key="group.groupId"
                 class="cp-group-row"
-                :class="[
-                    groupCardClass(group),
-                    expandedGroupId === group.groupId ? 'cp-group-row-expanded' : '',
-                    (group.missingChildren.length || expandedGroupId === group.groupId) ? 'cp-group-row-full' : ''
-                ]"
-                role="button"
-                @click="toggleExpand(group)"
+                :class="groupCardClass(group)"
             >
-              <div class="cp-group-row-main">
-                <span class="cp-group-row-num">{{ group.groupId }}</span>
-                <span class="cp-group-row-count">{{ groupCountText(group) }}</span>
-                <span class="cp-group-row-status">
-                  <font-awesome-icon :icon="groupStatusIcon(group)" class="me-1" />
-                  {{ groupStatusText(group) }}
-                </span>
-              </div>
+              <GroupLink :group-id="group.groupId" />
 
-              <div v-if="expandedGroupId === group.groupId" class="cp-group-row-detail" @click.stop>
-                <DebugTag label="el4" />
-                <template v-if="!group.hasData">
-                  <div class="text-muted">Keine Daten für diese Gruppe.</div>
-                </template>
-                <template v-else-if="group.missingChildren.length">
-                  <div class="fw-bold cp-detail-missing-label mb-1">Fehlende Kinder ({{ group.missingChildren.length }}):</div>
-                  <div>{{ group.missingChildren.map(c => c.name).join(', ') }}</div>
-                </template>
-                <template v-else-if="group.current > group.morning">
-                  <div class="cp-detail-extra">{{ group.current - group.morning }} Kind(er) mehr als am Morgen erfasst.</div>
-                </template>
-                <template v-else>
-                  <div class="cp-detail-ok">Alle {{ group.morning }} Kinder anwesend.</div>
-                </template>
-              </div>
+              <template v-if="!group.hasData">
+                <span class="cp-group-row-status">
+                  <font-awesome-icon :icon="['fas', 'info-circle']" class="me-1" />
+                  Keine Daten
+                </span>
+              </template>
+              <template v-else>
+                <CountLink :count="group.current" label="Kinder" variant="default" @click="openList({ kind: 'child', scope: 'group', scopeId: group.groupId, filter: 'present' })" />
+                <CountLink v-if="group.current < group.morning" :count="group.morning - group.current" label="fehlen" variant="warning" @click="openList({ kind: 'child', scope: 'group', scopeId: group.groupId, filter: 'absent' })" />
+                <span v-else-if="group.current > group.morning" class="cp-group-row-status cp-detail-extra">
+                  +{{ group.current - group.morning }} mehr
+                </span>
+                <span v-else class="cp-group-row-status cp-detail-ok">
+                  <font-awesome-icon :icon="['fas', 'check-circle']" class="me-1" />
+                  OK
+                </span>
+              </template>
             </div>
           </div>
         </div>
@@ -211,10 +161,13 @@ import {
   removeCheckpoint,
   summarizeCheckpoint,
   checkpointHasOpenIssues,
-  getGroupChildrenBreakdown
+  getGroupChildrenBreakdown,
+  getCheckpointBetreuerList
 } from '@/composables/useCheckpointsMock'
 import CheckpointStatusBadge from '@/components/checkpoints-prototype/CheckpointStatusBadge.vue'
 import CheckpointOriginBadge from '@/components/checkpoints-prototype/CheckpointOriginBadge.vue'
+import CountLink from '@/components/checkpoints-prototype/CountLink.vue'
+import GroupLink from '@/components/checkpoints-prototype/GroupLink.vue'
 import DebugTag from '@/components/checkpoints-prototype/DebugTag.vue'
 
 const OPEN = CHECKPOINT_STATUS.OPEN
@@ -225,11 +178,17 @@ const router = useRouter()
 const loading = ref(true)
 const checkpoint = ref(null)
 const resultSummary = ref(null)
-const expandedGroupId = ref(null)
 const actionError = ref(null)
-const copiedList = ref(null)
 
-const breakdown = computed(() => checkpoint.value ? getGroupChildrenBreakdown(checkpoint.value) : { present: [], absent: [] })
+const breakdownCounts = computed(() => {
+  if (!checkpoint.value) return { present: 0, absent: 0, betreuer: 0 }
+  const breakdown = getGroupChildrenBreakdown(checkpoint.value)
+  return {
+    present: breakdown.present.length,
+    absent: breakdown.absent.length,
+    betreuer: getCheckpointBetreuerList(checkpoint.value).length
+  }
+})
 
 function groupCardClass(group) {
   if (!group.hasData) return 'cp-group-card-none'
@@ -238,38 +197,11 @@ function groupCardClass(group) {
   return 'cp-group-card-extra'
 }
 
-function groupCountText(group) {
-  if (!group.hasData) return '—'
-  return `${group.morning} → ${group.current}`
-}
-
-function groupStatusText(group) {
-  if (!group.hasData) return 'Keine Daten'
-  if (group.current === group.morning) return 'OK'
-  if (group.current < group.morning) return `Fehlen: ${group.morning - group.current}`
-  return `+${group.current - group.morning} mehr`
-}
-
-function groupStatusIcon(group) {
-  if (!group.hasData) return ['fas', 'info-circle']
-  if (group.current === group.morning) return ['fas', 'check-circle']
-  return ['fas', 'exclamation-triangle']
-}
-
-function toggleExpand(group) {
-  expandedGroupId.value = expandedGroupId.value === group.groupId ? null : group.groupId
-}
-
-async function copyChildList(children, kind) {
-  const label = kind === 'absent' ? 'Fehlend' : 'Anwesend'
-  const lines = [`${label} (${children.length}):`, ...children.map(c => `- ${c.name} (G-${c.groupId})`)]
-
-  try {
-    await navigator.clipboard.writeText(lines.join('\n'))
-    copiedList.value = kind
-  } catch (err) {
-    console.error('Fehler beim Kopieren:', err)
-  }
+function openList({ kind, scope, scopeId, filter }) {
+  const query = { kind, scope, checkpointId: String(checkpoint.value.id) }
+  if (scopeId != null) query.scopeId = String(scopeId)
+  if (filter) query.filter = filter
+  router.push({ path: '/admin/checkpoints-prototype/list', query })
 }
 
 async function load() {
@@ -389,157 +321,54 @@ onMounted(load)
   margin: 4px 0 8px;
 }
 
-.cp-result-stat-present {
-  font-size: 1.3rem;
-  font-weight: 800;
-}
-
-.cp-result-delta {
-  font-size: 0.9rem;
-  font-weight: 700;
-  color: #b02a37;
-}
-
-.cp-breakdown-row {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.cp-breakdown-block {
-  flex: 1 1 200px;
-}
-
-.cp-breakdown-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-weight: 700;
-  margin-bottom: 4px;
-}
-
-.cp-breakdown-absent .cp-breakdown-header {
-  color: #842029;
-}
-
-.cp-breakdown-absent .cp-scroll-list {
-  background-color: #f8d7da;
-}
-
-.cp-copy-btn {
-  border: none;
-  border-radius: 6px;
-  background-color: #6c757d;
-  color: #fff;
-  font-size: 0.85rem;
-  padding: 4px 10px;
-}
-
-.cp-scroll-list {
-  max-height: 160px;
-  overflow-y: auto;
-  background: white;
-  border-radius: 8px;
-  padding: 8px 10px;
-  user-select: text;
-}
-
-.cp-child-group-tag {
-  display: inline-block;
-  font-size: 0.8rem;
-  font-weight: 700;
-  color: #495057;
-  background-color: #e9ecef;
-  border-radius: 6px;
-  padding: 1px 6px;
-  margin-left: 4px;
-}
-
-.cp-group-accordion {
+.cp-aggregate-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 10px 20px;
+}
+
+.cp-group-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   margin-top: 8px;
 }
 
 .cp-group-row {
-  border-radius: 12px;
-  padding: 12px 14px;
-  cursor: pointer;
-  border: 2px solid transparent;
-  flex: 1 1 130px;
-}
-
-.cp-group-row-full {
-  flex: 1 1 100%;
-}
-
-.cp-group-row-expanded {
-  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.25) inset;
-}
-
-.cp-group-row-main {
+  border-radius: 10px;
+  padding: 10px 14px;
   display: flex;
   align-items: center;
-  gap: 10px;
-}
-
-.cp-group-row-num {
-  font-size: 1.4rem;
-  font-weight: 800;
-}
-
-.cp-group-row-count {
-  font-size: 1.2rem;
-  font-weight: 700;
-  flex: 1;
+  flex-wrap: wrap;
+  gap: 6px 16px;
 }
 
 .cp-group-row-status {
-  font-size: 1rem;
+  font-size: 0.95rem;
   font-weight: 700;
-  white-space: nowrap;
-}
-
-.cp-group-row-detail {
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid rgba(0, 0, 0, 0.15);
-  font-size: 1.05rem;
-  cursor: default;
-}
-
-.cp-detail-missing-label {
-  color: #842029;
 }
 
 .cp-detail-extra {
-  font-weight: 700;
   color: #055160;
 }
 
 .cp-detail-ok {
-  font-weight: 700;
   color: #0f5132;
 }
 
 .cp-group-card-ok {
   background-color: #d1e7dd;
-  color: #0f5132;
 }
 
 .cp-group-card-missing {
   background-color: #f8d7da;
-  color: #842029;
 }
 
 .cp-group-card-extra {
   background-color: #cff4fc;
-  color: #055160;
 }
 
 .cp-group-card-none {
   background-color: #e9ecef;
-  color: #495057;
 }
 </style>

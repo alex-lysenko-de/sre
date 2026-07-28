@@ -8,32 +8,31 @@
      - EL1: mehrzeilige Kopfzeile statt einzeiliger Ueberschrift.
      - EL2: "Cancel" ersetzt durch Schliessen/Oeffnen (reopenCheckpoint) und
        Entfernen (removeCheckpoint, mit Bestaetigung).
-     - EL3: Tabelle durch Kartenraster ersetzt; ein Bus kann > 8 Betreuer
-       haben (Bus 1 demonstriert das) - Details (Betreuer/Kinder/Scanzeiten)
-       stehen daher nicht mehr direkt in der Karte, sondern im Detailpanel.
-     - EL4: Detailpanel mit Betreuer-/Kinderliste und Scanzeiten je Bus,
-       inkl. "Kopieren"-Button (Text in die Zwischenablage).
 
      UX-Feedback Runde 2:
      - EL1/EL2: Status und Schliessen/Oeffnen stehen jetzt nebeneinander in
        einer Zeile statt als grosse, vollbreite Buttons; Entfernen ist ein
        kleiner Icon-Button neben dem Titel statt eines grossen Buttons.
-     - EL3/EL4: Kinder-/Betreuerzahl farblich unterschieden (blau/rot) und
-       vergroessert; das Detailpanel (EL4) klappt jetzt direkt innerhalb der
-       angeklickten Bus-Karte auf (per grid-column: 1 / -1), statt als
-       eigener Block unterhalb des gesamten Rasters zu erscheinen. Kinder
-       zeigen jetzt ihre Gruppennummer, um Namensverwechslungen zu
-       vermeiden.
 
      UX-Feedback Runde 3:
      - EL2: zeigt jetzt zusaetzlich das Ergebnis (Kinder-/Betreuersumme) und
-       die Abweichung zur Tagesbasis direkt neben Status/Aktion, statt nur im
-       Bus-Raster sichtbar zu sein (summarizeCheckpoint()).
+       die Abweichung zur Tagesbasis direkt neben Status/Aktion.
      - Schliessen warnt jetzt vorher, falls Busse noch keine Daten gemeldet
-       haben (checkpointHasOpenIssues()), statt kommentarlos zu schliessen.
-     - Neuer Block "Kinder gesamt": anwesend/fehlend-Liste ueber alle Busse
-       (getBusChildrenBreakdown()), je mit Kopieren-Button; die Fehlend-Liste
-       ist farblich hervorgehoben. -->
+       haben (checkpointHasOpenIssues()).
+
+     UX-Feedback Runde 4 ("Entity-zentrierte" Ueberarbeitung):
+     - Das Bus-Kartenraster (EL3) zeigt Kinder-/Betreuerzahl jetzt als
+       CountLink (fuehrt zur universellen Liste, EntityListPrototypeView.vue)
+       statt als inline aufklappendes Detailpanel - Kind-/Betreuernamen
+       haben jetzt eine eigene Karte/Route (siehe ChildLink/BetreuerLink)
+       und werden nicht mehr redundant hier dargestellt. Das Scan-Log je Bus
+       (Packets) ist keine cross-cutting Entitaet und bleibt als kleines,
+       aufklappbares Inline-Element auf der Karte.
+     - Die vormals separate "Kinder gesamt"-Breakdown-Karte mit
+       Kopieren-Buttons ist durch drei CountLinks ersetzt (Anwesend/Fehlend/
+       Betreuer gesamt) - das Kopieren selbst lebt jetzt einen Klick entfernt
+       in der universellen Liste (EntityListCard.vue), nicht mehr inline auf
+       dieser Seite. -->
 <template>
   <div class="cp-detail-view">
     <DebugTag variant="page" label="Page 2" />
@@ -73,21 +72,12 @@
         </div>
 
         <div v-if="resultSummary" class="cp-result-row">
-          <span class="cp-result-stat-kinder">
-            <font-awesome-icon :icon="['fas', 'child']" /> {{ resultSummary.kinder }}
-          </span>
-          <span class="cp-result-stat-betreuer">
-            <font-awesome-icon :icon="['fas', 'user']" /> {{ resultSummary.betreuer }}
-          </span>
-          <span
-              v-if="!resultSummary.isBaselineCheckpoint && (resultSummary.missing > 0 || resultSummary.extra > 0)"
-              class="cp-result-delta"
-          >
-            <font-awesome-icon :icon="['fas', 'exclamation-triangle']" class="me-1" />
-            <template v-if="resultSummary.missing > 0">{{ resultSummary.missing }} fehlen</template>
-            <template v-if="resultSummary.missing > 0 && resultSummary.extra > 0">, </template>
-            <template v-if="resultSummary.extra > 0">{{ resultSummary.extra }} mehr</template>
-          </span>
+          <CountLink :count="resultSummary.kinder" label="Kinder" :icon="['fas', 'child']" variant="kinder" @click="openList({ kind: 'child', scope: 'checkpoint', filter: 'present' })" />
+          <CountLink :count="resultSummary.betreuer" label="Betreuer" :icon="['fas', 'user']" variant="betreuer" @click="openList({ kind: 'betreuer', scope: 'checkpoint' })" />
+          <template v-if="!resultSummary.isBaselineCheckpoint && (resultSummary.missing > 0 || resultSummary.extra > 0)">
+            <CountLink v-if="resultSummary.missing > 0" :count="resultSummary.missing" label="fehlen" :icon="['fas', 'exclamation-triangle']" variant="warning" @click="openList({ kind: 'child', scope: 'checkpoint', filter: 'missing' })" />
+            <CountLink v-if="resultSummary.extra > 0" :count="resultSummary.extra" label="mehr" :icon="['fas', 'exclamation-triangle']" variant="warning" @click="openList({ kind: 'child', scope: 'checkpoint', filter: 'extra' })" />
+          </template>
         </div>
 
         <div v-if="actionError" class="alert alert-danger py-2">
@@ -109,38 +99,11 @@
     <template v-else-if="checkpoint">
       <div class="card mb-3">
         <div class="card-body">
-          <h5 class="card-title">
-            <font-awesome-icon :icon="['fas', 'child']" class="me-2" />
-            Kinder gesamt
-          </h5>
-          <div class="cp-breakdown-row">
-            <div class="cp-breakdown-block cp-breakdown-absent">
-              <div class="cp-breakdown-header">
-                <span>Fehlend ({{ breakdown.absent.length }})</span>
-                <button class="btn btn-sm cp-copy-btn" @click="copyChildList(breakdown.absent, 'absent')">
-                  {{ copiedList === 'absent' ? 'Kopiert!' : 'Kopieren' }}
-                </button>
-              </div>
-              <div class="cp-scroll-list">
-                <div v-for="child in breakdown.absent" :key="child.name">
-                  {{ child.name }} <span class="cp-child-group-tag">G-{{ child.groupId }}</span>
-                </div>
-                <div v-if="!breakdown.absent.length" class="text-muted">Keine.</div>
-              </div>
-            </div>
-            <div class="cp-breakdown-block">
-              <div class="cp-breakdown-header">
-                <span>Anwesend ({{ breakdown.present.length }})</span>
-                <button class="btn btn-sm cp-copy-btn" @click="copyChildList(breakdown.present, 'present')">
-                  {{ copiedList === 'present' ? 'Kopiert!' : 'Kopieren' }}
-                </button>
-              </div>
-              <div class="cp-scroll-list">
-                <div v-for="child in breakdown.present" :key="child.name">
-                  {{ child.name }} <span class="cp-child-group-tag">G-{{ child.groupId }}</span>
-                </div>
-              </div>
-            </div>
+          <h5 class="card-title">Kinder &amp; Betreuer gesamt</h5>
+          <div class="cp-aggregate-row">
+            <CountLink :count="breakdownCounts.present" label="Anwesend" :icon="['fas', 'child']" variant="kinder" @click="openList({ kind: 'child', scope: 'checkpoint', filter: 'present' })" />
+            <CountLink :count="breakdownCounts.absent" label="Fehlend" :icon="['fas', 'exclamation-triangle']" variant="warning" @click="openList({ kind: 'child', scope: 'checkpoint', filter: 'absent' })" />
+            <CountLink :count="breakdownCounts.betreuer" label="Betreuer" :icon="['fas', 'user']" variant="betreuer" @click="openList({ kind: 'betreuer', scope: 'checkpoint' })" />
           </div>
         </div>
       </div>
@@ -164,51 +127,24 @@
             >
               <div class="cp-bus-card-summary">
                 <div class="cp-bus-num">Bus {{ bus.busNumber }}</div>
-                <div v-if="bus.hasData" class="cp-bus-stats">
-                  <span class="cp-bus-stat-kinder">
-                    <font-awesome-icon :icon="['fas', 'child']" /> {{ bus.kinderCount }}
-                  </span>
-                  <span class="cp-bus-stat-betreuer">
-                    <font-awesome-icon :icon="['fas', 'user']" /> {{ bus.betreuerCount }}
-                  </span>
+                <div v-if="bus.hasData" class="cp-bus-stats" @click.stop>
+                  <CountLink :count="bus.kinderCount" label="Kinder" :icon="['fas', 'child']" variant="kinder" @click="openList({ kind: 'child', scope: 'bus', scopeId: bus.busNumber })" />
+                  <CountLink :count="bus.betreuerCount" label="Betreuer" :icon="['fas', 'user']" variant="betreuer" @click="openList({ kind: 'betreuer', scope: 'bus', scopeId: bus.busNumber })" />
+                  <template v-if="busDelta(bus).hasComparison && (busDelta(bus).missingCount > 0 || busDelta(bus).extraCount > 0)">
+                    <CountLink v-if="busDelta(bus).missingCount > 0" :count="busDelta(bus).missingCount" label="fehlen" variant="warning" @click="openList({ kind: 'child', scope: 'bus', scopeId: bus.busNumber, filter: 'missing' })" />
+                    <CountLink v-if="busDelta(bus).extraCount > 0" :count="busDelta(bus).extraCount" label="mehr" variant="warning" @click="openList({ kind: 'child', scope: 'bus', scopeId: bus.busNumber, filter: 'extra' })" />
+                  </template>
                 </div>
                 <div v-else class="cp-bus-status-text">Keine Kinder zugeordnet</div>
               </div>
 
-              <div v-if="expandedBusNumber === bus.busNumber" class="cp-expand-panel" @click.stop>
-                <DebugTag label="el4" />
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                  <div class="fw-bold">Bus {{ bus.busNumber }}</div>
-                  <button class="btn btn-secondary btn-sm" @click="copyBusSummary(bus)">
-                    {{ copied ? 'Kopiert!' : 'Kopieren' }}
-                  </button>
+              <div v-if="expandedBusNumber === bus.busNumber && bus.hasData" class="cp-expand-panel" @click.stop>
+                <div class="fw-bold mb-1">Scans</div>
+                <div class="cp-scroll-list">
+                  <div v-for="packet in bus.packets" :key="packet.id">
+                    {{ formatTime(packet.receivedAt) }} — {{ packet.authorName }} ({{ packet.childrenCount }} Kinder)
+                  </div>
                 </div>
-
-                <template v-if="bus.hasData">
-                  <div class="mb-2">
-                    <div class="fw-bold">Betreuer ({{ bus.betreuerNames.length }})</div>
-                    <div class="cp-scroll-list">
-                      <div v-for="(name, idx) in bus.betreuerNames" :key="idx">{{ name }}</div>
-                    </div>
-                  </div>
-                  <div class="mb-2">
-                    <div class="fw-bold">Kinder ({{ bus.children.length }})</div>
-                    <div class="cp-scroll-list">
-                      <div v-for="(child, idx) in bus.children" :key="idx">
-                        {{ child.name }} <span class="cp-child-group-tag">G-{{ child.groupId }}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div>
-                    <div class="fw-bold">Scans</div>
-                    <div class="cp-scroll-list">
-                      <div v-for="packet in bus.packets" :key="packet.id">
-                        {{ formatTime(packet.receivedAt) }} — {{ packet.authorName }} ({{ packet.childrenCount }} Kinder)
-                      </div>
-                    </div>
-                  </div>
-                </template>
-                <div v-else class="text-muted">Keine Kinder zugeordnet.</div>
               </div>
             </div>
           </div>
@@ -231,10 +167,13 @@ import {
   removeCheckpoint,
   summarizeCheckpoint,
   checkpointHasOpenIssues,
-  getBusChildrenBreakdown
+  getBusDelta,
+  getBusChildrenBreakdown,
+  getCheckpointBetreuerList
 } from '@/composables/useCheckpointsMock'
 import CheckpointStatusBadge from '@/components/checkpoints-prototype/CheckpointStatusBadge.vue'
 import CheckpointOriginBadge from '@/components/checkpoints-prototype/CheckpointOriginBadge.vue'
+import CountLink from '@/components/checkpoints-prototype/CountLink.vue'
 import DebugTag from '@/components/checkpoints-prototype/DebugTag.vue'
 
 const OPEN = CHECKPOINT_STATUS.OPEN
@@ -247,10 +186,6 @@ const checkpoint = ref(null)
 const resultSummary = ref(null)
 const expandedBusNumber = ref(null)
 const actionError = ref(null)
-const copied = ref(false)
-const copiedList = ref(null)
-
-const breakdown = computed(() => checkpoint.value ? getBusChildrenBreakdown(checkpoint.value) : { present: [], absent: [] })
 
 function formatTime(isoString) {
   return new Date(isoString).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
@@ -258,41 +193,27 @@ function formatTime(isoString) {
 
 function toggleExpand(bus) {
   expandedBusNumber.value = expandedBusNumber.value === bus.busNumber ? null : bus.busNumber
-  copied.value = false
 }
 
-async function copyBusSummary(bus) {
-  const lines = [
-    `Bus ${bus.busNumber}`,
-    `Kinder: ${bus.kinderCount}`,
-    `Betreuer: ${bus.betreuerCount}`,
-    ...bus.betreuerNames.map(name => `- ${name}`),
-    '',
-    'Kinder:',
-    ...bus.children.map(c => `- ${c.name} (G-${c.groupId})`),
-    '',
-    'Scans:',
-    ...bus.packets.map(p => `${formatTime(p.receivedAt)} - ${p.authorName} (${p.childrenCount} Kinder)`)
-  ]
-
-  try {
-    await navigator.clipboard.writeText(lines.join('\n'))
-    copied.value = true
-  } catch (err) {
-    console.error('Fehler beim Kopieren:', err)
-  }
+function busDelta(bus) {
+  return getBusDelta(checkpoint.value, bus.busNumber)
 }
 
-async function copyChildList(children, kind) {
-  const label = kind === 'absent' ? 'Fehlend' : 'Anwesend'
-  const lines = [`${label} (${children.length}):`, ...children.map(c => `- ${c.name} (G-${c.groupId})`)]
-
-  try {
-    await navigator.clipboard.writeText(lines.join('\n'))
-    copiedList.value = kind
-  } catch (err) {
-    console.error('Fehler beim Kopieren:', err)
+const breakdownCounts = computed(() => {
+  if (!checkpoint.value) return { present: 0, absent: 0, betreuer: 0 }
+  const breakdown = getBusChildrenBreakdown(checkpoint.value)
+  return {
+    present: breakdown.present.length,
+    absent: breakdown.absent.length,
+    betreuer: getCheckpointBetreuerList(checkpoint.value).length
   }
+})
+
+function openList({ kind, scope, scopeId, filter }) {
+  const query = { kind, scope, checkpointId: String(checkpoint.value.id) }
+  if (scopeId != null) query.scopeId = String(scopeId)
+  if (filter) query.filter = filter
+  router.push({ path: '/admin/checkpoints-prototype/list', query })
 }
 
 async function load() {
@@ -412,62 +333,15 @@ onMounted(load)
   margin: 4px 0 8px;
 }
 
-.cp-result-stat-kinder {
-  font-size: 1.3rem;
-  font-weight: 800;
-  color: #0d6efd;
-}
-
-.cp-result-stat-betreuer {
-  font-size: 1.3rem;
-  font-weight: 800;
-  color: #dc3545;
-}
-
-.cp-result-delta {
-  font-size: 0.9rem;
-  font-weight: 700;
-  color: #b02a37;
-}
-
-.cp-breakdown-row {
+.cp-aggregate-row {
   display: flex;
-  gap: 10px;
   flex-wrap: wrap;
-}
-
-.cp-breakdown-block {
-  flex: 1 1 200px;
-}
-
-.cp-breakdown-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-weight: 700;
-  margin-bottom: 4px;
-}
-
-.cp-breakdown-absent .cp-breakdown-header {
-  color: #842029;
-}
-
-.cp-breakdown-absent .cp-scroll-list {
-  background-color: #f8d7da;
-}
-
-.cp-copy-btn {
-  border: none;
-  border-radius: 6px;
-  background-color: #6c757d;
-  color: #fff;
-  font-size: 0.85rem;
-  padding: 4px 10px;
+  gap: 10px 20px;
 }
 
 .cp-bus-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   gap: 10px;
   margin-top: 8px;
 }
@@ -492,24 +366,13 @@ onMounted(load)
 .cp-bus-stats {
   display: flex;
   justify-content: center;
-  gap: 14px;
+  flex-wrap: wrap;
+  gap: 4px 10px;
   margin-top: 4px;
 }
 
 .cp-bus-card-expanded .cp-bus-stats {
   justify-content: flex-start;
-}
-
-.cp-bus-stat-kinder {
-  font-size: 1.4rem;
-  font-weight: 800;
-  color: #0d6efd;
-}
-
-.cp-bus-stat-betreuer {
-  font-size: 1.4rem;
-  font-weight: 800;
-  color: #dc3545;
 }
 
 .cp-bus-status-text {
@@ -545,16 +408,5 @@ onMounted(load)
   border-radius: 8px;
   padding: 8px 10px;
   user-select: text;
-}
-
-.cp-child-group-tag {
-  display: inline-block;
-  font-size: 0.8rem;
-  font-weight: 700;
-  color: #495057;
-  background-color: #e9ecef;
-  border-radius: 6px;
-  padding: 1px 6px;
-  margin-left: 4px;
 }
 </style>

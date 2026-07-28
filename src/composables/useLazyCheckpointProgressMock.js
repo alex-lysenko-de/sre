@@ -2,31 +2,23 @@
 // Mock-Pendant zum zukuenftigen useLazyCheckpointProgress.js
 // (tickets/130/IMPLEMENTATION_PLAN.md): liefert zu einer Lazy-Checkpoint
 // die Listen "bereits gemeldet" / "noch nicht gemeldet" sowie den
-// Zeitpunkt der letzten Meldung - berechnet aus einem synthetischen Kinder-
-// Pool, der (wie im echten Lazy-Typ) keiner Gruppe zugeordnet ist. Keine
-// Netzwerkanfrage, kein Supabase-Import.
+// Zeitpunkt der letzten Meldung. Keine Netzwerkanfrage, kein
+// Supabase-Import.
 //
 // UX-Feedback Runde 1: bei realistischer Groesse (~150 Kinder) ist eine
 // flache Liste nicht mehr navigierbar - jedes Kind traegt daher zusaetzlich
 // eine groupId, damit die aufrufende View nach Gruppe gruppieren kann.
-
-// Eigener, von useCheckpointsMock.js unabhaengiger Pool - Lazy ist nicht an
-// eine Gruppe gebunden, aber jedes Kind gehoert trotzdem zu irgendeiner
-// Gruppe (fuer die Gruppierung in der Liste, siehe oben).
-const LAZY_CHILD_POOL = [
-    { name: 'Alina Krause', groupId: 1 },
-    { name: 'Bruno Vogel', groupId: 2 },
-    { name: 'Carla Wolf', groupId: 3 },
-    { name: 'Doro Fuchs', groupId: 1 },
-    { name: 'Elias Braun', groupId: 2 },
-    { name: 'Frida Berger', groupId: 3 },
-    { name: 'Gustav Lang', groupId: 1 },
-    { name: 'Helga Roth', groupId: 2 },
-    { name: 'Ivo Herrmann', groupId: 3 },
-    { name: 'Jule Baur', groupId: 1 },
-    { name: 'Karl Schuster', groupId: 2 },
-    { name: 'Lotte Franke', groupId: 3 }
-]
+//
+// UX-Feedback Runde 4 ("Entity-zentrierte" Ueberarbeitung): der vormals
+// eigene, unabhaengige LAZY_CHILD_POOL (12 Kinder, eigene Ids 1-12) ist
+// entfernt - Lazy nutzt jetzt denselben kanonischen Kinder-Roster wie
+// Bus/Group (useChildEntityMock.js), sonst haette ein Kind in Lazy eine
+// andere Id als in seiner Kind-Karte gehabt. Das macht auch
+// summarizeCheckpoint()s LAZY-Gesamtzahl konsistent mit GROUP (24 statt
+// vorher 12). checkedIn traegt zusaetzlich checkedInBy (Betreuer-Id) fuer
+// die Scan-Historie der Kind-Karte (useScanHistoryMock.js).
+import { CHILD_ROSTER } from './useChildEntityMock'
+import { BETREUER_ROSTER } from './useBetreuerEntityMock'
 
 function timeToday(hours, minutes) {
     const d = new Date()
@@ -39,17 +31,19 @@ function timeToday(hours, minutes) {
 const progressCache = new Map()
 
 function buildProgress(checkpointId) {
-    // Erste 8 Kinder sind bereits gemeldet, der Rest noch nicht - reicht zur
-    // Demonstration von "hat gemeldet" vs. "wartet noch".
-    const checkedInCount = 8
-    const checkedIn = LAZY_CHILD_POOL.slice(0, checkedInCount).map((child, idx) => ({
-        id: idx + 1,
+    // 16 von 24 Kindern sind bereits gemeldet, der Rest noch nicht -
+    // dasselbe ~2:1-Verhaeltnis wie zuvor (8 von 12), jetzt auf dem vollen
+    // Roster.
+    const checkedInCount = 16
+    const checkedIn = CHILD_ROSTER.slice(0, checkedInCount).map((child, idx) => ({
+        id: child.id,
         name: child.name,
         groupId: child.groupId,
-        timestamp: timeToday(12, 40 + idx)
+        timestamp: timeToday(12, 40 + idx),
+        checkedInBy: BETREUER_ROSTER[child.id % BETREUER_ROSTER.length].id
     }))
-    const notYet = LAZY_CHILD_POOL.slice(checkedInCount).map((child, idx) => ({
-        id: checkedInCount + idx + 1,
+    const notYet = CHILD_ROSTER.slice(checkedInCount).map(child => ({
+        id: child.id,
         name: child.name,
         groupId: child.groupId
     }))

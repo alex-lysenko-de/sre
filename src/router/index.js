@@ -196,6 +196,40 @@ const routes = [
         component: () => import('@/views/CheckpointLazyPrototypeView.vue'),
         meta: { requiresAuth: true, requiresAdmin: true }
     },
+
+    // UX-Feedback Runde 4 ("Entity-zentrierte" Ueberarbeitung) - neue,
+    // ueberall wiederverwendbare Entitaeten-Bildschirme (Kind/Betreuer/
+    // Gruppe/universelle Liste), siehe tickets/130_2 Planungsnotizen.
+    {
+        path: '/admin/checkpoints-prototype/list',
+        name: 'CheckpointEntityListPrototype',
+        component: () => import('@/views/EntityListPrototypeView.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
+        path: '/admin/checkpoints-prototype/child/:id/edit',
+        name: 'CheckpointChildEditPrototype',
+        component: () => import('@/views/ChildEditPrototypeView.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
+        path: '/admin/checkpoints-prototype/child/:id',
+        name: 'CheckpointChildCardPrototype',
+        component: () => import('@/views/ChildCardPrototypeView.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
+        path: '/admin/checkpoints-prototype/betreuer/:id',
+        name: 'CheckpointBetreuerCardPrototype',
+        component: () => import('@/views/BetreuerCardPrototypeView.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
+        path: '/admin/checkpoints-prototype/group-entity/:id',
+        name: 'CheckpointGroupEntityPrototype',
+        component: () => import('@/views/GroupEntityPrototypeView.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true }
+    },
 ]
 
 const router = createRouter({
