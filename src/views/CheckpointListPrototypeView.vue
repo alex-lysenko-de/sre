@@ -16,7 +16,14 @@
      zweizeiligen Karte; offene Checkpoints heben sich farblich ab, erledigte
      werden bewusst unauffaelliger dargestellt (grauer, weniger Kontrast);
      der Anomalie-Hinweis steht jetzt als eigene Zeile im Kartenfuss statt
-     als zusaetzliches Badge neben dem Status. -->
+     als zusaetzliches Badge neben dem Status.
+
+     UX-Feedback Runde 3 (EL4): die Karte zeigte bisher kein Ergebnis, nur
+     Zeiten/Status - der Kern jeder Checkpoint fehlte. Jetzt zeigt der Inhalt
+     zusaetzlich das Ergebnis (BUS: Kinder/Betreuer-Summe; GROUP/LAZY:
+     anwesend/gesamt), der Fuss zusaetzlich die Abweichung zur Tagesbasis
+     (fehlen/mehr), sobald eine Basis existiert (siehe summarizeCheckpoint()
+     in useCheckpointsMock.js). Kartenpolsterung dafuer leicht erhoeht. -->
 <template>
   <div class="cp-list-view">
     <DebugTag variant="page" label="Page 1" />
@@ -89,11 +96,37 @@
               <CheckpointTypeBadge :type="cp.type" />
             </div>
             <div class="cp-item-body">
-              {{ formatTime(cp.created_at) }}
-              <template v-if="cp.finished_at"> – {{ formatTime(cp.finished_at) }}</template>
+              <div class="cp-item-time">
+                {{ formatTime(cp.created_at) }}
+                <template v-if="cp.finished_at"> – {{ formatTime(cp.finished_at) }}</template>
+              </div>
+              <div v-if="results[cp.id]" class="cp-item-result">
+                <template v-if="cp.type === CHECKPOINT_TYPE.BUS">
+                  <span class="cp-item-stat-kinder">
+                    <font-awesome-icon :icon="['fas', 'child']" /> {{ results[cp.id].kinder }}
+                  </span>
+                  <span class="cp-item-stat-betreuer">
+                    <font-awesome-icon :icon="['fas', 'user']" /> {{ results[cp.id].betreuer }}
+                  </span>
+                </template>
+                <template v-else>
+                  <span class="cp-item-stat-present">
+                    {{ results[cp.id].present }}<template v-if="results[cp.id].total != null"> / {{ results[cp.id].total }}</template>
+                  </span>
+                </template>
+              </div>
             </div>
             <div class="cp-item-footer">
               <CheckpointStatusBadge :status="cp.status" :day="cp.day" />
+              <div
+                  v-if="results[cp.id] && !results[cp.id].isBaselineCheckpoint && (results[cp.id].missing > 0 || results[cp.id].extra > 0)"
+                  class="cp-item-delta"
+              >
+                <font-awesome-icon :icon="['fas', 'exclamation-triangle']" class="me-1" />
+                <template v-if="results[cp.id].missing > 0">{{ results[cp.id].missing }} fehlen</template>
+                <template v-if="results[cp.id].missing > 0 && results[cp.id].extra > 0">, </template>
+                <template v-if="results[cp.id].extra > 0">{{ results[cp.id].extra }} mehr</template>
+              </div>
               <div v-if="anomalousIds.has(cp.id)" class="cp-item-anomaly">
                 <font-awesome-icon :icon="['fas', 'exclamation-triangle']" class="me-1" />
                 Mehrere gleichzeitig offen
@@ -120,7 +153,8 @@ import {
   CHECKPOINT_TYPE,
   CHECKPOINT_STATUS,
   fetchCheckpointsForDay,
-  createCheckpoint
+  createCheckpoint,
+  summarizeCheckpoint
 } from '@/composables/useCheckpointsMock'
 import CheckpointTypeBadge from '@/components/checkpoints-prototype/CheckpointTypeBadge.vue'
 import CheckpointStatusBadge from '@/components/checkpoints-prototype/CheckpointStatusBadge.vue'
@@ -138,6 +172,7 @@ const mockTotalBetreuer = 8
 
 const loading = ref(true)
 const checkpoints = ref([])
+const results = ref({})
 const showCreateModal = ref(false)
 const createError = ref(null)
 
@@ -174,6 +209,10 @@ function formatTime(isoString) {
 async function load() {
   loading.value = true
   checkpoints.value = await fetchCheckpointsForDay(today())
+  const entries = await Promise.all(
+      checkpoints.value.map(async cp => [cp.id, await summarizeCheckpoint(cp)])
+  )
+  results.value = Object.fromEntries(entries)
   loading.value = false
 }
 
@@ -247,7 +286,7 @@ onMounted(load)
 
 .cp-item-card {
   border-radius: 12px;
-  padding: 10px 14px;
+  padding: 12px 14px;
   cursor: pointer;
   border-left: 6px solid transparent;
   background-color: #fff;
@@ -288,6 +327,43 @@ onMounted(load)
 
 .cp-item-card-closed .cp-item-body {
   color: #868e96;
+}
+
+.cp-item-result {
+  display: flex;
+  gap: 14px;
+  margin-top: 4px;
+}
+
+.cp-item-stat-kinder {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #0d6efd;
+}
+
+.cp-item-card-closed .cp-item-stat-kinder {
+  color: #6c8fb5;
+}
+
+.cp-item-stat-betreuer {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #dc3545;
+}
+
+.cp-item-card-closed .cp-item-stat-betreuer {
+  color: #b58a8e;
+}
+
+.cp-item-stat-present {
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+
+.cp-item-delta {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #b02a37;
 }
 
 .cp-item-footer {

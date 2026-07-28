@@ -23,7 +23,17 @@
        angeklickten Bus-Karte auf (per grid-column: 1 / -1), statt als
        eigener Block unterhalb des gesamten Rasters zu erscheinen. Kinder
        zeigen jetzt ihre Gruppennummer, um Namensverwechslungen zu
-       vermeiden. -->
+       vermeiden.
+
+     UX-Feedback Runde 3:
+     - EL2: zeigt jetzt zusaetzlich das Ergebnis (Kinder-/Betreuersumme) und
+       die Abweichung zur Tagesbasis direkt neben Status/Aktion, statt nur im
+       Bus-Raster sichtbar zu sein (summarizeCheckpoint()).
+     - Schliessen warnt jetzt vorher, falls Busse noch keine Daten gemeldet
+       haben (checkpointHasOpenIssues()), statt kommentarlos zu schliessen.
+     - Neuer Block "Kinder gesamt": anwesend/fehlend-Liste ueber alle Busse
+       (getBusChildrenBreakdown()), je mit Kopieren-Button; die Fehlend-Liste
+       ist farblich hervorgehoben. -->
 <template>
   <div class="cp-detail-view">
     <DebugTag variant="page" label="Page 2" />
@@ -62,6 +72,24 @@
           </button>
         </div>
 
+        <div v-if="resultSummary" class="cp-result-row">
+          <span class="cp-result-stat-kinder">
+            <font-awesome-icon :icon="['fas', 'child']" /> {{ resultSummary.kinder }}
+          </span>
+          <span class="cp-result-stat-betreuer">
+            <font-awesome-icon :icon="['fas', 'user']" /> {{ resultSummary.betreuer }}
+          </span>
+          <span
+              v-if="!resultSummary.isBaselineCheckpoint && (resultSummary.missing > 0 || resultSummary.extra > 0)"
+              class="cp-result-delta"
+          >
+            <font-awesome-icon :icon="['fas', 'exclamation-triangle']" class="me-1" />
+            <template v-if="resultSummary.missing > 0">{{ resultSummary.missing }} fehlen</template>
+            <template v-if="resultSummary.missing > 0 && resultSummary.extra > 0">, </template>
+            <template v-if="resultSummary.extra > 0">{{ resultSummary.extra }} mehr</template>
+          </span>
+        </div>
+
         <div v-if="actionError" class="alert alert-danger py-2">
           <template v-if="actionError.error === 'ALREADY_OPEN'">
             Es ist bereits ein anderer Bus-Checkpoint offen (#{{ actionError.existingId }}). Zuerst diesen schließen.
@@ -79,6 +107,44 @@
     </div>
 
     <template v-else-if="checkpoint">
+      <div class="card mb-3">
+        <div class="card-body">
+          <h5 class="card-title">
+            <font-awesome-icon :icon="['fas', 'child']" class="me-2" />
+            Kinder gesamt
+          </h5>
+          <div class="cp-breakdown-row">
+            <div class="cp-breakdown-block cp-breakdown-absent">
+              <div class="cp-breakdown-header">
+                <span>Fehlend ({{ breakdown.absent.length }})</span>
+                <button class="btn btn-sm cp-copy-btn" @click="copyChildList(breakdown.absent, 'absent')">
+                  {{ copiedList === 'absent' ? 'Kopiert!' : 'Kopieren' }}
+                </button>
+              </div>
+              <div class="cp-scroll-list">
+                <div v-for="child in breakdown.absent" :key="child.name">
+                  {{ child.name }} <span class="cp-child-group-tag">G-{{ child.groupId }}</span>
+                </div>
+                <div v-if="!breakdown.absent.length" class="text-muted">Keine.</div>
+              </div>
+            </div>
+            <div class="cp-breakdown-block">
+              <div class="cp-breakdown-header">
+                <span>Anwesend ({{ breakdown.present.length }})</span>
+                <button class="btn btn-sm cp-copy-btn" @click="copyChildList(breakdown.present, 'present')">
+                  {{ copiedList === 'present' ? 'Kopiert!' : 'Kopieren' }}
+                </button>
+              </div>
+              <div class="cp-scroll-list">
+                <div v-for="child in breakdown.present" :key="child.name">
+                  {{ child.name }} <span class="cp-child-group-tag">G-{{ child.groupId }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="card">
         <div class="card-body">
           <DebugTag label="el3" />
@@ -155,14 +221,17 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   CHECKPOINT_STATUS,
   fetchCheckpointDetail,
   finishCheckpoint,
   reopenCheckpoint,
-  removeCheckpoint
+  removeCheckpoint,
+  summarizeCheckpoint,
+  checkpointHasOpenIssues,
+  getBusChildrenBreakdown
 } from '@/composables/useCheckpointsMock'
 import CheckpointStatusBadge from '@/components/checkpoints-prototype/CheckpointStatusBadge.vue'
 import CheckpointOriginBadge from '@/components/checkpoints-prototype/CheckpointOriginBadge.vue'
@@ -175,9 +244,13 @@ const router = useRouter()
 
 const loading = ref(true)
 const checkpoint = ref(null)
+const resultSummary = ref(null)
 const expandedBusNumber = ref(null)
 const actionError = ref(null)
 const copied = ref(false)
+const copiedList = ref(null)
+
+const breakdown = computed(() => checkpoint.value ? getBusChildrenBreakdown(checkpoint.value) : { present: [], absent: [] })
 
 function formatTime(isoString) {
   return new Date(isoString).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
@@ -210,14 +283,31 @@ async function copyBusSummary(bus) {
   }
 }
 
+async function copyChildList(children, kind) {
+  const label = kind === 'absent' ? 'Fehlend' : 'Anwesend'
+  const lines = [`${label} (${children.length}):`, ...children.map(c => `- ${c.name} (G-${c.groupId})`)]
+
+  try {
+    await navigator.clipboard.writeText(lines.join('\n'))
+    copiedList.value = kind
+  } catch (err) {
+    console.error('Fehler beim Kopieren:', err)
+  }
+}
+
 async function load() {
   loading.value = true
   checkpoint.value = await fetchCheckpointDetail(Number(route.params.id))
+  resultSummary.value = checkpoint.value ? await summarizeCheckpoint(checkpoint.value) : null
   loading.value = false
 }
 
 async function onFinish() {
   actionError.value = null
+  const issues = await checkpointHasOpenIssues(checkpoint.value)
+  if (issues.hasIssues && !confirm(`${issues.message} Trotzdem schließen?`)) {
+    return
+  }
   await finishCheckpoint(checkpoint.value.id)
   await load()
 }
@@ -312,6 +402,67 @@ onMounted(load)
   font-size: 1rem;
   font-weight: 700;
   padding: 8px 18px;
+}
+
+.cp-result-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 4px 0 8px;
+}
+
+.cp-result-stat-kinder {
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: #0d6efd;
+}
+
+.cp-result-stat-betreuer {
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: #dc3545;
+}
+
+.cp-result-delta {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #b02a37;
+}
+
+.cp-breakdown-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cp-breakdown-block {
+  flex: 1 1 200px;
+}
+
+.cp-breakdown-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.cp-breakdown-absent .cp-breakdown-header {
+  color: #842029;
+}
+
+.cp-breakdown-absent .cp-scroll-list {
+  background-color: #f8d7da;
+}
+
+.cp-copy-btn {
+  border: none;
+  border-radius: 6px;
+  background-color: #6c757d;
+  color: #fff;
+  font-size: 0.85rem;
+  padding: 4px 10px;
 }
 
 .cp-bus-grid {

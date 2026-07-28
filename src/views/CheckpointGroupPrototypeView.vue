@@ -23,7 +23,19 @@
        ohne Probleme bleiben einzeilig kompakt, Gruppen mit fehlenden/
        zusaetzlichen Kindern nehmen die volle Breite ein und klappen beim
        Anklicken direkt an Ort und Stelle auf (kein Panel mehr unterhalb des
-       gesamten Rasters). -->
+       gesamten Rasters).
+
+     UX-Feedback Runde 3:
+     - Bugfix EL3/EL4: das Detailpanel war nur fuer Gruppen mit
+       missingChildren.length > 0 sichtbar - Klick auf eine OK- oder
+       "mehr Kinder"-Gruppe klappte sichtbar nichts auf. Jetzt klappt jede
+       Gruppe auf und zeigt je nach Zustand Fehlend-/OK-/Kein-Daten-Text.
+     - EL2: zeigt jetzt zusaetzlich das Ergebnis (anwesend/gesamt) und die
+       Abweichung zur Tagesbasis (summarizeCheckpoint()).
+     - Schliessen warnt jetzt vorher bei fehlenden Kindern oder Gruppen ohne
+       Daten (checkpointHasOpenIssues()).
+     - Neuer Block "Kinder gesamt": anwesend/fehlend-Liste ueber alle
+       Gruppen (getGroupChildrenBreakdown()), je mit Kopieren-Button. -->
 <template>
   <div class="cp-detail-view">
     <DebugTag variant="page" label="Page 3" />
@@ -62,6 +74,21 @@
           </button>
         </div>
 
+        <div v-if="resultSummary" class="cp-result-row">
+          <span class="cp-result-stat-present">
+            <font-awesome-icon :icon="['fas', 'child']" /> {{ resultSummary.present }} / {{ resultSummary.total }}
+          </span>
+          <span
+              v-if="!resultSummary.isBaselineCheckpoint && (resultSummary.missing > 0 || resultSummary.extra > 0)"
+              class="cp-result-delta"
+          >
+            <font-awesome-icon :icon="['fas', 'exclamation-triangle']" class="me-1" />
+            <template v-if="resultSummary.missing > 0">{{ resultSummary.missing }} fehlen</template>
+            <template v-if="resultSummary.missing > 0 && resultSummary.extra > 0">, </template>
+            <template v-if="resultSummary.extra > 0">{{ resultSummary.extra }} mehr</template>
+          </span>
+        </div>
+
         <div v-if="actionError" class="alert alert-danger py-2">
           <template v-if="actionError.error === 'ALREADY_OPEN'">
             Es ist bereits ein anderer Group-Checkpoint offen (#{{ actionError.existingId }}). Zuerst diesen schließen.
@@ -79,6 +106,44 @@
     </div>
 
     <template v-else-if="checkpoint">
+      <div class="card mb-3">
+        <div class="card-body">
+          <h5 class="card-title">
+            <font-awesome-icon :icon="['fas', 'child']" class="me-2" />
+            Kinder gesamt
+          </h5>
+          <div class="cp-breakdown-row">
+            <div class="cp-breakdown-block cp-breakdown-absent">
+              <div class="cp-breakdown-header">
+                <span>Fehlend ({{ breakdown.absent.length }})</span>
+                <button class="btn btn-sm cp-copy-btn" @click="copyChildList(breakdown.absent, 'absent')">
+                  {{ copiedList === 'absent' ? 'Kopiert!' : 'Kopieren' }}
+                </button>
+              </div>
+              <div class="cp-scroll-list">
+                <div v-for="child in breakdown.absent" :key="child.name">
+                  {{ child.name }} <span class="cp-child-group-tag">G-{{ child.groupId }}</span>
+                </div>
+                <div v-if="!breakdown.absent.length" class="text-muted">Keine.</div>
+              </div>
+            </div>
+            <div class="cp-breakdown-block">
+              <div class="cp-breakdown-header">
+                <span>Anwesend ({{ breakdown.present.length }})</span>
+                <button class="btn btn-sm cp-copy-btn" @click="copyChildList(breakdown.present, 'present')">
+                  {{ copiedList === 'present' ? 'Kopiert!' : 'Kopieren' }}
+                </button>
+              </div>
+              <div class="cp-scroll-list">
+                <div v-for="child in breakdown.present" :key="child.name">
+                  {{ child.name }} <span class="cp-child-group-tag">G-{{ child.groupId }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="card">
         <div class="card-body">
           <DebugTag label="el3" />
@@ -92,7 +157,11 @@
                 v-for="group in checkpoint.groups"
                 :key="group.groupId"
                 class="cp-group-row"
-                :class="[groupCardClass(group), expandedGroupId === group.groupId ? 'cp-group-row-expanded' : '', group.missingChildren.length ? 'cp-group-row-full' : '']"
+                :class="[
+                    groupCardClass(group),
+                    expandedGroupId === group.groupId ? 'cp-group-row-expanded' : '',
+                    (group.missingChildren.length || expandedGroupId === group.groupId) ? 'cp-group-row-full' : ''
+                ]"
                 role="button"
                 @click="toggleExpand(group)"
             >
@@ -105,10 +174,21 @@
                 </span>
               </div>
 
-              <div v-if="expandedGroupId === group.groupId && group.missingChildren.length" class="cp-group-row-detail" @click.stop>
+              <div v-if="expandedGroupId === group.groupId" class="cp-group-row-detail" @click.stop>
                 <DebugTag label="el4" />
-                <div class="fw-bold mb-1">Fehlende Kinder:</div>
-                <div>{{ group.missingChildren.map(c => c.name).join(', ') }}</div>
+                <template v-if="!group.hasData">
+                  <div class="text-muted">Keine Daten für diese Gruppe.</div>
+                </template>
+                <template v-else-if="group.missingChildren.length">
+                  <div class="fw-bold cp-detail-missing-label mb-1">Fehlende Kinder ({{ group.missingChildren.length }}):</div>
+                  <div>{{ group.missingChildren.map(c => c.name).join(', ') }}</div>
+                </template>
+                <template v-else-if="group.current > group.morning">
+                  <div class="cp-detail-extra">{{ group.current - group.morning }} Kind(er) mehr als am Morgen erfasst.</div>
+                </template>
+                <template v-else>
+                  <div class="cp-detail-ok">Alle {{ group.morning }} Kinder anwesend.</div>
+                </template>
               </div>
             </div>
           </div>
@@ -121,14 +201,17 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   CHECKPOINT_STATUS,
   fetchCheckpointDetail,
   finishCheckpoint,
   reopenCheckpoint,
-  removeCheckpoint
+  removeCheckpoint,
+  summarizeCheckpoint,
+  checkpointHasOpenIssues,
+  getGroupChildrenBreakdown
 } from '@/composables/useCheckpointsMock'
 import CheckpointStatusBadge from '@/components/checkpoints-prototype/CheckpointStatusBadge.vue'
 import CheckpointOriginBadge from '@/components/checkpoints-prototype/CheckpointOriginBadge.vue'
@@ -141,8 +224,12 @@ const router = useRouter()
 
 const loading = ref(true)
 const checkpoint = ref(null)
+const resultSummary = ref(null)
 const expandedGroupId = ref(null)
 const actionError = ref(null)
+const copiedList = ref(null)
+
+const breakdown = computed(() => checkpoint.value ? getGroupChildrenBreakdown(checkpoint.value) : { present: [], absent: [] })
 
 function groupCardClass(group) {
   if (!group.hasData) return 'cp-group-card-none'
@@ -173,14 +260,31 @@ function toggleExpand(group) {
   expandedGroupId.value = expandedGroupId.value === group.groupId ? null : group.groupId
 }
 
+async function copyChildList(children, kind) {
+  const label = kind === 'absent' ? 'Fehlend' : 'Anwesend'
+  const lines = [`${label} (${children.length}):`, ...children.map(c => `- ${c.name} (G-${c.groupId})`)]
+
+  try {
+    await navigator.clipboard.writeText(lines.join('\n'))
+    copiedList.value = kind
+  } catch (err) {
+    console.error('Fehler beim Kopieren:', err)
+  }
+}
+
 async function load() {
   loading.value = true
   checkpoint.value = await fetchCheckpointDetail(Number(route.params.id))
+  resultSummary.value = checkpoint.value ? await summarizeCheckpoint(checkpoint.value) : null
   loading.value = false
 }
 
 async function onFinish() {
   actionError.value = null
+  const issues = await checkpointHasOpenIssues(checkpoint.value)
+  if (issues.hasIssues && !confirm(`${issues.message} Trotzdem schließen?`)) {
+    return
+  }
   await finishCheckpoint(checkpoint.value.id)
   await load()
 }
@@ -277,6 +381,80 @@ onMounted(load)
   padding: 8px 18px;
 }
 
+.cp-result-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 4px 0 8px;
+}
+
+.cp-result-stat-present {
+  font-size: 1.3rem;
+  font-weight: 800;
+}
+
+.cp-result-delta {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #b02a37;
+}
+
+.cp-breakdown-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cp-breakdown-block {
+  flex: 1 1 200px;
+}
+
+.cp-breakdown-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.cp-breakdown-absent .cp-breakdown-header {
+  color: #842029;
+}
+
+.cp-breakdown-absent .cp-scroll-list {
+  background-color: #f8d7da;
+}
+
+.cp-copy-btn {
+  border: none;
+  border-radius: 6px;
+  background-color: #6c757d;
+  color: #fff;
+  font-size: 0.85rem;
+  padding: 4px 10px;
+}
+
+.cp-scroll-list {
+  max-height: 160px;
+  overflow-y: auto;
+  background: white;
+  border-radius: 8px;
+  padding: 8px 10px;
+  user-select: text;
+}
+
+.cp-child-group-tag {
+  display: inline-block;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #495057;
+  background-color: #e9ecef;
+  border-radius: 6px;
+  padding: 1px 6px;
+  margin-left: 4px;
+}
+
 .cp-group-accordion {
   display: flex;
   flex-wrap: wrap;
@@ -294,6 +472,10 @@ onMounted(load)
 
 .cp-group-row-full {
   flex: 1 1 100%;
+}
+
+.cp-group-row-expanded {
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.25) inset;
 }
 
 .cp-group-row-main {
@@ -325,6 +507,20 @@ onMounted(load)
   border-top: 1px solid rgba(0, 0, 0, 0.15);
   font-size: 1.05rem;
   cursor: default;
+}
+
+.cp-detail-missing-label {
+  color: #842029;
+}
+
+.cp-detail-extra {
+  font-weight: 700;
+  color: #055160;
+}
+
+.cp-detail-ok {
+  font-weight: 700;
+  color: #0f5132;
 }
 
 .cp-group-card-ok {

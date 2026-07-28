@@ -20,6 +20,7 @@
 // dadurch nur noch OPEN/FINISHED - CANCELLED entfaellt ersatzlos.
 
 import { reactive } from 'vue'
+import { fetchLazyCheckpointProgress } from './useLazyCheckpointProgressMock'
 
 export const CHECKPOINT_TYPE = { BUS: 1, GROUP: 2, LAZY: 3 }
 export const CHECKPOINT_STATUS = { OPEN: 1, FINISHED: 2 }
@@ -28,7 +29,6 @@ export const CHECKPOINT_STATUS = { OPEN: 1, FINISHED: 2 }
 // Plan) - jede Netzwerkabhaengigkeit soll im Prototyp komplett entfallen.
 const MOCK_TOTAL_BUSES = 5
 const MOCK_TOTAL_GROUPS = 6
-const MOCK_BASELINE_CHILDREN_COUNT = 42
 
 const ADMIN_USER = { id: 1, name: 'Hauptadministrator', isAdmin: true }
 const BETREUER_MUELLER = { id: 101, name: 'Müller', isAdmin: false }
@@ -171,6 +171,10 @@ const removedCheckpoints = reactive([])
 function seed() {
     // 1. Bus FINISHED - heute Morgen, automatisch durch ersten Bus-Packet
     //    erstellt (deckt die erste finish_checkpoint()-Baseline ab).
+    // UX-Feedback Runde 3: die Tagesbasis ist keine freistehende Mock-Zahl
+    // mehr, sondern die tatsaechlich in dieser (ersten) Checkpoint gezaehlte
+    // Kinderzahl - dieselbe Regel wie in finishCheckpoint().
+    const finishedBusBuses = buildBusesMock({ allReceived: true, includeEmptyBus: false })
     const finishedBus = {
         id: makeId(),
         type: CHECKPOINT_TYPE.BUS,
@@ -180,8 +184,8 @@ function seed() {
         created_at: timeToday(9, 0),
         finished_at: timeToday(9, 5),
         finished_by: ADMIN_USER,
-        baseline_children_count: MOCK_BASELINE_CHILDREN_COUNT,
-        buses: buildBusesMock({ allReceived: true, includeEmptyBus: false })
+        baseline_children_count: finishedBusBuses.reduce((sum, b) => sum + b.kinderCount, 0),
+        buses: finishedBusBuses
     }
     checkpoints.push(finishedBus)
 
@@ -325,9 +329,8 @@ export async function finishCheckpoint(id) {
     cp.finished_at = new Date().toISOString()
     cp.finished_by = ADMIN_USER
 
-    const dayAlreadyHasBaseline = checkpoints.some(c => c.day === cp.day && c.baseline_children_count != null)
-    if (!dayAlreadyHasBaseline) {
-        cp.baseline_children_count = MOCK_BASELINE_CHILDREN_COUNT
+    if (getDayBaseline(cp.day) == null) {
+        cp.baseline_children_count = await computePresentCount(cp)
     }
 
     return cp
@@ -418,6 +421,166 @@ export function isOverdue(cp) {
     return cp.day < todayString() && cp.status === CHECKPOINT_STATUS.OPEN
 }
 
+// UX-Feedback Runde 3: Kartenliste (Page 1) und Detail-Kopf (Page 2/3/4,
+// EL2) zeigten bisher nur Zeiten/Status, kein Ergebnis. Ab hier: Hilfen, um
+// das Ergebnis (Kinder-/Betreuerzahl, Abweichung zur Tagesbasis) zu
+// berechnen, das Schliessen bei offenen Problemen zu warnen, und
+// anwesend/fehlend-Listen fuer die Zwischenablage aufzuschluesseln.
+
+/**
+ * Anzahl der als "anwesend" gezaehlten Kinder einer Checkpoint - je nach Typ
+ * aus buses/groups direkt lesbar, bei LAZY aus der separaten
+ * Fortschritts-Mock-Datenquelle (useLazyCheckpointProgressMock.js).
+ *
+ * @param {Object} cp
+ * @returns {Promise<number>}
+ */
+async function computePresentCount(cp) {
+    if (cp.type === CHECKPOINT_TYPE.BUS) {
+        return cp.buses.filter(b => b.hasData).reduce((sum, b) => sum + b.kinderCount, 0)
+    }
+    if (cp.type === CHECKPOINT_TYPE.GROUP) {
+        return cp.groups.filter(g => g.hasData).reduce((sum, g) => sum + g.current, 0)
+    }
+    if (cp.type === CHECKPOINT_TYPE.LAZY) {
+        const progress = await fetchLazyCheckpointProgress(cp.id)
+        return progress.checkedIn.length
+    }
+    return 0
+}
+
+/**
+ * Basiszahl des Tages - stammt von der ersten FINISHED-Checkpoint des Tages
+ * (unabhaengig vom Typ, siehe finishCheckpoint()). Liefert null, solange noch
+ * keine Checkpoint des Tages geschlossen wurde.
+ *
+ * @param {string} day
+ * @returns {number|null}
+ */
+function getDayBaseline(day) {
+    const withBaseline = checkpoints.find(c => c.day === day && c.baseline_children_count != null)
+    return withBaseline ? withBaseline.baseline_children_count : null
+}
+
+/**
+ * Ergebnis-Zusammenfassung einer Checkpoint fuer Kartenansicht (Page 1) und
+ * Detail-Kopf (Page 2/3/4, EL2). Fuer BUS zusaetzlich die Betreuer-Summe;
+ * fuer alle Typen der Abgleich gegen die Tagesbasis (getDayBaseline()),
+ * sofern diese Checkpoint nicht selbst die Basis gesetzt hat.
+ *
+ * @param {Object} cp
+ * @returns {Promise<{present:number, kinder:?number, betreuer:?number, total:?number, isBaselineCheckpoint:boolean, hasBaseline:boolean, missing:number, extra:number}>}
+ */
+export async function summarizeCheckpoint(cp) {
+    const present = await computePresentCount(cp)
+    const result = { present, kinder: null, betreuer: null, total: null }
+
+    if (cp.type === CHECKPOINT_TYPE.BUS) {
+        result.kinder = present
+        result.betreuer = cp.buses.filter(b => b.hasData).reduce((sum, b) => sum + b.betreuerCount, 0)
+    } else if (cp.type === CHECKPOINT_TYPE.GROUP) {
+        result.total = CHILD_NAMES.length
+    } else if (cp.type === CHECKPOINT_TYPE.LAZY) {
+        const progress = await fetchLazyCheckpointProgress(cp.id)
+        result.total = progress.checkedIn.length + progress.notYet.length
+    }
+
+    const isBaselineCheckpoint = cp.baseline_children_count != null
+    const dayBaseline = isBaselineCheckpoint ? cp.baseline_children_count : getDayBaseline(cp.day)
+    result.isBaselineCheckpoint = isBaselineCheckpoint
+    result.hasBaseline = dayBaseline != null
+    result.missing = (!isBaselineCheckpoint && dayBaseline != null) ? Math.max(0, dayBaseline - present) : 0
+    result.extra = (!isBaselineCheckpoint && dayBaseline != null) ? Math.max(0, present - dayBaseline) : 0
+
+    return result
+}
+
+/**
+ * Prueft vor dem Schliessen, ob die Checkpoint offene Probleme hat (fehlende
+ * Kinder/Busse/Gruppen ohne Daten) - UX-Feedback Runde 3: Schliessen ohne
+ * Warnung wurde als falsch empfunden. Die aufrufende View zeigt bei
+ * hasIssues=true einen Bestaetigungsdialog, bevor finishCheckpoint()
+ * aufgerufen wird.
+ *
+ * @param {Object} cp
+ * @returns {Promise<{hasIssues:boolean, message:string}>}
+ */
+export async function checkpointHasOpenIssues(cp) {
+    if (cp.type === CHECKPOINT_TYPE.GROUP) {
+        const missingTotal = cp.groups.reduce((sum, g) => sum + g.missingChildren.length, 0)
+        const noDataGroups = cp.groups.filter(g => !g.hasData).length
+        if (missingTotal > 0 || noDataGroups > 0) {
+            const parts = []
+            if (missingTotal > 0) parts.push(`${missingTotal} Kind(er) fehlen`)
+            if (noDataGroups > 0) parts.push(`${noDataGroups} Gruppe(n) ohne Daten`)
+            return { hasIssues: true, message: parts.join(', ') + '.' }
+        }
+    } else if (cp.type === CHECKPOINT_TYPE.BUS) {
+        const noDataBuses = cp.buses.filter(b => !b.hasData).length
+        if (noDataBuses > 0) {
+            return { hasIssues: true, message: `${noDataBuses} Bus(se) haben noch keine Daten gemeldet.` }
+        }
+    } else if (cp.type === CHECKPOINT_TYPE.LAZY) {
+        const progress = await fetchLazyCheckpointProgress(cp.id)
+        if (progress.notYet.length > 0) {
+            return { hasIssues: true, message: `${progress.notYet.length} Kind(er) haben sich noch nicht gemeldet.` }
+        }
+    }
+    return { hasIssues: false, message: '' }
+}
+
+/**
+ * Anwesend/fehlend-Aufschluesselung einer BUS-Checkpoint gegen den vollen
+ * Kinder-Pool (CHILD_NAMES) - UX-Feedback Runde 3, Punkt 4 (kopierbare
+ * Listen). "Fehlend" schliesst auch Kinder aus Bussen ohne Daten ein.
+ *
+ * @param {Object} cp
+ * @returns {{present:Array<{name:string,groupId:number}>, absent:Array<{name:string,groupId:number}>}}
+ */
+export function getBusChildrenBreakdown(cp) {
+    const presentNames = new Set(cp.buses.flatMap(b => b.children.map(c => c.name)))
+    const present = []
+    const absent = []
+    for (const name of CHILD_NAMES) {
+        const entry = { name, groupId: CHILD_GROUP_MAP.get(name) }
+        if (presentNames.has(name)) {
+            present.push(entry)
+        } else {
+            absent.push(entry)
+        }
+    }
+    return { present, absent }
+}
+
+/**
+ * Anwesend/fehlend-Aufschluesselung einer GROUP-Checkpoint - Gruppen ohne
+ * Daten (hasData=false) zaehlen komplett als "fehlend" (unbestaetigt), siehe
+ * UX-Feedback Runde 3, Punkt 4.
+ *
+ * @param {Object} cp
+ * @returns {{present:Array<{name:string,groupId:number}>, absent:Array<{name:string,groupId:number}>}}
+ */
+export function getGroupChildrenBreakdown(cp) {
+    const present = []
+    const absent = []
+    for (const group of cp.groups) {
+        const roster = GROUP_ROSTER[group.groupId] || []
+        if (!group.hasData) {
+            absent.push(...roster.map(c => ({ name: c.name, groupId: group.groupId })))
+            continue
+        }
+        const missingSet = new Set(group.missingChildren.map(c => c.name))
+        for (const child of roster) {
+            if (missingSet.has(child.name)) {
+                absent.push({ name: child.name, groupId: group.groupId })
+            } else {
+                present.push({ name: child.name, groupId: group.groupId })
+            }
+        }
+    }
+    return { present, absent }
+}
+
 export default {
     CHECKPOINT_TYPE,
     CHECKPOINT_STATUS,
@@ -428,5 +591,9 @@ export default {
     removeCheckpoint,
     fetchRemovedCheckpointsForDay,
     fetchCheckpointDetail,
-    isOverdue
+    isOverdue,
+    summarizeCheckpoint,
+    checkpointHasOpenIssues,
+    getBusChildrenBreakdown,
+    getGroupChildrenBreakdown
 }

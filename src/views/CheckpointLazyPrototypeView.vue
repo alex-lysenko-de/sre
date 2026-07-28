@@ -18,7 +18,15 @@
      UX-Feedback Runde 2:
      - EL1/EL2: Status und Schliessen/Oeffnen stehen jetzt nebeneinander in
        einer Zeile; Entfernen ist ein kleiner Icon-Button neben dem Titel
-       statt eines grossen Buttons. EL3/EL4/EL5 inhaltlich unveraendert. -->
+       statt eines grossen Buttons. EL3/EL4/EL5 inhaltlich unveraendert.
+
+     UX-Feedback Runde 3:
+     - EL2: zeigt jetzt zusaetzlich das Ergebnis (gemeldet/gesamt) und die
+       Abweichung zur Tagesbasis (summarizeCheckpoint()).
+     - Schliessen warnt jetzt vorher, falls noch Kinder nicht gemeldet sind
+       (checkpointHasOpenIssues()).
+     - EL4/EL5 haben jetzt je einen Kopieren-Button fuer die Gemeldet-/
+       Noch-nicht-gemeldet-Liste. -->
 <template>
   <div class="cp-detail-view">
     <DebugTag variant="page" label="Page 4" />
@@ -57,6 +65,21 @@
           </button>
         </div>
 
+        <div v-if="resultSummary" class="cp-result-row">
+          <span class="cp-result-stat-present">
+            <font-awesome-icon :icon="['fas', 'child']" /> {{ resultSummary.present }} / {{ resultSummary.total }}
+          </span>
+          <span
+              v-if="!resultSummary.isBaselineCheckpoint && (resultSummary.missing > 0 || resultSummary.extra > 0)"
+              class="cp-result-delta"
+          >
+            <font-awesome-icon :icon="['fas', 'exclamation-triangle']" class="me-1" />
+            <template v-if="resultSummary.missing > 0">{{ resultSummary.missing }} fehlen</template>
+            <template v-if="resultSummary.missing > 0 && resultSummary.extra > 0">, </template>
+            <template v-if="resultSummary.extra > 0">{{ resultSummary.extra }} mehr</template>
+          </span>
+        </div>
+
         <div v-if="actionError" class="alert alert-danger py-2">
           <template v-if="actionError.error === 'ALREADY_OPEN'">
             Es ist bereits ein anderer Lazy-Checkpoint offen (#{{ actionError.existingId }}). Zuerst diesen schließen.
@@ -85,10 +108,15 @@
       <div class="card mb-3">
         <div class="card-body">
           <DebugTag label="el4" />
-          <h5 class="card-title">
-            <font-awesome-icon :icon="['fas', 'check-circle']" class="me-2 text-success" />
-            Gemeldet ({{ progress?.checkedIn.length || 0 }})
-          </h5>
+          <div class="cp-list-header">
+            <h5 class="card-title mb-0">
+              <font-awesome-icon :icon="['fas', 'check-circle']" class="me-2 text-success" />
+              Gemeldet ({{ progress?.checkedIn.length || 0 }})
+            </h5>
+            <button class="btn btn-sm cp-copy-btn" @click="copyChildList(progress?.checkedIn || [], 'present')">
+              {{ copiedList === 'present' ? 'Kopiert!' : 'Kopieren' }}
+            </button>
+          </div>
           <div class="cp-scroll-list-lg">
             <div v-for="(child, idx) in progress?.checkedIn" :key="child.id" class="cp-child-row">
               <span class="cp-child-name">{{ idx + 1 }}. {{ child.name }}</span>
@@ -101,10 +129,19 @@
       <div class="card">
         <div class="card-body">
           <DebugTag label="el5" />
-          <h5 class="card-title">
-            <font-awesome-icon :icon="['fas', 'exclamation-triangle']" class="me-2 text-warning" />
-            Noch nicht gemeldet ({{ progress?.notYet.length || 0 }})
-          </h5>
+          <div class="cp-list-header">
+            <h5 class="card-title mb-0">
+              <font-awesome-icon :icon="['fas', 'exclamation-triangle']" class="me-2 text-warning" />
+              Noch nicht gemeldet ({{ progress?.notYet.length || 0 }})
+            </h5>
+            <button
+                v-if="progress?.notYet.length"
+                class="btn btn-sm cp-copy-btn"
+                @click="copyChildList(progress?.notYet || [], 'absent')"
+            >
+              {{ copiedList === 'absent' ? 'Kopiert!' : 'Kopieren' }}
+            </button>
+          </div>
           <div v-if="!progress?.notYet.length" class="text-muted">Alle haben sich gemeldet.</div>
           <div v-else class="cp-scroll-list-lg">
             <div v-for="group in notYetByGroup" :key="group.groupId" class="mb-2">
@@ -130,7 +167,9 @@ import {
   fetchCheckpointDetail,
   finishCheckpoint,
   reopenCheckpoint,
-  removeCheckpoint
+  removeCheckpoint,
+  summarizeCheckpoint,
+  checkpointHasOpenIssues
 } from '@/composables/useCheckpointsMock'
 import { fetchLazyCheckpointProgress } from '@/composables/useLazyCheckpointProgressMock'
 import CheckpointStatusBadge from '@/components/checkpoints-prototype/CheckpointStatusBadge.vue'
@@ -145,7 +184,9 @@ const router = useRouter()
 const loading = ref(true)
 const checkpoint = ref(null)
 const progress = ref(null)
+const resultSummary = ref(null)
 const actionError = ref(null)
+const copiedList = ref(null)
 
 const notYetByGroup = computed(() => {
   const byGroup = new Map()
@@ -164,18 +205,35 @@ function formatTime(isoString) {
   return new Date(isoString).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
 }
 
+async function copyChildList(children, kind) {
+  const label = kind === 'absent' ? 'Noch nicht gemeldet' : 'Gemeldet'
+  const lines = [`${label} (${children.length}):`, ...children.map(c => `- ${c.name} (G-${c.groupId})`)]
+
+  try {
+    await navigator.clipboard.writeText(lines.join('\n'))
+    copiedList.value = kind
+  } catch (err) {
+    console.error('Fehler beim Kopieren:', err)
+  }
+}
+
 async function load() {
   loading.value = true
   const id = Number(route.params.id)
   checkpoint.value = await fetchCheckpointDetail(id)
   if (checkpoint.value) {
     progress.value = await fetchLazyCheckpointProgress(id)
+    resultSummary.value = await summarizeCheckpoint(checkpoint.value)
   }
   loading.value = false
 }
 
 async function onFinish() {
   actionError.value = null
+  const issues = await checkpointHasOpenIssues(checkpoint.value)
+  if (issues.hasIssues && !confirm(`${issues.message} Trotzdem schließen?`)) {
+    return
+  }
   await finishCheckpoint(checkpoint.value.id)
   await load()
 }
@@ -270,6 +328,41 @@ onMounted(load)
   font-size: 1rem;
   font-weight: 700;
   padding: 8px 18px;
+}
+
+.cp-result-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 4px 0 8px;
+}
+
+.cp-result-stat-present {
+  font-size: 1.3rem;
+  font-weight: 800;
+}
+
+.cp-result-delta {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #b02a37;
+}
+
+.cp-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.cp-copy-btn {
+  border: none;
+  border-radius: 6px;
+  background-color: #6c757d;
+  color: #fff;
+  font-size: 0.85rem;
+  padding: 4px 10px;
 }
 
 .cp-last-scan {
