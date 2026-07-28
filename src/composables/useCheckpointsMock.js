@@ -82,6 +82,14 @@ function buildGroupRoster() {
 
 const GROUP_ROSTER = buildGroupRoster()
 
+// UX-Feedback Runde 2: im Bus-Detail muss der Name eines Kindes immer mit
+// seiner Gruppennummer angezeigt werden (Verwechslungsgefahr bei gleichen
+// Namen). Gruppenzuordnung folgt derselben Regel wie buildGroupRoster(),
+// damit ein Kind in Bus- und Group-Ansicht dieselbe Gruppe zeigt.
+const CHILD_GROUP_MAP = new Map(
+    CHILD_NAMES.map((name, idx) => [name, (idx % MOCK_TOTAL_GROUPS) + 1])
+)
+
 function buildBusesMock({ allReceived, includeEmptyBus }) {
     const buses = []
     for (let busNumber = 1; busNumber <= MOCK_TOTAL_BUSES; busNumber++) {
@@ -100,6 +108,7 @@ function buildBusesMock({ allReceived, includeEmptyBus }) {
 
         const children = hasData
             ? CHILD_NAMES.slice((busNumber * 3) % CHILD_NAMES.length).slice(0, kinderCount)
+                .map(name => ({ name, groupId: CHILD_GROUP_MAP.get(name) }))
             : []
 
         const packets = hasData ? betreuerNames.map((authorName, i) => ({

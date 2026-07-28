@@ -13,7 +13,12 @@
        Struktur nicht mehr lesbar - jede Zeile zeigt jetzt laufende Nummer,
        Gruppe und Uhrzeit kompakt untereinander statt nur den Namen.
      - EL5 (Noch nicht gemeldet): nach Gruppe gruppiert statt einer langen
-       Gesamtliste, damit man gezielt eine Gruppe durchsuchen kann. -->
+       Gesamtliste, damit man gezielt eine Gruppe durchsuchen kann.
+
+     UX-Feedback Runde 2:
+     - EL1/EL2: Status und Schliessen/Oeffnen stehen jetzt nebeneinander in
+       einer Zeile; Entfernen ist ein kleiner Icon-Button neben dem Titel
+       statt eines grossen Buttons. EL3/EL4/EL5 inhaltlich unveraendert. -->
 <template>
   <div class="cp-detail-view">
     <DebugTag variant="page" label="Page 4" />
@@ -21,15 +26,43 @@
     <div class="cp-header">
       <DebugTag label="el1" />
       <div class="cp-header-top">
-        <button class="btn btn-sm btn-outline-secondary me-2" @click="goBack">
+        <button class="cp-back-btn me-2" @click="goBack">
           <font-awesome-icon :icon="['fas', 'arrow-left']" />
         </button>
         <span class="cp-header-title">Lazy Checkpoint #{{ checkpoint?.seq }}</span>
+        <button v-if="checkpoint" class="cp-remove-btn" title="Entfernen" @click="onRemove">
+          <font-awesome-icon :icon="['fas', 'trash-alt']" />
+        </button>
       </div>
+
       <template v-if="checkpoint">
-        <div class="cp-header-line">
+        <div class="cp-status-row">
+          <DebugTag label="el2" />
           <CheckpointStatusBadge :status="checkpoint.status" :day="checkpoint.day" />
+          <button
+              v-if="checkpoint.status === OPEN"
+              class="btn btn-success cp-toggle-btn"
+              @click="onFinish"
+          >
+            <font-awesome-icon :icon="['fas', 'check-circle']" class="me-1" />
+            Schließen
+          </button>
+          <button
+              v-else
+              class="btn btn-primary cp-toggle-btn"
+              @click="onReopen"
+          >
+            <font-awesome-icon :icon="['fas', 'redo']" class="me-1" />
+            Öffnen
+          </button>
         </div>
+
+        <div v-if="actionError" class="alert alert-danger py-2">
+          <template v-if="actionError.error === 'ALREADY_OPEN'">
+            Es ist bereits ein anderer Lazy-Checkpoint offen (#{{ actionError.existingId }}). Zuerst diesen schließen.
+          </template>
+        </div>
+
         <div class="cp-header-line">
           <CheckpointOriginBadge :created-by="checkpoint.created_by" />
         </div>
@@ -41,38 +74,6 @@
     </div>
 
     <template v-else-if="checkpoint">
-      <div class="cp-actions">
-        <DebugTag label="el2" />
-
-        <button
-            v-if="checkpoint.status === OPEN"
-            class="btn btn-success cp-action-btn"
-            @click="onFinish"
-        >
-          <font-awesome-icon :icon="['fas', 'check-circle']" class="me-2" />
-          Schließen
-        </button>
-        <button
-            v-else
-            class="btn btn-primary cp-action-btn"
-            @click="onReopen"
-        >
-          <font-awesome-icon :icon="['fas', 'redo']" class="me-2" />
-          Öffnen
-        </button>
-
-        <button class="btn btn-outline-danger cp-action-btn" @click="onRemove">
-          <font-awesome-icon :icon="['fas', 'trash-alt']" class="me-2" />
-          Entfernen
-        </button>
-      </div>
-
-      <div v-if="actionError" class="alert alert-danger">
-        <template v-if="actionError.error === 'ALREADY_OPEN'">
-          Es ist bereits ein anderer Lazy-Checkpoint offen (#{{ actionError.existingId }}). Zuerst diesen schließen.
-        </template>
-      </div>
-
       <div class="card mb-3">
         <div class="card-body text-center">
           <DebugTag label="el3" />
@@ -225,25 +226,50 @@ onMounted(load)
 .cp-header-title {
   font-size: 1.4rem;
   font-weight: 700;
+  flex: 1;
 }
 
 .cp-header-line {
   margin-bottom: 6px;
 }
 
-.cp-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  margin: 16px 0;
+.cp-back-btn {
+  border: none;
+  border-radius: 8px;
+  background-color: #e9ecef;
+  color: #495057;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
 }
 
-.cp-action-btn {
-  min-height: 56px;
-  font-size: 1.1rem;
+.cp-remove-btn {
+  margin-left: auto;
+  border: none;
+  border-radius: 8px;
+  background-color: #f8d7da;
+  color: #842029;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cp-status-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 8px 0;
+}
+
+.cp-toggle-btn {
+  min-height: 44px;
+  font-size: 1rem;
   font-weight: 700;
-  padding: 12px 20px;
-  flex: 1 1 auto;
+  padding: 8px 18px;
 }
 
 .cp-last-scan {

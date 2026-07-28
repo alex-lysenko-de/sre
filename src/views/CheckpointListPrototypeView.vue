@@ -9,14 +9,21 @@
      UX-Feedback Runde 1: Tabelle (EL4) durch Kartenliste ersetzt - passt
      nicht in eine Bildschirmbreite und zwingt zum Scrollen; "Erstellt von"
      ist in der Liste nicht mehr sichtbar (nur noch im Detail), Buttons/
-     Schriftgroessen insgesamt vergroessert (Feldnutzung/Handschuhe/Sonne). -->
+     Schriftgroessen insgesamt vergroessert (Feldnutzung/Handschuhe/Sonne).
+
+     UX-Feedback Runde 2 (EL4): Karte in Kopf/Inhalt/Fuss gegliedert
+     (Nummer+Typ / Start-Ende-Zeit / Status+Anomalie) statt einer generischen
+     zweizeiligen Karte; offene Checkpoints heben sich farblich ab, erledigte
+     werden bewusst unauffaelliger dargestellt (grauer, weniger Kontrast);
+     der Anomalie-Hinweis steht jetzt als eigene Zeile im Kartenfuss statt
+     als zusaetzliches Badge neben dem Status. -->
 <template>
   <div class="cp-list-view">
     <DebugTag variant="page" label="Page 1" />
 
     <div class="d-flex align-items-center mb-3">
       <DebugTag label="el1" />
-      <button class="btn btn-sm btn-outline-secondary me-2" @click="goBack">
+      <button class="cp-back-btn me-2" @click="goBack">
         <font-awesome-icon :icon="['fas', 'arrow-left']" />
       </button>
       <h4 class="mb-0">Checkpoints (Prototyp)</h4>
@@ -73,20 +80,24 @@
               v-for="cp in checkpoints"
               :key="cp.id"
               class="cp-item-card"
+              :class="cp.status === FINISHED ? 'cp-item-card-closed' : 'cp-item-card-open'"
               role="button"
               @click="openDetail(cp)"
           >
-            <div class="cp-item-card-row">
+            <div class="cp-item-header">
               <span class="cp-item-seq">#{{ cp.seq }}</span>
               <CheckpointTypeBadge :type="cp.type" />
             </div>
-            <div class="cp-item-card-row">
-              <span class="cp-item-time">{{ formatTime(cp.created_at) }}</span>
-              <CheckpointStatusBadge
-                  :status="cp.status"
-                  :day="cp.day"
-                  :anomaly="anomalousIds.has(cp.id)"
-              />
+            <div class="cp-item-body">
+              {{ formatTime(cp.created_at) }}
+              <template v-if="cp.finished_at"> – {{ formatTime(cp.finished_at) }}</template>
+            </div>
+            <div class="cp-item-footer">
+              <CheckpointStatusBadge :status="cp.status" :day="cp.day" />
+              <div v-if="anomalousIds.has(cp.id)" class="cp-item-anomaly">
+                <font-awesome-icon :icon="['fas', 'exclamation-triangle']" class="me-1" />
+                Mehrere gleichzeitig offen
+              </div>
             </div>
           </div>
         </div>
@@ -117,6 +128,8 @@ import CheckpointCreateModal from '@/components/checkpoints-prototype/Checkpoint
 import DebugTag from '@/components/checkpoints-prototype/DebugTag.vue'
 
 const router = useRouter()
+
+const FINISHED = CHECKPOINT_STATUS.FINISHED
 
 // Synthetische Gesamtzahlen fuer die Kopfkachel - bewusst konstant, nicht
 // aus dem echten useBusData/useConfigStore gelesen (siehe Plan, "Risiken").
@@ -204,46 +217,57 @@ onMounted(load)
   font-size: 1.05rem;
 }
 
+.cp-back-btn {
+  border: none;
+  border-radius: 8px;
+  background-color: #e9ecef;
+  color: #495057;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+}
+
 .cp-big-number {
-  font-size: 3.5rem;
+  font-size: 2.8rem;
   font-weight: 800;
   line-height: 1.1;
 }
 
 .cp-btn-create {
-  min-height: 60px;
-  font-size: 1.2rem;
+  min-height: 52px;
+  font-size: 1.15rem;
   font-weight: 700;
 }
 
 .cp-card-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 
 .cp-item-card {
-  border: 1px solid #dee2e6;
   border-radius: 12px;
-  padding: 14px 16px;
+  padding: 10px 14px;
   cursor: pointer;
-  transition: background-color 0.15s ease, box-shadow 0.15s ease;
+  border-left: 6px solid transparent;
+  background-color: #fff;
+  transition: box-shadow 0.15s ease;
 }
 
-.cp-item-card:hover,
-.cp-item-card:active {
-  background-color: #f8f9fa;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+.cp-item-card-open {
+  border-left-color: #198754;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
 }
 
-.cp-item-card-row {
+.cp-item-card-closed {
+  background-color: #f1f3f5;
+  color: #868e96;
+}
+
+.cp-item-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-}
-
-.cp-item-card-row + .cp-item-card-row {
-  margin-top: 8px;
 }
 
 .cp-item-seq {
@@ -251,9 +275,33 @@ onMounted(load)
   font-weight: 800;
 }
 
-.cp-item-time {
+.cp-item-card-closed .cp-item-seq {
+  color: #868e96;
+}
+
+.cp-item-body {
   font-size: 1.1rem;
   font-weight: 600;
   color: #495057;
+  margin-top: 4px;
+}
+
+.cp-item-card-closed .cp-item-body {
+  color: #868e96;
+}
+
+.cp-item-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.cp-item-anomaly {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #b02a37;
 }
 </style>

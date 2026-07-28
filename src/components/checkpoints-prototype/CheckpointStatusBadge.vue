@@ -76,9 +76,9 @@ const overdue = computed(() => {
 
 <style scoped>
 .cp-status-badge {
-  font-size: 1rem;
-  font-weight: 700;
-  padding: 0.5rem 0.8rem;
+  font-size: 1.15rem;
+  font-weight: 800;
+  padding: 0.5rem 0.9rem;
 }
 
 .cp-status-dot {
