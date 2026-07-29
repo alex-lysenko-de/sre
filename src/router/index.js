@@ -230,6 +230,59 @@ const routes = [
         component: () => import('@/views/GroupEntityPrototypeView.vue'),
         meta: { requiresAuth: true, requiresAdmin: true }
     },
+
+    // Ticket 131 - reale Implementierung der "Checkpoint"-Funktion (echte
+    // Supabase-Daten statt Mock), Phase 1: neu daneben, ersetzt
+    // /admin-busses/-children noch NICHT (siehe
+    // tickets/131/IMPLEMENTATION_PLAN.md, "Etappen").
+    {
+        path: '/admin/checkpoints',
+        name: 'CheckpointList',
+        component: () => import('@/views/CheckpointListView.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
+        path: '/admin/checkpoints/bus/:id',
+        name: 'CheckpointBus',
+        component: () => import('@/views/CheckpointBusView.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
+        path: '/admin/checkpoints/group/:id',
+        name: 'CheckpointGroup',
+        component: () => import('@/views/CheckpointGroupView.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
+        path: '/admin/checkpoints/lazy/:id',
+        name: 'CheckpointLazy',
+        component: () => import('@/views/CheckpointLazyView.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
+        path: '/admin/checkpoints/list',
+        name: 'CheckpointEntityList',
+        component: () => import('@/views/CheckpointEntityListView.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
+        path: '/admin/checkpoints/child/:id',
+        name: 'CheckpointChildCard',
+        component: () => import('@/views/CheckpointChildCardView.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
+        path: '/admin/checkpoints/betreuer/:id',
+        name: 'CheckpointBetreuerCard',
+        component: () => import('@/views/CheckpointBetreuerCardView.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
+        path: '/admin/checkpoints/group-entity/:id',
+        name: 'CheckpointGroupEntity',
+        component: () => import('@/views/CheckpointGroupEntityView.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true }
+    },
 ]
 
 const router = createRouter({
