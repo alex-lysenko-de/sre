@@ -231,11 +231,32 @@ const routes = [
         meta: { requiresAuth: true, requiresAdmin: true }
     },
 
+    // Ticket 134 - reale Checkpoint-Bildschirme (List/Bus/Group), Supabase
+    // statt Mock. Kein Eintrag in MainView.vue - Direktnavigation per Route,
+    // siehe tickets/134/134.txt Kopfabschnitt (Menu-Umbau erst Ticket 137).
+    {
+        path: '/admin/checkpoints',
+        name: 'CheckpointList',
+        component: () => import('@/views/CheckpointListView.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
+        path: '/admin/checkpoints/bus/:id',
+        name: 'CheckpointBus',
+        component: () => import('@/views/CheckpointBusView.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
+        path: '/admin/checkpoints/group/:id',
+        name: 'CheckpointGroup',
+        component: () => import('@/views/CheckpointGroupView.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true }
+    },
+
     // Ticket 133 - reale Entity-Bildschirme (Kind/Betreuer/Gruppe/
     // universelle Liste), Supabase statt Mock. Namensraum ohne
     // -prototype-Suffix, siehe tickets/131/IMPLEMENTATION_PLAN.md, "UI
-    // изменения". List/Bus/Group/Lazy-Checkpoint-Bildschirme folgen in
-    // 134/135 unter demselben /admin/checkpoints/-Namensraum.
+    // изменения".
     {
         path: '/admin/checkpoints/list',
         name: 'CheckpointEntityList',
