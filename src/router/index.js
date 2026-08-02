@@ -252,6 +252,12 @@ const routes = [
         component: () => import('@/views/CheckpointGroupView.vue'),
         meta: { requiresAuth: true, requiresAdmin: true }
     },
+    {
+        path: '/admin/checkpoints/lazy/:id',
+        name: 'CheckpointLazy',
+        component: () => import('@/views/CheckpointLazyView.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true }
+    },
 
     // Ticket 133 - reale Entity-Bildschirme (Kind/Betreuer/Gruppe/
     // universelle Liste), Supabase statt Mock. Namensraum ohne

@@ -201,11 +201,6 @@ function routeForType(type) {
 }
 
 function openDetail(cp) {
-  if (cp.type === CHECKPOINT_TYPE.LAZY) {
-    // Lazy-Bildschirm kommt erst in Ticket 135 - Route existiert noch nicht.
-    alert('Lazy-Checkpoints haben noch keinen Detailbildschirm (Ticket 135).')
-    return
-  }
   router.push(`/admin/checkpoints/${routeForType(cp.type)}/${cp.id}`)
 }
 
