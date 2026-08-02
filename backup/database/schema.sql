@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 3mRrCnYWHt2llWp3Og2ZDkhCDK796rFrpL3KOmD1YbTkHyEdf88IlLcglDVlk1J
+\restrict nmZjgOZF0BEgqmRryeVqbxFSw7hAU5bJrw0l0l9xB7SnEDzcqkkHFLAN1Ld9HRA
 
 -- Dumped from database version 17.4
 -- Dumped by pg_dump version 17.10
@@ -980,21 +980,25 @@ CREATE FUNCTION public.on_children_today_change_batch() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
-  -- Full COUNT(*) FILTER per affected group (not an increment) - same
-  -- race-safety property as the row-level version, just scoped to "every
-  -- distinct group touched by this statement" instead of "one call per row".
-  INSERT INTO groups_today (user_id, group_id, children_today, children_now)
+  -- Grouped by (group_id, date) now, not just group_id - a group's row for
+  -- today must only aggregate today's children_today rows, not every
+  -- historical date that group has ever had rows for. Scoping the WHERE by
+  -- the same (group_id, date) pairs touched in new_table (rather than just
+  -- group_id) keeps this a full recount of only the affected day, not every
+  -- day on record for that group.
+  INSERT INTO groups_today (user_id, group_id, date, children_today, children_now)
   SELECT
     MAX(ct.user_id),
     ct.group_id,
+    ct.date,
     COUNT(*) FILTER (WHERE ct.presence_today = 1),
     COUNT(*) FILTER (WHERE ct.presence_now = 1)
   FROM children_today ct
-  WHERE ct.group_id IN (
-    SELECT DISTINCT group_id FROM new_table WHERE group_id IS NOT NULL
+  WHERE (ct.group_id, ct.date) IN (
+    SELECT DISTINCT group_id, date FROM new_table WHERE group_id IS NOT NULL
   )
-  GROUP BY ct.group_id
-  ON CONFLICT (group_id) DO UPDATE
+  GROUP BY ct.group_id, ct.date
+  ON CONFLICT (group_id, date) DO UPDATE
     SET children_today = EXCLUDED.children_today,
         children_now = EXCLUDED.children_now,
         user_id = EXCLUDED.user_id;
@@ -1082,12 +1086,6 @@ CREATE FUNCTION public.on_scan_insert_batch() RETURNS trigger
 DECLARE
   v_groupless_child_id bigint;
 BEGIN
-  -- A child with no group assigned is not a real-world state (children are
-  -- provisioned with a group up front, see vault/03-База-данных/children.md) -
-  -- same hard-fail contract as the old row-level on_scan_insert(), which did
-  -- "IF v_group_id IS NULL THEN RAISE EXCEPTION" for the same reason. Kept
-  -- explicit here instead of silently letting the JOIN below drop such rows,
-  -- so a violated assumption is loud, not a silently vanishing scan.
   SELECT s.child_id INTO v_groupless_child_id
   FROM new_table s
   JOIN children c ON c.id = s.child_id
@@ -1098,28 +1096,28 @@ BEGIN
     RAISE EXCEPTION 'Child % has no group_id assigned - scan batch rejected', v_groupless_child_id;
   END IF;
 
-  -- DISTINCT ON guards against two rows for the same child_id within one
-  -- statement (client dedupes within a round via isDuplicate(), but the
-  -- server must not rely on that - INSERT ... ON CONFLICT fails outright if
-  -- the statement itself contains two conflicting rows for the same key).
+  -- `date` comes from the scan itself (s.date), not the DB server's now() -
+  -- keeps children_today's day bucket aligned with the same date the scan
+  -- was recorded under (scans.date/scan_packets.date), instead of relying on
+  -- the column DEFAULT, which would use the trigger's own execution time.
   INSERT INTO children_today (
-    user_id, child_id, group_id,
+    user_id, child_id, group_id, date,
     presence_today, presence_now, bus_today, bus_now, presence_morning
   )
   SELECT DISTINCT ON (s.child_id)
-    s.user_id, s.child_id, c.group_id,
+    s.user_id, s.child_id, c.group_id, s.date,
     1, 1, s.bus_id, s.bus_id,
     CASE WHEN s.bus_id IS NOT NULL THEN 1 ELSE 0 END
   FROM new_table s
   JOIN children c ON c.id = s.child_id
   ORDER BY s.child_id, s.created_at DESC
-  ON CONFLICT (child_id) DO UPDATE
+  ON CONFLICT (child_id, date) DO UPDATE
     SET presence_now = 1,
         bus_now = EXCLUDED.bus_now,
         user_id = EXCLUDED.user_id;
     -- presence_morning intentionally not in the SET list, same invariant as
-    -- the row-level version (ticket 106, doc/db/headcount_presence_morning.sql)
-  RETURN NULL; -- statement-level trigger, NEW/OLD are not available
+    -- before (ticket 106, doc/db/headcount_presence_morning.sql)
+  RETURN NULL;
 END;
 $$;
 
@@ -1132,21 +1130,21 @@ CREATE FUNCTION public.recalculate_groups_today() RETURNS void
     LANGUAGE plpgsql
     AS $$
 BEGIN
-  -- Alle Gruppen neu berechnen
-  INSERT INTO groups_today (user_id, group_id, children_today, children_now)
-  SELECT 
+  INSERT INTO groups_today (user_id, group_id, date, children_today, children_now)
+  SELECT
     MAX(user_id) as user_id,
     group_id,
+    date,
     COUNT(*) FILTER (WHERE presence_today = 1) as children_today,
     COUNT(*) FILTER (WHERE presence_now = 1) as children_now
   FROM children_today
-  GROUP BY group_id
-  ON CONFLICT (group_id) DO UPDATE
-    SET 
+  GROUP BY group_id, date
+  ON CONFLICT (group_id, date) DO UPDATE
+    SET
       children_today = EXCLUDED.children_today,
       children_now = EXCLUDED.children_now,
       user_id = EXCLUDED.user_id;
-      
+
   RAISE NOTICE 'groups_today recalculated successfully';
 END;
 $$;
@@ -3983,7 +3981,8 @@ CREATE TABLE public.children_today (
     bus_today smallint,
     bus_now smallint,
     user_id bigint,
-    presence_morning smallint
+    presence_morning smallint,
+    date character varying DEFAULT to_char(now(), 'YYYY-MM-DD'::text) NOT NULL
 );
 
 
@@ -4061,7 +4060,8 @@ CREATE TABLE public.groups_today (
     user_id bigint NOT NULL,
     group_id smallint NOT NULL,
     children_today smallint DEFAULT '0'::smallint,
-    children_now smallint DEFAULT '0'::smallint
+    children_now smallint DEFAULT '0'::smallint,
+    date character varying DEFAULT to_char(now(), 'YYYY-MM-DD'::text) NOT NULL
 );
 
 
@@ -5103,11 +5103,11 @@ ALTER TABLE ONLY public.children
 
 
 --
--- Name: children_today children_today_child_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: children_today children_today_child_id_date_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.children_today
-    ADD CONSTRAINT children_today_child_id_key UNIQUE (child_id);
+    ADD CONSTRAINT children_today_child_id_date_key UNIQUE (child_id, date);
 
 
 --
@@ -5135,11 +5135,11 @@ ALTER TABLE ONLY public.days
 
 
 --
--- Name: groups_today groups_today_group_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: groups_today groups_today_group_id_date_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.groups_today
-    ADD CONSTRAINT groups_today_group_id_key UNIQUE (group_id);
+    ADD CONSTRAINT groups_today_group_id_date_key UNIQUE (group_id, date);
 
 
 --
@@ -6711,38 +6711,10 @@ CREATE POLICY "Allow authenticated users to create children" ON public.children 
 
 
 --
--- Name: children_today Allow authenticated users to delete children_today; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Allow authenticated users to delete children_today" ON public.children_today FOR DELETE TO authenticated USING (true);
-
-
---
--- Name: groups_today Allow authenticated users to delete groups_today; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Allow authenticated users to delete groups_today" ON public.groups_today FOR DELETE TO authenticated USING (true);
-
-
---
 -- Name: reset_events Allow authenticated users to delete reset_events; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY "Allow authenticated users to delete reset_events" ON public.reset_events FOR DELETE TO authenticated USING (true);
-
-
---
--- Name: children_today Allow authenticated users to insert children_today; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Allow authenticated users to insert children_today" ON public.children_today FOR INSERT TO authenticated WITH CHECK (true);
-
-
---
--- Name: groups_today Allow authenticated users to insert groups_today; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Allow authenticated users to insert groups_today" ON public.groups_today FOR INSERT TO authenticated WITH CHECK (true);
 
 
 --
@@ -6785,20 +6757,6 @@ CREATE POLICY "Allow authenticated users to read reset_events" ON public.groups_
 --
 
 CREATE POLICY "Allow authenticated users to read reset_events" ON public.reset_events FOR SELECT TO authenticated USING (true);
-
-
---
--- Name: children_today Allow authenticated users to update children_today; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Allow authenticated users to update children_today" ON public.children_today FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
-
-
---
--- Name: groups_today Allow authenticated users to update groups_today; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Allow authenticated users to update groups_today" ON public.groups_today FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
 
 
 --
@@ -6973,35 +6931,6 @@ ALTER TABLE public.days ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.groups_today ENABLE ROW LEVEL SECURITY;
-
---
--- Name: children_today own_group_insert_presence_now; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY own_group_insert_presence_now ON public.children_today FOR INSERT TO authenticated WITH CHECK (((EXISTS ( SELECT 1
-   FROM (public.user_group_day ugd
-     JOIN public.users u ON ((u.id = ugd.user_id)))
-  WHERE ((u.user_id = auth.uid()) AND (ugd.group_id = children_today.group_id) AND (ugd.day = CURRENT_DATE) AND (ugd."isPresentToday" = 1)))) OR (EXISTS ( SELECT 1
-   FROM public.users
-  WHERE ((users.user_id = auth.uid()) AND (users.role = 'admin'::text))))));
-
-
---
--- Name: children_today own_group_update_presence_now; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY own_group_update_presence_now ON public.children_today FOR UPDATE TO authenticated USING (((EXISTS ( SELECT 1
-   FROM (public.user_group_day ugd
-     JOIN public.users u ON ((u.id = ugd.user_id)))
-  WHERE ((u.user_id = auth.uid()) AND (ugd.group_id = children_today.group_id) AND (ugd.day = CURRENT_DATE) AND (ugd."isPresentToday" = 1)))) OR (EXISTS ( SELECT 1
-   FROM public.users
-  WHERE ((users.user_id = auth.uid()) AND (users.role = 'admin'::text)))))) WITH CHECK (((EXISTS ( SELECT 1
-   FROM (public.user_group_day ugd
-     JOIN public.users u ON ((u.id = ugd.user_id)))
-  WHERE ((u.user_id = auth.uid()) AND (ugd.group_id = children_today.group_id) AND (ugd.day = CURRENT_DATE) AND (ugd."isPresentToday" = 1)))) OR (EXISTS ( SELECT 1
-   FROM public.users
-  WHERE ((users.user_id = auth.uid()) AND (users.role = 'admin'::text))))));
-
 
 --
 -- Name: reset_events; Type: ROW SECURITY; Schema: public; Owner: -
@@ -7266,5 +7195,5 @@ CREATE EVENT TRIGGER pgrst_drop_watch ON sql_drop
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 3mRrCnYWHt2llWp3Og2ZDkhCDK796rFrpL3KOmD1YbTkHyEdf88IlLcglDVlk1J
+\unrestrict nmZjgOZF0BEgqmRryeVqbxFSw7hAU5bJrw0l0l9xB7SnEDzcqkkHFLAN1Ld9HRA
 
