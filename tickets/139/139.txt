@@ -1,0 +1,75 @@
+# Тикет 139: `CheckpointGroupView.vue` (реальный)
+
+Часть фазы реализации Checkpoint — см. `tickets/131/MIGRATION_PLAN.md`.
+
+## Цель
+
+Перенести `CheckpointGroupPrototypeView.vue` на реальные данные:
+детальный просмотр/мониторинг контрольной точки типа Group — список
+групп со статусами, сворачивание «чистых» групп, список недостающих
+детей на проблемную группу, кнопки Finish/Reopen/Remove.
+
+## Что прочитать перед началом
+
+- `src/views/CheckpointGroupPrototypeView.vue` — эталонная раскладка,
+  включая логику сворачивания групп без проблем (`130.txt:225-227` —
+  этой UI-логики не было в `ChildrenView.vue`, она новая, уже реализована
+  в прототипе).
+- `src/views/ChildrenView.vue:75-135` — исходная таблица групп
+  (status-dot, Morgen/Aktuell/Betreuer/Differenz), источник вёрстки.
+- `src/components/GroupDetailModal.vue` — логика списка полученных
+  пакетов на группу, переносится с фильтром `checkpoint_id`.
+- `src/composables/useGroups.js`, `fetchGroupDetails()` — уже
+  возвращает детей с `presenceNow`/`presenceToday`; оценить, что из
+  этого переиспользуется как есть, а что заменяется на подсчёт через
+  `checkpoint_id` (тикет 135 уже должен был это решить в
+  `getGroupChildrenBreakdown`/`getGroupDelta` — этот тикет использует
+  готовый результат, не пересматривает).
+- `src/composables/useCheckpoints.js` (тикет 135) —
+  `checkpointHasOpenIssues` (сообщение о недостающих детях/группах без
+  данных), `getGroupChildrenBreakdown`, `getGroupDelta`.
+- `tickets/130/130.txt`, раздел «Перекличка по группам» — назначение:
+  сразу видеть проблемные группы и кого искать.
+
+## Затрагиваемые части проекта
+
+`src/views/`.
+
+## Файлы/подсистемы, которые будут изменены
+
+- Новый файл `src/views/CheckpointGroupView.vue`.
+
+## Что должно быть реализовано
+
+1. Заголовок: сводка (аналогично 138), сравнение с
+   `baseline_children_count`.
+2. Список групп (по `config.total_groups`) — статус-индикатор,
+   Morgen/Aktuell (из реального подсчёта по `checkpoint_id`, не
+   `groups_today` — Phase 1 не зависит от date-scoped миграции), список
+   Betreuer, `Differenz`, список недостающих детей (`missingChildren`) по
+   клику/разворачиванию.
+3. Сворачивание групп без проблем — компактно, минимум скроллинга
+   (`130.txt:225-227`).
+4. Кнопки Finish/Reopen/Remove — идентично 138 по паттерну.
+5. Обновление по Realtime, без «Aktualisieren».
+6. Ссылки на карточки детей/групп через `ChildLink`/`GroupLink`
+   (тикет 136).
+
+## Что не входит
+
+- Изменение `ScannerGroupView.vue` — не входит.
+- `ChildrenView.vue`/`GroupDetailModal.vue` не удаляются в этом тикете
+  (тикет 143).
+
+## Результат выполнения тикета
+
+- `CheckpointGroupView.vue` работает на реальных данных, доступен из
+  списка (тикет 137).
+- `npm run build` проходит без ошибок.
+- Ручная проверка на устройстве: авто-создание Group-точки по первому
+  пакету, сворачивание чистых групп, Finish с предупреждением при
+  недостающих детях.
+
+## Зависимости
+
+Требует 135, 136. Независим от 138, 140.

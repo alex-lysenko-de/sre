@@ -1,0 +1,106 @@
+# Тикет 133: DB — RPC `create_checkpoint`/`finish_checkpoint`/`reopen_checkpoint`/`remove_checkpoint`
+
+Часть фазы реализации Checkpoint — см. `tickets/131/MIGRATION_PLAN.md`.
+Реализует явное административное управление контрольными точками поверх
+таблицы из тикета 132.
+
+## Цель
+
+Реализовать четыре Postgres RPC-функции для явного создания/завершения/
+переоткрытия/удаления контрольной точки, вызываемые администратором
+напрямую через `supabase.rpc(...)` (не через Edge Function — в отличие
+от `submit_scan_packet()`, вызывающая сторона здесь уже
+аутентифицированный admin, не недоверенный воспитатель).
+
+## Что прочитать перед началом
+
+- `tickets/130/decision.md`, пп. 1–6 — семантика конфликтов
+  (`create_checkpoint` отклоняет создание при уже открытой точке того же
+  типа) и что переклички разных типов никогда не конфликтуют.
+- `tickets/131/IMPLEMENTATION_PLAN.md`, разделы «Решённые в этой сессии
+  открытые вопросы» (Cancel-семантика — каскадное удаление, не пометка
+  статусом) и «Изменения БД» (`doc/db/checkpoints_functions.sql`) —
+  точная спецификация всех четырёх функций, включая обоснование
+  каскадного `DELETE` внутри `remove_checkpoint()` вместо `ON DELETE
+  CASCADE` на `scans.packet_id`.
+- `src/composables/useCheckpointsMock.js`, функции `createCheckpoint`,
+  `finishCheckpoint`, `reopenCheckpoint`, `removeCheckpoint` (строки
+  244-365) — точная сигнатура и формы ошибок (`{error: 'ALREADY_OPEN',
+  existingId}`, `{error: 'NOT_OPEN'}`, `{error: 'NOT_FINISHED'}`,
+  `{error: 'NOT_FOUND'}`), которые реальный RPC-слой должен воспроизвести
+  один в один — тикет 135 полагается именно на эти формы ошибок.
+- `doc/db/scan_packets.sql` — стиль оформления миграции проекта.
+
+## Затрагиваемые части проекта
+
+Только БД. Ни один файл в `src/` не меняется этим тикетом (composable-слой,
+который эти RPC вызывает — тикет 135).
+
+## Файлы/подсистемы, которые будут изменены
+
+- **Новый файл** `doc/db/checkpoints_functions.sql`.
+
+## Что должно быть реализовано
+
+1. `create_checkpoint(p_type smallint, p_day varchar)` — `SECURITY
+   DEFINER`, явная проверка `role='admin' AND active=true` внутри (не
+   переиспользовать существующие `has_role()`/`is_admin()`, если такие
+   есть — у них нет проверки `active`, см. `131/IMPLEMENTATION_PLAN.md`).
+   Если уже есть открытая точка того же `(type, day)` — `RAISE EXCEPTION`
+   (не переиспользовать молча, в отличие от авто-создания в
+   `submit_scan_packet()`, тикет 134) — иначе `INSERT INTO checkpoints`.
+   `SET search_path = public, pg_temp`.
+2. `finish_checkpoint(p_id bigint)` — `SECURITY DEFINER`, та же проверка
+   роли. Два явно разделённых шага внутри функции (не одна непрозрачная
+   транзакция без комментариев, см. `131.txt`, «Ограничения»):
+   - шаг 1: `UPDATE checkpoints SET status=2, finished_at=now(),
+     finished_by=... WHERE id=p_id AND status=1`;
+   - шаг 2: если это первая `FINISHED`-точка этого `day` (независимо от
+     типа) — посчитать и записать `baseline_children_count` универсально
+     для любого типа через `scans ⋈ scan_packets.checkpoint_id = p_id`
+     (не через `children_today`/`groups_today` — они пока не date-scoped,
+     Phase 2 — тикет 142).
+3. `reopen_checkpoint(p_id bigint)` — отменяет случайный Finish. Только
+   для `status=2`. Отклоняет (`RAISE EXCEPTION`), если тем временем уже
+   открыта другая точка того же типа/дня (та же форма конфликта, что и
+   `create_checkpoint`).
+4. `remove_checkpoint(p_id bigint)` — удаляет ошибочно созданную точку
+   целиком. Процедурный каскад **тремя явными `DELETE`** внутри функции
+   (сначала `scans` через `packet_id IN (SELECT id FROM scan_packets
+   WHERE checkpoint_id=p_id)`, затем `scan_packets WHERE
+   checkpoint_id=p_id`, затем сама `checkpoints`-строка) — **не** через
+   `ON DELETE CASCADE` на `scans.packet_id` (это изменило бы поведение
+   любого будущего удаления `scan_packets`, не только этой кнопки, см.
+   `131/IMPLEMENTATION_PLAN.md`, «Решённые... вопросы»). Явно
+   задокументировать в SQL-комментарии последствие: после удаления
+   `client_packet_id` удалённых пакетов освобождается, повторная отправка
+   того же офлайн-пакета больше не дедуплицируется.
+5. Все четыре — `SECURITY DEFINER`, `SET search_path = public, pg_temp`
+   (защита от search-path hijacking — сознательно строже, чем у
+   унаследованного `submit_scan_packet()`, но обязательна для нового
+   кода, `131.txt`, «Зависимости»).
+6. RLS: подтвердить (не создавать заново), что таблица `checkpoints` из
+   тикета 132 не имеет `INSERT`/`UPDATE`/`DELETE`-политики для
+   `authenticated` — `SECURITY DEFINER`-функции обходят RLS штатно,
+   дополнительная политика не нужна и не должна добавляться.
+
+## Что не входит
+
+- Расширение `submit_scan_packet()` (авто-создание) — тикет 134,
+  независимая ветка работы поверх той же таблицы 132.
+- Composable-слой, который вызывает эти RPC — тикет 135.
+- Изменение старых `AdminBusView.vue`/`useDays.js` — не трогать.
+
+## Результат выполнения тикета
+
+- `doc/db/checkpoints_functions.sql` подготовлен, идемпотентен
+  (`CREATE OR REPLACE FUNCTION`).
+- Все 4 функции применены к боевой БД (после подтверждения пользователем)
+  и проверены вручную через SQL Editor: `create_checkpoint` дважды подряд
+  для одного типа/дня — второй вызов `RAISE EXCEPTION`; `finish_checkpoint`
+  на первой за день точке — записывает `baseline_children_count`, на
+  второй — нет; `reopen_checkpoint`/`remove_checkpoint` — базовые сценарии.
+
+## Зависимости
+
+Требует 132 (таблица `checkpoints`). Не зависит от 134. Блокирует 135.

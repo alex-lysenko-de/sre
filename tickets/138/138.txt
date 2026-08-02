@@ -1,0 +1,72 @@
+# Тикет 138: `CheckpointBusView.vue` (реальный)
+
+Часть фазы реализации Checkpoint — см. `tickets/131/MIGRATION_PLAN.md`.
+
+## Цель
+
+Перенести `CheckpointBusPrototypeView.vue` на реальные данные: детальный
+просмотр/мониторинг контрольной точки типа Bus — список автобусов,
+количество детей/Betreuer в каждом, список полученных пакетов, кнопки
+Finish/Reopen/Remove.
+
+## Что прочитать перед началом
+
+- `src/views/CheckpointBusPrototypeView.vue` — эталонная раскладка.
+- `src/views/AdminBusView.vue:102-186` — исходная таблица автобусов
+  (статус-точка, Kinder/Betreuer/Verantwortliche), которую прототип
+  переработал — источник вёрстки, не для копирования логики (та завязана
+  на `children_today`, здесь используются реальные `scan_packets`/`scans`
+  через `checkpoint_id`).
+- `src/components/BusDetailModal.vue:105-125` — логика списка полученных
+  пакетов на автобус, переносится с фильтром `checkpoint_id`.
+- `src/composables/useCheckpoints.js` (тикет 135) — `summarizeCheckpoint`,
+  `checkpointHasOpenIssues`, `getBusChildrenBreakdown`, `getBusDelta`,
+  `getCheckpointBetreuerList`.
+- `tickets/130/130.txt`, раздел «Перекличка в автобусе» — назначение
+  экрана: быстро понять, все ли дети учтены при посадке; для второй за
+  день Bus-точки — разница в количестве детей по каждому автобусу против
+  утренней (baseline).
+
+## Затрагиваемые части проекта
+
+`src/views/`.
+
+## Файлы/подсистемы, которые будут изменены
+
+- Новый файл `src/views/CheckpointBusView.vue`.
+
+## Что должно быть реализовано
+
+1. Заголовок: `summarizeCheckpoint(cp)` — Kinder/Betreuer, статус,
+   сравнение с `baseline_children_count` дня (если точка сама не
+   является baseline).
+2. Таблица/список автобусов (по `MOCK_TOTAL_BUSES` → реальному
+   `config.total_buses` из `stores/config.js`) — количество детей,
+   количество Betreuer, список пакетов на бус этого раунда
+   (`checkpoint_id`), `getBusDelta(cp, busNumber)` для сравнения с
+   утренней точкой.
+3. Кнопки **Finish** (`useCheckpoints.finishCheckpoint`, с
+   предупреждением при `checkpointHasOpenIssues`), **Reopen** (для
+   `FINISHED`), **Remove** (с подтверждением, необратимо).
+4. Обновление по Realtime (подписка из 135), без кнопки «Aktualisieren».
+5. Ссылки на карточки детей/Betreuer через `ChildLink`/`BetreuerLink`
+   (тикет 136).
+
+## Что не входит
+
+- Изменение `ScannerBusView.vue` — не входит ни в один тикет этой фазы.
+- `BusDetailModal.vue` не удаляется в этом тикете (удаление — тикет 143,
+  только после подтверждения отсутствия потребителей).
+
+## Результат выполнения тикета
+
+- `CheckpointBusView.vue` работает на реальных данных, доступен из
+  списка (тикет 137) по клику на Bus-точку.
+- `npm run build` проходит без ошибок.
+- Ручная проверка на устройстве: авто-создание Bus-точки по первому
+  пакету (после 134), Finish/Reopen/Remove на реальной БД.
+
+## Зависимости
+
+Требует 135, 136. Независим от 139, 140 (могут выполняться в любом
+порядке/параллельно).

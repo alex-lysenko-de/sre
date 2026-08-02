@@ -1,0 +1,133 @@
+# Тикет 135: Composable-слой Checkpoint (`useSupabaseCheckpoints.js` / `useCheckpoints.js` / `useLazyCheckpointProgress.js`)
+
+Часть фазы реализации Checkpoint — см. `tickets/131/MIGRATION_PLAN.md`.
+Первый клиентский тикет: заменяет источник данных прототипа (mock) на
+реальный Supabase-слой, следуя трёхслойной конвенции проекта
+(`stores/useXXX` → `composables/useXXX` → `composables/useSupabaseXXX`,
+`CLAUDE.md`).
+
+## Цель
+
+Реализовать реальный composable-слой Checkpoint с **теми же именами и
+формой функций**, что и `useCheckpointsMock.js`/
+`useLazyCheckpointProgressMock.js` — именно ради этого мок был
+спроектирован повторяющим будущую сигнатуру: экраны (тикеты 137–140)
+почти не должны меняться относительно `*PrototypeView.vue`, меняется
+только источник данных.
+
+## Что прочитать перед началом
+
+- `src/composables/useCheckpointsMock.js` целиком — эталон сигнатур:
+  `fetchCheckpointsForDay`, `createCheckpoint`, `finishCheckpoint`,
+  `reopenCheckpoint`, `removeCheckpoint`, `fetchCheckpointDetail`,
+  `isOverdue`, `summarizeCheckpoint`, `checkpointHasOpenIssues`,
+  `getBusChildrenBreakdown`, `getGroupChildrenBreakdown`,
+  `getDayBaselineCheckpoint`, `getBusDelta`, `getGroupDelta`,
+  `getCheckpointBetreuerList`, `getBetreuerTodayAssignment`.
+- `src/composables/useLazyCheckpointProgressMock.js` — эталон
+  `fetchLazyCheckpointProgress(checkpointId)`.
+- `tickets/131/IMPLEMENTATION_PLAN.md`, раздел «Composable-слой» —
+  распределение по трём файлам (DB-слой / бизнес-логика / lazy-прогресс)
+  уже принято, не пересматривать.
+- `src/composables/useSupabaseUser.js` — образец DB-слоя проекта (стиль
+  прямых Supabase-запросов, на который ориентируется
+  `useSupabaseCheckpoints.js`).
+- `src/views/AdminBusView.vue:480-534`, `src/composables/useGroups.js`
+  (Realtime-подписка `groups_today_changes`) — образец паттерна
+  `supabase.channel(...).on('postgres_changes', ...)`, на который
+  ориентируется `subscribeToCheckpointsChanges`.
+- `src/composables/useChildren.js`, `fetchChildDetailsAndScans(childId)`
+  (:146-171) — уже существует, не используется ни одним экраном; тикет
+  136 (entity-слой) будет вызывать её напрямую вместо синтетической
+  аппроксимации мока — важно для понимания, что часть «реальных данных»
+  для entity-карточек уже готова.
+- `doc/db/checkpoints_functions.sql`/`checkpoints.sql`/
+  `checkpoints_scan_packets_extension.sql` (тикеты 132–134, к моменту
+  начала этого тикета должны быть применены к БД) — реальные имена
+  RPC/таблиц/колонок, на которые опирается DB-слой.
+
+## Затрагиваемые части проекта
+
+Новый слой `src/composables/`. Ни один существующий composable не
+меняется (кроме, возможно, `useGroups.js`/`useBusData.js`, если в
+процессе реализации `getCheckpointBetreuerList`/бизнес-логике потребуется
+переиспользовать их существующие функции чтения ростера — оценить по
+месту, не обязательно).
+
+## Файлы/подсистемы, которые будут изменены
+
+- **Новый файл** `src/composables/useSupabaseCheckpoints.js` — DB-слой:
+  `fetchCheckpointsForDay`, `fetchCheckpointDetail`,
+  `rpcCreateCheckpoint`/`rpcFinishCheckpoint`/`rpcReopenCheckpoint`/
+  `rpcRemoveCheckpoint` (`supabase.rpc(...)` — первое использование RPC в
+  проекте), `subscribeToCheckpointsChanges` (Realtime на таблицу
+  `checkpoints`).
+- **Новый файл** `src/composables/useCheckpoints.js` — бизнес-логика:
+  оборачивает DB-слой, воспроизводит формы ошибок мока (`{error:
+  'ALREADY_OPEN', existingId}` и т.д. — RPC из тикета 133 должны
+  выбрасывать Postgres-исключения с текстом, который здесь
+  перехватывается и переводится в те же объекты ошибок, что и мок), плюс
+  вычислительные функции (`summarizeCheckpoint`,
+  `checkpointHasOpenIssues`, `getBusChildrenBreakdown`,
+  `getGroupChildrenBreakdown`, `getBusDelta`, `getGroupDelta`,
+  `getCheckpointBetreuerList`, `getBetreuerTodayAssignment`,
+  `getDayBaselineCheckpoint`) — вычисляются из реальных
+  `scans`/`scan_packets`/`user_group_day`, а не из полей мока.
+- **Новый файл** `src/composables/useLazyCheckpointProgress.js` —
+  «отметился» = дети, у которых есть строка в `scans`, чей `packet_id`
+  ссылается на `scan_packets` с этим `checkpoint_id`; «ещё нет» = ростер
+  группы/дня минус это множество; «время последней отметки» =
+  `MAX(scan_packets.received_at)` по `checkpoint_id`.
+
+## Что должно быть реализовано
+
+1. `useSupabaseCheckpoints.fetchCheckpointsForDay(day)` — `SELECT *
+   FROM checkpoints WHERE day = ...`, с вычисляемым `seq` (`ROW_NUMBER()
+   OVER (PARTITION BY day ORDER BY id)` — либо на сервере в SQL-запросе,
+   либо на клиенте после чтения, как в моке `withSeq()`).
+2. `rpcCreateCheckpoint(type)`/`rpcFinishCheckpoint(id)`/
+   `rpcReopenCheckpoint(id)`/`rpcRemoveCheckpoint(id)` — тонкие обёртки
+   над `supabase.rpc('create_checkpoint', {...})` и т.д.; перехват
+   Postgres-исключений (`error.message`) и перевод в единообразные
+   объекты ошибок, которые `useCheckpoints.js` затем доводит до формы
+   мока.
+3. `subscribeToCheckpointsChanges(onChange)` — канал `postgres_changes`
+   на `checkpoints`, по образцу существующих подписок в проекте.
+4. `useCheckpoints.js` — `getBusChildrenBreakdown`/
+   `getGroupChildrenBreakdown` читают реальный ростер (`children` по
+   `group_id`/присвоенному сегодня `bus_id` через `scan_packets.bus_id`
+   этой точки) и присутствие через `scans`/`scan_packets.checkpoint_id`
+   — не через `children_today`/`groups_today` (см. `131/
+   IMPLEMENTATION_PLAN.md`, «Изменения БД» — `baseline_children_count`
+   считается универсально через `scans ⋈ scan_packets.checkpoint_id`, тот
+   же принцип применяется здесь для консистентности между БД-подсчётом и
+   клиентским).
+5. `getBetreuerTodayAssignment(betreuerId, day)` — читает
+   `user_group_day` (существующая таблица, поля `user_id`, `group_id`,
+   `bus_id`, `day`) вместо перебора checkpoints, как делал мок — это
+   более прямой и уже доступный реальный источник (см.
+   `tickets/131/MIGRATION_PLAN.md`, §1.4).
+6. `useLazyCheckpointProgress.fetchLazyCheckpointProgress(checkpointId)`
+   — реальный join, как описано выше.
+
+## Что не входит
+
+- Сами экраны — тикеты 137–140.
+- Entity-слой (Child/Betreuer/Group карточки) — тикет 136, хотя
+  `useCheckpoints.js` может импортировать его composables при
+  необходимости (например, для разрешения id→имя в списках).
+
+## Результат выполнения тикета
+
+- Три новых composable-файла реализованы, экспортируют те же имена/форму,
+  что и mock-эквиваленты.
+- Ручная проверка в консоли/временном тестовом компоненте: вызов каждой
+  функции против применённой в 132–134 БД возвращает ожидаемую форму
+  данных без ошибок (полноценные экраны — в 137–140, здесь достаточно
+  подтвердить работоспособность слоя изолированно).
+- `npm run build` проходит без ошибок.
+
+## Зависимости
+
+Требует 132, 133, 134 (реальная БД должна существовать и быть доступна
+через RPC). Блокирует 137, 138, 139, 140.

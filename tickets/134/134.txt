@@ -1,0 +1,97 @@
+# Тикет 134: DB — расширение `submit_scan_packet()` (авто-создание/поиск контрольной точки)
+
+Часть фазы реализации Checkpoint — см. `tickets/131/MIGRATION_PLAN.md`.
+Реализует гибридную модель со стороны недоверенного пути (воспитатель →
+Edge Function → `submit_scan_packet()`), симметрично явному
+администраторскому пути из тикета 133.
+
+## Цель
+
+Расширить существующую функцию `submit_scan_packet()` так, чтобы каждый
+принятый пакет от воспитателя (`scan_packets`) был привязан к
+контрольной точке (`checkpoint_id`) — находя открытую точку того же
+типа/дня или создавая её автоматически, если такой ещё нет. Пакет
+**никогда** не должен отклоняться из-за отсутствия контрольной точки —
+это центральное отличие гибридной модели (`decision.md`) от более
+раннего варианта с явной блокировкой.
+
+## Что прочитать перед началом
+
+- `tickets/130/decision.md`, пп. 1 и 5 — «воспитатели никогда не
+  блокируются ожиданием действий главного администратора» и правило
+  обработки входящих пакетов.
+- `tickets/131/IMPLEMENTATION_PLAN.md`, раздел «Изменения БД» →
+  `doc/db/checkpoints_scan_packets_extension.sql` — точный псевдокод:
+  `INSERT ... ON CONFLICT (day, type) WHERE status=1 DO NOTHING`, затем
+  `SELECT id ... ORDER BY id DESC LIMIT 1` (устойчиво к гонке двух
+  воспитателей и к аварийному состоянию «две открытые одного типа»,
+  `decision.md` п. 6).
+- `doc/db/scan_packets.sql`, функция `submit_scan_packet()` целиком
+  (:183-241) — это модифицируемая функция, важно не сломать
+  идемпотентность по `client_packet_id` (`ON CONFLICT (client_packet_id)
+  DO NOTHING`, уже существующий и обязательный к сохранению механизм).
+- `tickets/131.txt`, раздел «Ограничения» — «клиентский контракт
+  `useScanPacket.js` (тикет 120) не меняется» — сервер сам находит/создаёт
+  точку по уже отправляемым полям `type_code`+`date`, без нового поля в
+  теле запроса и без новых кодов ошибок.
+
+## Затрагиваемые части проекта
+
+Только БД (`submit_scan_packet()`). Клиентский `useScanPacket.js` и
+Edge Function `supabase/functions/submit-scan-packet` **не меняются** —
+эта функция уже вызывает `submit_scan_packet()` без изменений
+интерфейса.
+
+## Файлы/подсистемы, которые будут изменены
+
+- **Новый файл** `doc/db/checkpoints_scan_packets_extension.sql` —
+  `CREATE OR REPLACE FUNCTION submit_scan_packet(...)`, полная замена
+  тела функции с добавленной логикой авто-создания/поиска точки в
+  начале, остальное тело — без изменений относительно `doc/db/
+  scan_packets.sql:183-241`.
+
+## Что должно быть реализовано
+
+1. В начале тела функции, после разбора `payload` и до `INSERT INTO
+   scan_packets`:
+   - `INSERT INTO checkpoints (type, day, status, created_by) VALUES
+     ((payload->>'type_code')::smallint, payload->>'date', 1,
+     (payload->>'author_id')::bigint) ON CONFLICT (day, type) WHERE
+     status = 1 DO NOTHING;`
+   - `SELECT id INTO v_checkpoint_id FROM checkpoints WHERE day =
+     payload->>'date' AND type = (payload->>'type_code')::smallint AND
+     status = 1 ORDER BY id DESC LIMIT 1;`
+2. `v_checkpoint_id` передаётся в `INSERT INTO scan_packets (...,
+   checkpoint_id) VALUES (..., v_checkpoint_id)`.
+3. **Никакого нового `RAISE EXCEPTION`** в этом месте — единственные
+   ошибки, которые видит воспитатель, остаются те, что были до этого
+   тикета (валидация payload и т.п.).
+4. Сохранить без изменений: guard на `children[]` без `child_id`
+   (:194-199), идемпотентность по `client_packet_id` (:216-225), вставку
+   в `scans` (:227-237).
+5. Явный SQL-комментарий над новым блоком: почему `ON CONFLICT ...
+   WHERE status=1 DO NOTHING` + повторное чтение безопасны при гонке
+   двух воспитателей, приславших первый пакет своего типа одновременно.
+
+## Что не входит
+
+- RPC `create_checkpoint`/`finish_checkpoint`/`reopen_checkpoint`/
+  `remove_checkpoint` — тикет 133, независимая параллельная ветка.
+- Изменение Edge Function `submit-scan-packet` — не требуется, вызывает
+  ту же Postgres-функцию по имени.
+- Изменение `useScanPacket.js` — прямо запрещено (`131.txt`,
+  «Ограничения»).
+
+## Результат выполнения тикета
+
+- `doc/db/checkpoints_scan_packets_extension.sql` подготовлен.
+- Применён к боевой БД (после подтверждения пользователем).
+- Проверено вручную: отправка первого BUS-пакета за день создаёт новую
+  `checkpoints`-строку (`type=1, status=1`) и проставляет её
+  `checkpoint_id` в `scan_packets`; второй BUS-пакет того же дня
+  переиспользует ту же открытую точку, а не создаёт вторую.
+
+## Зависимости
+
+Требует 132 (таблица `checkpoints`, колонка `scan_packets.checkpoint_id`).
+Не зависит от 133 (может выполняться параллельно). Блокирует 135.

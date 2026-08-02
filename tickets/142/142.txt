@@ -1,0 +1,97 @@
+# Тикет 142: DB Phase 2 — date-scoped `children_today`/`groups_today`
+
+Часть фазы реализации Checkpoint — см. `tickets/131/MIGRATION_PLAN.md`.
+Начинает Phase 2: замена механизма Hard/Soft/Total Reset на
+автоматическую границу дня. Самая широкая по охвату существующих
+read-путей миграция во всей фазе — намеренно вынесена в отдельный
+изолированный тикет и запускается только после gate-тикета 141.
+
+## Цель
+
+Добавить колонку `date` в `children_today`/`groups_today`, заменить
+unique-констрейнты на `(entity_id, date)`, обновить `ON CONFLICT`-цели
+существующих батч-триггеров и добавить явный фильтр `date = сегодня` во
+все существующие read-пути — без `pg_cron`, переход дня становится
+следствием схемы, а не действием.
+
+## Что прочитать перед началом
+
+- `tickets/130/IMPLEMENTATION_PLAN.md`, раздел «Автоматическая граница
+  дня» — полная спецификация: DDL, объяснение «почему это снимает
+  зависимость от `pg_cron`», «цена решения» (какие read-пути
+  затрагиваются).
+- `tickets/131/MIGRATION_PLAN.md`, §1.3, п.4 — **перед написанием DDL
+  обязательно сверить по живой БД**, существует ли
+  `groups_today_user_id_key UNIQUE (user_id)` — в доступном дампе
+  `backup/database/schema.sql` такого констрейнта нет (только
+  `groups_today_group_id_key UNIQUE (group_id)`), но сам дамп устарел
+  (не содержит даже `scan_packets`) и не может быть источником истины;
+  если констрейнта в реальности нет, соответствующий `DROP CONSTRAINT`
+  в DDL нужно убрать/адаптировать, а не копировать вслепую.
+- `doc/db/scan_packets.sql`, разделы 3 (`on_scan_insert_batch`) и
+  (`on_children_today_change_batch`) — существующие `ON CONFLICT
+  (child_id)`/`ON CONFLICT (group_id)` цели, которые нужно перевести на
+  `(child_id, date)`/`(group_id, date)`.
+- `src/composables/useBusData.js`, `useGroups.js`, `useChildPresence.js`
+  (если существует; иначе — все места, читающие `children_today`/
+  `groups_today` напрямую) — все существующие `SELECT`-запросы к этим
+  таблицам, каждый должен получить фильтр `date = сегодня`.
+
+## Затрагиваемые части проекта
+
+БД (`children_today`, `groups_today`, их триггеры) и все существующие
+composables, читающие эти таблицы.
+
+## Файлы/подсистемы, которые будут изменены
+
+- Новый файл `doc/db/date_scoped_daily_tables.sql` — DDL колонки `date`
+  + новые unique-констрейнты + обновлённые `ON CONFLICT`-цели в
+  `on_scan_insert_batch`/`on_children_today_change_batch` (`CREATE OR
+  REPLACE FUNCTION`, копии из `doc/db/scan_packets.sql` с изменённой
+  `ON CONFLICT`-целью).
+- `src/composables/useBusData.js`, `useGroups.js` и любые другие читатели
+  `children_today`/`groups_today` — добавление `.eq('date', today)` (или
+  эквивалента) к каждому существующему запросу.
+
+## Что должно быть реализовано
+
+1. Сверка живой схемы (см. выше) — обязательный первый шаг, не
+   пропускать.
+2. `ALTER TABLE children_today ADD COLUMN IF NOT EXISTS date varchar NOT
+   NULL DEFAULT to_char(now(), 'YYYY-MM-DD')`; замена
+   `children_today_child_id_key UNIQUE(child_id)` на `UNIQUE(child_id,
+   date)`. Аналогично для `groups_today` (`group_id, date`, и `user_id,
+   date`, если соответствующий констрейнт подтверждён на живой БД).
+3. `on_scan_insert_batch`/`on_children_today_change_batch` — `ON
+   CONFLICT`-цель `(child_id)`/`(group_id)` → `(child_id, date)`/
+   `(group_id, date)`.
+4. Каждый существующий `SELECT` к `children_today`/`groups_today` в
+   `src/composables/` получает явный фильтр `date = сегодня` — пройтись
+   по всем найденным местам (не полагаться на память о том, что их
+   ровно два-три файла — искать грепом по имени таблицы перед началом
+   правок).
+5. Не трогать: `on_reset_event_insert`/`reset_events` — они удаляются
+   отдельно (тикет 143), не в этом тикете (риск смешения ответственности
+   одного тикета — схема vs удаление старого кода).
+
+## Что не входит
+
+- Удаление `AdminBusView.vue`/`ChildrenView.vue`/`useDays.js`/
+  `on_reset_event_insert` — тикет 143.
+- Объединение кнопок меню — тикет 143.
+
+## Результат выполнения тикета
+
+- `doc/db/date_scoped_daily_tables.sql` подготовлен и применён к живой
+  БД (после подтверждения пользователем).
+- Все существующие read-пути `children_today`/`groups_today` содержат
+  фильтр по сегодняшней дате — подтверждено грепом по кодовой базе
+  (`grep -rn "children_today\|groups_today" src/`), не только по памяти
+  о «трёх известных файлах».
+- Ручная проверка на устройстве: переход через полночь не требует
+  никакого действия администратора — счётчики нового дня стартуют с
+  нуля сами.
+
+## Зависимости
+
+Требует 141 (gate). Блокирует 143.

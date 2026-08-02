@@ -28,4 +28,20 @@
 | [123](123/123.txt) | ~~Редизайн интерфейса Kopfzählung~~ — фича признана неудачным экспериментом и быть удалена
 | [124](124/124.txt) | Клиентское логирование ошибок + версионность приложения. План: [tickets/124/IMPLEMENTATION_PLAN.md](124/IMPLEMENTATION_PLAN.md) — модуль `clientLog.js` (ring-buffer breadcrumbs, перехват `errorHandler`/`window.onerror`/`unhandledrejection`, патч `console.error`/`warn` вместо правки composables, Pinia-плагин для breadcrumbs действий), таблица `client_logs` (BEFORE INSERT триггер проставляет `user_id` из `auth.uid()`, RLS — только INSERT, без SELECT из приложения), версия из `package.json` через `vite.config.js` `define`, новый экран `DiagnosticsView.vue` (версия + локальный лог + Web Share/копирование). Toast/push/чат — намеренно не входят, отдельная схема не создаётся под них. Ревью ([REVIEW_REPORT.md](124/REVIEW_REPORT.md)) — реализация фактически отсутствует (нет `IMPLEMENTATION_REPORT.md`, ноль изменений в затронутых планом файлах) | CHANGES_REQUIRED |
 | [126](126/126.txt) | UI-доработки навигации и сканера: | BUGFIX_DONE |
+| [130](130/130.txt) | Редизайн интерфейса администратора для переклички — дизайн-этап (только концепция, БД/код не менялись). Сущность «Перекличка» переименована в «Контрольная точка» (Checkpoint) в decision.md; выбрана гибридная модель (авто-создание по первому пакету, explicit-only Finish, независимые типы) — [tickets/130/decision.md](130/decision.md), приоритетна над `130.txt` там, где расходится. Спецификация БД/API/экранов — [tickets/130/IMPLEMENTATION_PLAN.md](130/IMPLEMENTATION_PLAN.md) (частично устарела в части статуса CANCELLED, см. 131) | ARCHITECT_DONE |
+| [130_2](130_2/130_2.txt) | UI-прототип экрана управления контрольными точками на mock-данных (без БД/сети), прошёл 4 раунда UX-фидбека, принят пользователем. Изолированные маршруты `/admin/checkpoints-prototype/*`, entity-центрированный редизайн (Child/Betreuer/Group как отдельные сущности со своей карточкой) | DEVELOPMENT_DONE |
+| [131](131/131.txt) | Архитектурный план реализации Checkpoint (БД+клиент) поверх 130/decision.md и принятого прототипа 130_2 — [tickets/131/IMPLEMENTATION_PLAN.md](131/IMPLEMENTATION_PLAN.md). Реализация разбита на последовательность небольших тикетов 132–144, см. сводный план [tickets/131/MIGRATION_PLAN.md](131/MIGRATION_PLAN.md) (анализ текущего состояния, расхождения документации/кода, граф зависимостей) | ARCHITECT_DONE, реализация вынесена в 132–144 |
+| [132](132/132.txt) | DB: таблица `checkpoints` + `scan_packets.checkpoint_id` + RLS | не начат |
+| [133](133/133.txt) | DB: RPC `create_checkpoint`/`finish_checkpoint`/`reopen_checkpoint`/`remove_checkpoint` | не начат |
+| [134](134/134.txt) | DB: расширение `submit_scan_packet()` (авто-создание/поиск контрольной точки) | не начат |
+| [135](135/135.txt) | Composable-слой Checkpoint (`useSupabaseCheckpoints.js`/`useCheckpoints.js`/`useLazyCheckpointProgress.js`) | не начат |
+| [136](136/136.txt) | Entity-слой на реальных данных (Child/Betreuer/Group карточки, универсальный список) | не начат |
+| [137](137/137.txt) | `CheckpointListView.vue` (реальный) + маршруты + кнопка в `MainView.vue` | не начат |
+| [138](138/138.txt) | `CheckpointBusView.vue` (реальный) | не начат |
+| [139](139/139.txt) | `CheckpointGroupView.vue` (реальный) | не начат |
+| [140](140/140.txt) | `CheckpointLazyView.vue` (реальный) | не начат |
+| [141](141/141.txt) | Сквозная ручная проверка Phase 1 на устройстве (gate перед Phase 2) | не начат |
+| [142](142/142.txt) | DB Phase 2: date-scoped `children_today`/`groups_today` (замена Hard/Soft/Total Reset) | не начат |
+| [143](143/143.txt) | Удаление устаревшего кода (`AdminBusView.vue`/`ChildrenView.vue`/`ResetHistoryPanel.vue`/`useDays.js`-мертвяк/`on_reset_event_insert`) + объединение меню администратора | не начат |
+| [144](144/144.txt) | Обновление документации (`vault/`, `CLAUDE.md`) + финальная сквозная проверка | не начат |
 
