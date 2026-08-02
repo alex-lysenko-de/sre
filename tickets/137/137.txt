@@ -1,92 +1,131 @@
-# Тикет 137: `CheckpointListView.vue` (реальный) + маршруты + кнопка в `MainView.vue`
+# Тикет 137: Удаление устаревшего кода + объединение меню администратора
 
 Часть фазы реализации Checkpoint — см. `tickets/131/MIGRATION_PLAN.md`.
-Первый реальный экран Checkpoint, точка входа. Работает **рядом** со
-старыми `/admin-busses`/`/children` — они не удаляются в этом тикете
-(Phase 2, тикет 143).
+По итогам архитектурного ревью (`tickets/131/MIGRATION_PLAN_REVIEW_RESPONSE.md`,
+пп. 1, 7, 9, 14) объединяет удаление старого Bus/Group-механизма
+(`AdminBusView.vue`/`ChildrenView.vue`/Reset) с удалением Kopfzählung
+(`HeadcountView.vue`/`useChildPresence.js` — решение пользователя, см.
+ниже) и с прямой заменой меню администратора одной кнопкой — без
+промежуточного состояния «4-я кнопка рядом со старыми тремя», так как
+живых пользователей, ради которых стоило бы это состояние сохранять, нет.
 
 ## Цель
 
-Перенести `CheckpointListPrototypeView.vue` на реальные данные: список/
-история контрольных точек за день, явное создание (тип-селектор),
-переход в детальный экран по клику.
+Удалить весь мёртвый/замещённый код старого механизма учёта присутствия
+(Bus/Group-экраны, Reset, Kopfzählung), объединить меню администратора в
+`MainView.vue` в одну кнопку «Checkpoints», обновить `router/index.js`.
 
 ## Что прочитать перед началом
 
-- `src/views/CheckpointListPrototypeView.vue` — эталонная раскладка и
-  логика.
-- `src/components/checkpoints-prototype/CheckpointCreateModal.vue`,
-  `CheckpointStatusBadge.vue`, `CheckpointTypeBadge.vue`,
-  `CheckpointOriginBadge.vue` — переиспользуемые компоненты (badge
-  «Admin» vs «Auto (Betreuer X)» — обязателен, не может отсутствовать,
-  `131.txt`, «Открытые вопросы»).
-- `src/composables/useCheckpoints.js` (тикет 135, должен быть готов) —
-  реальный источник данных вместо мока.
-- `tickets/130/decision.md`, п. 3 — несколько одновременно открытых
-  контрольных точек разных типов — нормальное состояние, список не
-  должен подсвечивать это как ошибку/конфликт.
-- `tickets/131/IMPLEMENTATION_PLAN.md`, раздел «UI изменения» — точные
-  предлагаемые маршруты (`/admin/checkpoints`, `/admin/checkpoints/list`
-  и т.д. — пример, не обязательное значение, финализировать по месту).
-- `src/views/MainView.vue:74-121` — три текущие кнопки («Busse»,
-  «Admin Übersicht», «Checkpoints (Prototyp)») — этот тикет добавляет
-  **четвёртую**, реальную, не убирая остальные три (объединение меню —
-  тикет 143).
+- `tickets/130/130.txt`, раздел «Пересмотр существующего меню
+  администратора» — что должно произойти с Hard Reset/Soft Reset/
+  Aktualisieren/Bus Alerts.
+- `tickets/130/IMPLEMENTATION_PLAN.md`, раздел «План реализации», п. 9 —
+  исходный список мёртвого кода на удаление.
+- `tickets/131/MIGRATION_PLAN.md`, §1.3 (пп. 6, 7) и §1.5 — подтверждённые
+  расхождения: `closeDay`/`isDayClosed` мёртвые; `useChildPresence.js`
+  пишет в `children_today` в обход Aggregation Model — причина, по
+  которой Kopfzählung удаляется, а не переносится на Checkpoint.
+- `src/composables/useDays.js` целиком — какие функции остаются мёртвыми/
+  удаляемыми (`startNewDay`, `softReset`, `closeDay`, `isDayStarted`,
+  `isDayClosed`), какие используются в другом месте (сверить грепом перед
+  удалением каждой — не полагаться только на этот список, он может
+  устареть к моменту реализации).
+- **Решение пользователя (Kopfzählung, зафиксировано при ревью 131,
+  согласуется с `tickets/dashboard.md`, строка 123 — фича уже отмечена
+  там как «признана неудачным экспериментом и должна быть удалена»):**
+  `HeadcountView.vue`/`useChildPresence.js` удаляются целиком, без
+  переноса функциональности на Lazy Checkpoint или что-либо ещё.
+- `src/views/GroupEditView.vue:66-68, 234-235` — кнопка «Kopfzählung»
+  (`goToHeadcount()` → `/headcount`) становится мёртвой ссылкой после
+  удаления `HeadcountView.vue` — найдено при аудите остальных экранов
+  (`MIGRATION_PLAN_REVIEW_RESPONSE.md`, п.9), не было ни в одном
+  документе 130/131 до этого ревью.
 
 ## Затрагиваемые части проекта
 
-`src/views/`, `src/router/index.js`, `src/views/MainView.vue`.
+`src/views/`, `src/composables/useDays.js`, `src/composables/useGroups.js`,
+`src/composables/useBusData.js`, `src/composables/useChildPresence.js`,
+`src/router/index.js`, `src/views/MainView.vue`, `src/views/GroupEditView.vue`,
+БД (триггер `on_reset_event_insert`).
 
 ## Файлы/подсистемы, которые будут изменены
 
-- Новый файл `src/views/CheckpointListView.vue` (копия
-  `CheckpointListPrototypeView.vue` без суффикса `Prototype`, без
-  `DebugTag`/`Page N`/`elN` — они были нужны только для UX-согласования
-  130_2).
-- `src/router/index.js` — новые маршруты (например
-  `/admin/checkpoints`, `/admin/checkpoints/list`), без удаления
-  `-prototype`-маршрутов (остаются до Phase 2/до подтверждения, что
-  прототип больше не нужен для сравнения).
-- `src/views/MainView.vue` — новая кнопка «Checkpoints», рядом с
-  существующими тремя (`v-if="userStore.isAdmin"`, тот же паттерн).
+- **Удаляются**: `src/views/AdminBusView.vue`, `src/views/ChildrenView.vue`,
+  `src/views/HeadcountView.vue`, `src/composables/useChildPresence.js`,
+  `src/components/ResetHistoryPanel.vue`, `src/components/BusDetailModal.vue`,
+  `src/components/GroupDetailModal.vue`, все `*PrototypeView.vue`/
+  `*Mock.js`/`src/components/checkpoints-prototype/*` (заменены реальными
+  эквивалентами тикетов 133-135).
+- **Проверить грепом перед удалением, затем удалить, если подтверждено
+  мёртвыми**: `src/composables/useGroups.js`, `src/composables/useBusData.js`
+  целиком — на момент написания этого тикета оба файла используются
+  только из `ChildrenView.vue`/`AdminBusView.vue`/`BusDetailModal.vue`/
+  `GroupDetailModal.vue`/`ResetHistoryPanel.vue` (все — из списка выше),
+  то есть после их удаления оба composable-файла целиком теряют
+  потребителей — но это нужно **перепроверить грепом на момент
+  реализации**, не полагаться на этот список: если к тому времени
+  `useCheckpoints.js`/`useBetreuerEntity.js` (тикет 133) стали
+  переиспользовать что-то из них напрямую (а не только как образец
+  паттерна) — удалять только неиспользуемые части, не файл целиком.
+- `src/composables/useDays.js` — удаление `startNewDay`/`softReset`/
+  `closeDay`/`isDayStarted`/`isDayClosed`; `fetchDaysList`/`saveDay`/
+  `deleteDay` (управление `days`-справочником) остаются — не связаны с
+  Reset-механизмом.
+- `src/router/index.js` — удаление маршрутов `/admin-busses`, `/children`,
+  `/headcount`, всех `*-prototype`-маршрутов; маршруты Checkpoint (уже
+  введённые в 134/135) становятся единственными административными.
+- `src/views/MainView.vue` — кнопки «Busse», «Admin Übersicht»,
+  «Checkpoints (Prototyp)» заменяются одной кнопкой «Checkpoints», ведущей
+  на `CheckpointListView.vue` (тикет 134), `v-if="userStore.isAdmin"`,
+  тот же паттерн.
+- `src/views/GroupEditView.vue` — удаление кнопки «Kopfzählung»/
+  `goToHeadcount()`.
+- БД/`doc/db/` — новый файл `doc/db/remove_reset_events_trigger.sql`
+  (`DROP TRIGGER`/`DROP FUNCTION` для `on_reset_event_insert`, не
+  редактирование `doc/db_triggers.sql` задним числом — проект хранит
+  миграции как последовательность файлов).
 
 ## Что должно быть реализовано
 
-1. Список/история контрольных точек текущего дня через
-   `useCheckpoints.fetchCheckpointsForDay(day)` + Realtime-подписка
-   (`subscribeToCheckpointsChanges`, тикет 135) — без кнопки
-   «Aktualisieren».
-2. Явное создание через `CheckpointCreateModal` → `useCheckpoints.
-   createCheckpoint(type)`; обработка `{error: 'ALREADY_OPEN',
-   existingId}` — сообщение и/или переход к существующей открытой точке.
-3. Клик по строке → переход на детальный экран нужного типа (маршрут
-   зависит от `checkpoint.type` — Bus/Group/Lazy, экраны из тикетов
-   138–140).
-4. Визуальное отличие точек, открытых одновременно разных типов —
-   не как ошибка (см. `decision.md`, п. 3); визуальное выделение
-   аварийного состояния «две открытые одного типа» — как аномалии, если
-   оно всё же встретилось (`decision.md`, п. 6) — по образцу прототипа.
-5. Бейдж «создана автоматически (Betreuer X)» / «создана
-   администратором» — обязателен на каждой строке.
+1. Грепом подтвердить отсутствие оставшихся потребителей для каждого
+   удаляемого файла/функции перед удалением (не удалять «по списку из
+   документа» вслепую).
+2. Удаление файлов/функций из списка выше.
+3. `MainView.vue` — одна кнопка «Checkpoints» вместо трёх.
+4. `router/index.js` — актуальный набор маршрутов без старых/прототипных
+   путей.
+5. `GroupEditView.vue` — убрать кнопку «Kopfzählung».
+6. `doc/db/remove_reset_events_trigger.sql` — `DROP TRIGGER
+   trg_on_reset_event_insert`, `DROP FUNCTION on_reset_event_insert()`.
+   Применяется после подтверждения пользователем, как и все миграции
+   этой серии.
+7. **Не удаляется** в этом тикете: `reset_events` как таблица (данные —
+   история, не мешают; удаление таблицы не требуется ни одним документом,
+   только связанный триггер и клиентские вызовы). Триггер
+   `trg_on_children_today_delete`/функция `on_children_today_delete()`
+   технически становится «висящей» (единственный источник `DELETE FROM
+   children_today` был в `on_reset_event_insert`, который удаляется этим
+   тикетом) — оставить как есть, триггер просто перестаёт срабатывать,
+   удаление необязательно (не входит в объём, не мешает).
 
 ## Что не входит
 
-- Удаление/замена `/admin-busses`/`/children` — Phase 2, тикет 143.
-- Детальные экраны Bus/Group/Lazy — тикеты 138–140 (этот тикет может
-  временно вести на заглушку/старый прототип-маршрут до их готовности,
-  если тикеты выполняются не строго последовательно).
+- Удаление таблиц `reset_events`/`children`/`users`/`children_today`/
+  `groups_today`/схемы — не входит.
+- Date-scoped миграция `children_today`/`groups_today` — тикет 138.
+- Любые новые функциональные изменения — только удаление/объединение.
 
 ## Результат выполнения тикета
 
-- `CheckpointListView.vue` работает на реальных данных, доступен по
-  новому маршруту, кнопка в `MainView.vue` на месте.
-- `npm run build` проходит без ошибок.
-- Ручная проверка на устройстве: создание/просмотр списка на реальной
-  БД (после 132–135).
+- Единственная точка входа администратора — «Checkpoints».
+- `npm run build` проходит без ошибок, нет мёртвых импортов.
+- Ручная проверка на устройстве: старые маршруты (`/admin-busses`,
+  `/children`, `/headcount` и т.д.) больше не существуют (редирект/404 по
+  политике приложения), новый флоу полностью покрывает прежнюю
+  функциональность.
 
 ## Зависимости
 
-Требует 135 (composable-слой), 136 (entity-компоненты, если список
-показывает ссылки на Betreuer-создателя точки). Не блокирует 138–140
-напрямую (они не зависят друг от друга), но логически идёт первым, так
-как это точка входа/навигации к ним.
+Требует 134, 135, 136. Блокирует 138 (рекомендательно, не технически —
+см. `tickets/131/MIGRATION_PLAN.md`, §3), 139.

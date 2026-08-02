@@ -1,133 +1,70 @@
-# Тикет 135: Composable-слой Checkpoint (`useSupabaseCheckpoints.js` / `useCheckpoints.js` / `useLazyCheckpointProgress.js`)
+# Тикет 135: Экран Checkpoint — Lazy (реальный)
 
 Часть фазы реализации Checkpoint — см. `tickets/131/MIGRATION_PLAN.md`.
-Первый клиентский тикет: заменяет источник данных прототипа (mock) на
-реальный Supabase-слой, следуя трёхслойной конвенции проекта
-(`stores/useXXX` → `composables/useXXX` → `composables/useSupabaseXXX`,
-`CLAUDE.md`).
+Единственный полностью новый тип экрана (Bus/Group имеют прямых
+предшественников в `AdminBusView.vue`/`ChildrenView.vue`, Lazy — нет) —
+поэтому выделен отдельным тикетом, а не объединён с 134 (List+Bus+Group).
 
 ## Цель
 
-Реализовать реальный composable-слой Checkpoint с **теми же именами и
-формой функций**, что и `useCheckpointsMock.js`/
-`useLazyCheckpointProgressMock.js` — именно ради этого мок был
-спроектирован повторяющим будущую сигнатуру: экраны (тикеты 137–140)
-почти не должны меняться относительно `*PrototypeView.vue`, меняется
-только источник данных.
+Перенести `CheckpointLazyPrototypeView.vue` на реальные данные:
+постепенная фиксация присутствия в течение дня — кто отметился, кто ещё
+нет, время последней отметки, явный Finish без авто-завершения.
 
 ## Что прочитать перед началом
 
-- `src/composables/useCheckpointsMock.js` целиком — эталон сигнатур:
-  `fetchCheckpointsForDay`, `createCheckpoint`, `finishCheckpoint`,
-  `reopenCheckpoint`, `removeCheckpoint`, `fetchCheckpointDetail`,
-  `isOverdue`, `summarizeCheckpoint`, `checkpointHasOpenIssues`,
-  `getBusChildrenBreakdown`, `getGroupChildrenBreakdown`,
-  `getDayBaselineCheckpoint`, `getBusDelta`, `getGroupDelta`,
-  `getCheckpointBetreuerList`, `getBetreuerTodayAssignment`.
-- `src/composables/useLazyCheckpointProgressMock.js` — эталон
-  `fetchLazyCheckpointProgress(checkpointId)`.
-- `tickets/131/IMPLEMENTATION_PLAN.md`, раздел «Composable-слой» —
-  распределение по трём файлам (DB-слой / бизнес-логика / lazy-прогресс)
-  уже принято, не пересматривать.
-- `src/composables/useSupabaseUser.js` — образец DB-слоя проекта (стиль
-  прямых Supabase-запросов, на который ориентируется
-  `useSupabaseCheckpoints.js`).
-- `src/views/AdminBusView.vue:480-534`, `src/composables/useGroups.js`
-  (Realtime-подписка `groups_today_changes`) — образец паттерна
-  `supabase.channel(...).on('postgres_changes', ...)`, на который
-  ориентируется `subscribeToCheckpointsChanges`.
-- `src/composables/useChildren.js`, `fetchChildDetailsAndScans(childId)`
-  (:146-171) — уже существует, не используется ни одним экраном; тикет
-  136 (entity-слой) будет вызывать её напрямую вместо синтетической
-  аппроксимации мока — важно для понимания, что часть «реальных данных»
-  для entity-карточек уже готова.
-- `doc/db/checkpoints_functions.sql`/`checkpoints.sql`/
-  `checkpoints_scan_packets_extension.sql` (тикеты 132–134, к моменту
-  начала этого тикета должны быть применены к БД) — реальные имена
-  RPC/таблиц/колонок, на которые опирается DB-слой.
+- `src/views/CheckpointLazyPrototypeView.vue` — эталонная раскладка.
+- `src/composables/useLazyCheckpointProgress.js` (тикет 133) —
+  `fetchLazyCheckpointProgress(checkpointId)`, реальный источник данных.
+- `tickets/130/130.txt`, раздел «Ленивая перекличка (Lazy Roll Call)» —
+  назначение: с часу до двух каждый ребёнок обязан отметиться (на базе
+  или у ближайшего Betreuer); нет обязательного авто-завершения.
+- `tickets/130/decision.md`, пп. 1-6 — авто-завершение Lazy при старте
+  следующей Bus/Group-переклички (`130.txt:240`) отменено симметричной
+  моделью: ни один тип не завершается автоматически.
+- **Критерий готовности Lazy к Finish — решено, не открытый вопрос.**
+  Простой список «ещё не отметились», без блокировки Finish и без
+  временных порогов — то есть поведение `checkpointHasOpenIssues` (ветка
+  LAZY, `notYet.length > 0` как предупреждение, не запрет) уже в моке —
+  финальное решение, реализовать как есть, не искать другой критерий.
 
 ## Затрагиваемые части проекта
 
-Новый слой `src/composables/`. Ни один существующий composable не
-меняется (кроме, возможно, `useGroups.js`/`useBusData.js`, если в
-процессе реализации `getCheckpointBetreuerList`/бизнес-логике потребуется
-переиспользовать их существующие функции чтения ростера — оценить по
-месту, не обязательно).
+`src/views/`, `src/router/index.js` (маршрут Lazy-экрана, вместе с
+маршрутами тикета 134 в общем namespace `/admin/checkpoints/...`).
 
 ## Файлы/подсистемы, которые будут изменены
 
-- **Новый файл** `src/composables/useSupabaseCheckpoints.js` — DB-слой:
-  `fetchCheckpointsForDay`, `fetchCheckpointDetail`,
-  `rpcCreateCheckpoint`/`rpcFinishCheckpoint`/`rpcReopenCheckpoint`/
-  `rpcRemoveCheckpoint` (`supabase.rpc(...)` — первое использование RPC в
-  проекте), `subscribeToCheckpointsChanges` (Realtime на таблицу
-  `checkpoints`).
-- **Новый файл** `src/composables/useCheckpoints.js` — бизнес-логика:
-  оборачивает DB-слой, воспроизводит формы ошибок мока (`{error:
-  'ALREADY_OPEN', existingId}` и т.д. — RPC из тикета 133 должны
-  выбрасывать Postgres-исключения с текстом, который здесь
-  перехватывается и переводится в те же объекты ошибок, что и мок), плюс
-  вычислительные функции (`summarizeCheckpoint`,
-  `checkpointHasOpenIssues`, `getBusChildrenBreakdown`,
-  `getGroupChildrenBreakdown`, `getBusDelta`, `getGroupDelta`,
-  `getCheckpointBetreuerList`, `getBetreuerTodayAssignment`,
-  `getDayBaselineCheckpoint`) — вычисляются из реальных
-  `scans`/`scan_packets`/`user_group_day`, а не из полей мока.
-- **Новый файл** `src/composables/useLazyCheckpointProgress.js` —
-  «отметился» = дети, у которых есть строка в `scans`, чей `packet_id`
-  ссылается на `scan_packets` с этим `checkpoint_id`; «ещё нет» = ростер
-  группы/дня минус это множество; «время последней отметки» =
-  `MAX(scan_packets.received_at)` по `checkpoint_id`.
+- Новый файл `src/views/CheckpointLazyView.vue`.
 
 ## Что должно быть реализовано
 
-1. `useSupabaseCheckpoints.fetchCheckpointsForDay(day)` — `SELECT *
-   FROM checkpoints WHERE day = ...`, с вычисляемым `seq` (`ROW_NUMBER()
-   OVER (PARTITION BY day ORDER BY id)` — либо на сервере в SQL-запросе,
-   либо на клиенте после чтения, как в моке `withSeq()`).
-2. `rpcCreateCheckpoint(type)`/`rpcFinishCheckpoint(id)`/
-   `rpcReopenCheckpoint(id)`/`rpcRemoveCheckpoint(id)` — тонкие обёртки
-   над `supabase.rpc('create_checkpoint', {...})` и т.д.; перехват
-   Postgres-исключений (`error.message`) и перевод в единообразные
-   объекты ошибок, которые `useCheckpoints.js` затем доводит до формы
-   мока.
-3. `subscribeToCheckpointsChanges(onChange)` — канал `postgres_changes`
-   на `checkpoints`, по образцу существующих подписок в проекте.
-4. `useCheckpoints.js` — `getBusChildrenBreakdown`/
-   `getGroupChildrenBreakdown` читают реальный ростер (`children` по
-   `group_id`/присвоенному сегодня `bus_id` через `scan_packets.bus_id`
-   этой точки) и присутствие через `scans`/`scan_packets.checkpoint_id`
-   — не через `children_today`/`groups_today` (см. `131/
-   IMPLEMENTATION_PLAN.md`, «Изменения БД» — `baseline_children_count`
-   считается универсально через `scans ⋈ scan_packets.checkpoint_id`, тот
-   же принцип применяется здесь для консистентности между БД-подсчётом и
-   клиентским).
-5. `getBetreuerTodayAssignment(betreuerId, day)` — читает
-   `user_group_day` (существующая таблица, поля `user_id`, `group_id`,
-   `bus_id`, `day`) вместо перебора checkpoints, как делал мок — это
-   более прямой и уже доступный реальный источник (см.
-   `tickets/131/MIGRATION_PLAN.md`, §1.4).
-6. `useLazyCheckpointProgress.fetchLazyCheckpointProgress(checkpointId)`
-   — реальный join, как описано выше.
+1. Три списка/счётчика: «отметились» (с `checkedInBy`/временем), «ещё
+   нет», «время последней отметки» — сгруппированные по группе
+   (реалистичный масштаб ~150 детей, плоский список не навигируем — тот
+   же вывод, что уже сделан в `useLazyCheckpointProgressMock.js`,
+   комментарий Раунда 1 UX-фидбека).
+2. Явный Finish (`useCheckpoints.finishCheckpoint`) — единственный способ
+   закрыть Lazy-точку, с предупреждением при `notYet.length > 0`, без
+   какого-либо автоматического завершения при старте другой точки.
+3. Reopen/Remove — тот же паттерн, что у Bus/Group (тикет 134).
+4. Обновление по Realtime, без «Aktualisieren».
+5. Ссылки на карточки детей через `ChildLink` (тикет 133).
 
 ## Что не входит
 
-- Сами экраны — тикеты 137–140.
-- Entity-слой (Child/Betreuer/Group карточки) — тикет 136, хотя
-  `useCheckpoints.js` может импортировать его composables при
-  необходимости (например, для разрешения id→имя в списках).
+- Изменение `ScannerCheckinView.vue`/«Freie Meldung» — не входит.
+- Механизм авто-завершения Lazy — сознательно не реализуется.
 
 ## Результат выполнения тикета
 
-- Три новых composable-файла реализованы, экспортируют те же имена/форму,
-  что и mock-эквиваленты.
-- Ручная проверка в консоли/временном тестовом компоненте: вызов каждой
-  функции против применённой в 132–134 БД возвращает ожидаемую форму
-  данных без ошибок (полноценные экраны — в 137–140, здесь достаточно
-  подтвердить работоспособность слоя изолированно).
+- `CheckpointLazyView.vue` работает на реальных данных, доступен прямым
+  переходом по маршруту.
 - `npm run build` проходит без ошибок.
+- Ручная проверка на устройстве: авто-создание Lazy-точки по первому
+  CHECKIN-пакету, постепенное появление отметившихся детей в реальном
+  времени, явный Finish с предупреждением.
 
 ## Зависимости
 
-Требует 132, 133, 134 (реальная БД должна существовать и быть доступна
-через RPC). Блокирует 137, 138, 139, 140.
+Требует 133. Независим от 134, 136. Блокирует 137.

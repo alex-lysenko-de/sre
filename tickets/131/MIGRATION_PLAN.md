@@ -6,10 +6,17 @@
 `DEVELOPMENT_DONE`) и уже существующий архитектурный план `tickets/131/
 IMPLEMENTATION_PLAN.md` в единый, проверенный по реальному состоянию
 кодовой базы план внедрения. Не пересматривает принятые архитектурные
-решения — только переводит их в последовательность из 13 небольших
-тикетов (132–144).
+решения — только переводит их в последовательность тикетов (132–139).
 
-Дата анализа: 2026-08-02, ветка `nt`.
+**Ревизия 2**, 2026-08-02. Первая версия этого документа (13 тикетов,
+132–144, деление Phase 1/рядом со старыми экранами/Gate/Phase 2) прошла
+независимое архитектурное ревью — `tickets/131/migration_Plan_review.md`.
+Разбор замечаний и обоснование каждого решения — отдельно, в
+`tickets/131/MIGRATION_PLAN_REVIEW_RESPONSE.md`. Главное следствие ревью,
+подтверждённое пользователем напрямую: **у проекта сейчас нет живых
+пользователей и ценных данных**, поэтому безопасная поэтапная миграция
+рядом со старыми экранами не нужна — вместо неё одна последовательность
+из 8 тикетов (132–139), ведущая сразу к целевой архитектуре.
 
 ---
 
@@ -22,19 +29,18 @@ IMPLEMENTATION_PLAN.md` в единый, проверенный по реаль�
 | Архитектурное решение (модель) | Принято, `decision.md` — гибридная модель (авто-создание по пакету + explicit-only Finish, независимые типы, конфликт только Bus/Bus или Group/Group и т.п.) | `tickets/130/decision.md` |
 | Архитектурная спецификация БД/API (v1) | Написана, но частично устарела относительно v2 (см. §1.3, «CANCEL vs REOPEN/REMOVE») | `tickets/130/IMPLEMENTATION_PLAN.md` |
 | Архитектурная спецификация БД/API (v2, актуальная) | Написана, учитывает реальный UX-прогон 130_2 | `tickets/131/IMPLEMENTATION_PLAN.md` |
-| **UI-прототип на mock-данных** | **Реализован, продет через 4 раунда UX-фидбека, принят пользователем (`state.txt`: `DEVELOPMENT_DONE`)** | `src/views/Checkpoint*PrototypeView.vue`, `src/views/{Child,Betreuer,GroupEntity}*PrototypeView.vue`, `src/components/checkpoints-prototype/*`, `src/composables/use{Checkpoints,LazyCheckpointProgress,ChildEntity,BetreuerEntity,GroupEntity,ScanHistory}Mock.js`, маршруты `/admin/checkpoints-prototype/*` в `src/router/index.js` |
+| **UI-прототип на mock-данных** | **Реализован, пройдены 4 раунда UX-фидбека, принят пользователем (`state.txt`: `DEVELOPMENT_DONE`)** | `src/views/Checkpoint*PrototypeView.vue`, `src/views/{Child,Betreuer,GroupEntity}*PrototypeView.vue`, `src/components/checkpoints-prototype/*`, `src/composables/use{Checkpoints,LazyCheckpointProgress,ChildEntity,BetreuerEntity,GroupEntity,ScanHistory}Mock.js`, маршруты `/admin/checkpoints-prototype/*` в `src/router/index.js` |
 | Реальная БД (таблица `checkpoints`, RPC, расширение `submit_scan_packet()`) | **Не начато** — ни один файл `doc/db/checkpoints*.sql` не существует | — |
 | Реальный composable-слой (`useCheckpoints.js`, `useSupabaseCheckpoints.js`, `useLazyCheckpointProgress.js`) | **Не начато** | — |
 | Реальные экраны (без суффикса `Prototype`, на реальных данных) | **Не начато** | — |
-| Удаление устаревшего кода (`AdminBusView.vue`, `ChildrenView.vue`, `ResetHistoryPanel.vue`, `useDays.startNewDay/softReset/closeDay`, триггер `on_reset_event_insert`) | **Не начато**, всё ещё живо и используется | `src/views/AdminBusView.vue`, `src/views/ChildrenView.vue`, `src/composables/useDays.js` |
+| Удаление устаревшего кода (`AdminBusView.vue`, `ChildrenView.vue`, `HeadcountView.vue`, `ResetHistoryPanel.vue`, `useDays.startNewDay/softReset/closeDay`, триггер `on_reset_event_insert`) | **Не начато**, всё ещё живо и используется | `src/views/AdminBusView.vue`, `src/views/ChildrenView.vue`, `src/views/HeadcountView.vue`, `src/composables/useDays.js` |
 
 Вывод: проект находится ровно на границе «дизайн UI согласован → пора
 переносить на реальные данные», предусмотренной самим тикетом 130_2. Это
 подтверждает и git-история (`nt`): коммит `2625539 "ticket 130_2 \"Checkpoints
 UI Prototype\""` — единственный коммит с реальным кодом функциональности;
 `7a6a8e4 "create ticket 131"` добавил только `131.txt`/`IMPLEMENTATION_PLAN.md`
-(текст, без кода). Индивидуальные WIP-коммиты 4 раундов UX-фидбека
-(`b37df3f`…`183c8d3`) вошли в этот единственный squash-коммит.
+(текст, без кода).
 
 ### 1.2 Что сделано только в UI (mock, не подключено к реальным данным)
 
@@ -84,40 +90,67 @@ UX-прогоне.
    (`CHECKPOINT_STATUS = { OPEN: 1, FINISHED: 2 }`, без CANCELLED,
    `reopenCheckpoint`/`removeCheckpoint`) — то есть здесь код и v2
    документация уже согласованы, расхождение только с более старым v1.
-3. **`backup/database/schema.sql` не отражает текущую реальную БД.**
-   Дамп датирован 2026-07-21, но не содержит таблицу `scan_packets`
-   (введённую тикетом 122), хотя по памяти проекта (тикет 122,
-   `BUGFIX_DONE`) SQL тикета 122 уже применён к боевой БД и Edge Function
-   задеплоена. Это значит: **`backup/database/schema.sql` — устаревший
-   бэкап, не источник истины для текущей структуры БД.** Практическое
-   следствие для тикетов 132+ (см. ниже): перед применением любой новой
-   миграции нужно вручную сверить актуальную схему через Supabase SQL
-   Editor/`pg_dump`, а не полагаться на файл в репозитории.
-4. **`groups_today_user_id_key UNIQUE (user_id)`, на удаление которого
-   рассчитывает `130/IMPLEMENTATION_PLAN.md:442-444` (Phase 2, date-scoped
-   миграция) — в доступном дампе схемы такого констрейнта нет** (есть
-   только `groups_today_group_id_key UNIQUE (group_id)`,
-   `backup/database/schema.sql:4801`). Из-за п.3 нельзя считать это
-   окончательно подтверждённым (дамп сам устарел), но это совпадает с тем,
-   что `131/IMPLEMENTATION_PLAN.md:83-85` уже отметил как требующее
-   проверки перед Phase 2 — тикет 142 (см. ниже) обязан начаться с этой
-   проверки по живой БД, а не по дампу.
+3. **`backup/database/schema.sql` не датирован сегодняшним числом и не
+   может считаться безусловным источником истины «на сейчас» без
+   выборочной проверки конкретных фактов** — но, в отличие от первой
+   версии этого документа, ошибочно утверждавшей, что дамп не содержит
+   таблицу `scan_packets`: **дамп её содержит** (`CREATE TABLE
+   public.scan_packets`, `backup/database/schema.sql:3985`) — это была
+   ошибка предыдущего анализа, исправлена по итогам ревью (см.
+   `MIGRATION_PLAN_REVIEW_RESPONSE.md`, п.3). Практический вывод не
+   меняется: перед использованием любого конкретного факта из дампа в
+   новой DDL — считать его нуждающимся в подтверждении, а не безусловной
+   истиной, но без domain-специфичных допущений «чего-то там точно нет».
+4. **`groups_today_user_id_key UNIQUE (user_id)` не существует —
+   подтверждено.** В дампе есть только `groups_today_group_id_key UNIQUE
+   (group_id)` (`backup/database/schema.sql:4984-4988`). Соответствующий
+   `DROP CONSTRAINT` в DDL тикета 138 не нужен вовсе — не «требует
+   проверки на живой БД», как считала первая версия этого документа, а
+   прямо не входит в объём миграции.
 5. **`useBetreuerEntityMock.js:10-12`, комментарий «email/phone
    существуют в реальной БД не под этим именем», неточен.** Реальная
    таблица `users` (`backup/database/schema.sql:3938-3950`) **уже
    содержит** колонки `email text NOT NULL` и `phone text` — то есть при
-   реализации 136 эти поля можно взять напрямую из `users`, не изобретая
-   новых. Разница мока с реальностью — не в email/phone, а в том, что
-   «Betreuer» не отдельная таблица, а `users` с `role='user'`
+   реализации entity-слоя эти поля можно взять напрямую из `users`, не
+   изобретая новых. Разница мока с реальностью — не в email/phone, а в том,
+   что «Betreuer» не отдельная таблица, а `users` с `role='user'`
    (администратор — `role='admin'`), и что в моке имя разбито на слог, а
-   в реальной таблице это `display_name`. Уточнение для тикета 136, не
-   критичное расхождение.
+   в реальной таблице это `display_name`.
 6. **`useDays.closeDay()`/`isDayClosed()` (`useDays.js:141-165, 247-278`)
    — 130.txt (:38-40) верно фиксирует их как «нигде не используются в
    UI», код это подтверждает** (нет ни одной вызывающей точки в `src/`,
-   кроме самого файла) — не расхождение, а подтверждение уже
-   зафиксированного наблюдения; включено сюда, чтобы явно попасть в
-   scope удаления мёртвого кода (тикет 143), а не потеряться.
+   кроме самого файла) — включено в объём удаления мёртвого кода.
+7. **`useChildPresence.js.setPresentNow()` (`:39-90`) пишет в
+   `children_today` напрямую, в обход `scan_packets`/Aggregation Model** —
+   нарушает Принцип 5 `decision.md`. Обнаружено при независимом ревью,
+   перепроверено. Это причина, по которой Kopfzählung (тикет 123,
+   `HeadcountView.vue`) признана несовместимой с новой архитектурой и
+   удаляется целиком, а не переносится на Checkpoint (решение
+   пользователя, зафиксировано в `MIGRATION_PLAN_REVIEW_RESPONSE.md`, п.7).
+8. **`ChildDetailView.vue:266` (кнопка «Präsenz registrieren») вызывает
+   `useScan.js.createScan()` — прямой `INSERT` в `scans` без `packet_id`,
+   в обход `submit_scan_packet()`.** Реальный, достижимый маршрут (браслет
+   → `/armband/:id` → `/child/:id`), не мёртвый код и не прототип —
+   третий канал регистрации присутствия (помимо камерного `Scanner.vue` и
+   `useChildPresence.js`/Kopfzählung). Ребёнок, отмеченный через эту
+   кнопку, не попадёт ни в один Checkpoint-экран (все считают присутствие
+   через `scans ⋈ scan_packets.checkpoint_id`). Обнаружено при независимом
+   ревью вне первоначального охвата 130/131/132–144, перепроверено,
+   включено в объём этой серии (тикет 136) — см.
+   `MIGRATION_PLAN_REVIEW_RESPONSE.md`, п.11.
+9. **`children_today`/`groups_today` продолжают писаться живым триггером
+   независимо от какого-либо UI.** `on_scan_insert_batch()`
+   (`doc/db/scan_packets.sql:73-117`) — тот же батч-триггер на `scans`,
+   который обслуживает реальный пакетный путь тикетов 120/122 — на каждой
+   вставке пишет в `children_today`, а через `on_children_today_change_batch`
+   — в `groups_today`. Это значит, что после удаления `useChildPresence.js`
+   и старых экранов у этих таблиц не останется *читателей* в `src/`, но
+   *запись* в них продолжится всегда, пока идут сканы. Отсюда — date-scoped
+   миграция (тикет 138) не «инертная уборка», а обязана атомарно поменять
+   и колонки/констрейнты, и `ON CONFLICT`-цели в этом триггере: иначе
+   первый же реальный скан после применения новых констрейнтов уронит
+   `submit_scan_packet()` целиком. См. подробности в
+   `MIGRATION_PLAN_REVIEW_RESPONSE.md`, п.4.
 
 ### 1.4 Нужен ли рефакторинг перед функциональными изменениями
 
@@ -128,23 +161,37 @@ UX-прогоне.
 - Экраны мониторинга Checkpoint (Bus/Group/Lazy) вычисляют результат
   напрямую из `scans ⋈ scan_packets.checkpoint_id`, **не** через
   `children_today`/`groups_today` — то есть не наследуют их главную
-  проблему (глобальные, не date-scoped строки, которые сегодня "чинятся"
-  вручную через Hard/Soft Reset). Рефакторинг `children_today`/
-  `groups_today` (date-scoped схема) — реальная работа, но она **не
-  блокирует** реализацию Checkpoint-функциональности, поэтому вынесена в
-  отдельную, более позднюю фазу (Phase 2, тикет 142), а не в
-  подготовительный этап перед Phase 1.
+  проблему (глобальные, не date-scoped строки). Дата-скоуп-миграция этих
+  таблиц (тикет 138) — реальная работа, но она **не блокирует**
+  реализацию Checkpoint-функциональности как таковой.
 - `useScanPacket.js` (клиент тикета 120) и сами экраны сканирования
   воспитателей не меняются вообще — контракт совместим уже сегодня.
 - Переиспользуемые presentational-компоненты и composable-слой на мок-данных
-  уже спроектированы с сигнатурой реального слоя (§1.2) — переносить их в
-  `src/components/checkpoints/` предстоит копированием + заменой источника
-  данных, а не редизайном.
+  уже спроектированы с сигнатурой реального слоя (§1.2) — переносить их
+  предстоит копированием + заменой источника данных, а не редизайном.
 
 Единственное, что можно назвать «рефакторингом» в этом плане — это
-**Phase 2** (date-scoped `children_today`/`groups_today`, тикет 142) и
-**удаление мёртвого кода** (тикет 143). Оба уже выделены в отдельные
-тикеты ниже, как и требует задача.
+date-scoped миграция `children_today`/`groups_today` (тикет 138) и
+**удаление мёртвого/замещённого кода** (тикет 137). Оба выделены в
+отдельные тикеты ниже.
+
+### 1.5 Вне охвата этой серии тикетов (зафиксировано, не потеряно)
+
+По итогам аудита остальных административных экранов на соответствие 5
+принципам `decision.md` (решение пользователя, `MIGRATION_PLAN_REVIEW_RESPONSE.md`,
+п.9) — найдены нарушения, не связанные с Checkpoint и не блокирующие эту
+миграцию:
+
+- `DaysEditView.vue` — список и форма редактирования на одной странице
+  (смешение назначения экрана).
+- `UsersView.vue` — список пользователей в `<table>` на десктопе, вместо
+  widget-списка.
+- `ArmbandConnectView.vue` — незавершённая заглушка (маршрут
+  `/armband-connect/:id` существует, файл — закомментированный TODO).
+
+Это существующий технический долг, задокументированный здесь, чтобы не
+потерять находку — кандидат на отдельный будущий рефакторинг, вне этой
+серии тикетов.
 
 ---
 
@@ -152,77 +199,82 @@ UX-прогоне.
 
 | Вопрос | Ответ |
 |---|---|
-| Изменение структуры БД? | Да — новая таблица `checkpoints`, колонка `scan_packets.checkpoint_id`, позже (Phase 2) — `date`-колонка и новые unique-констрейнты на `children_today`/`groups_today`. |
+| Изменение структуры БД? | Да — новая таблица `checkpoints`, колонка `scan_packets.checkpoint_id`, `date`-колонка и новые unique-констрейнты на `children_today`/`groups_today`. |
 | Изменение моделей? | Да, в смысле доменной модели — новая сущность Checkpoint с типом/статусом/baseline; модель `children`/`users`/`scans` не меняется. |
 | Изменение сервисов? | Да — новый composable-слой (`useSupabaseCheckpoints.js` → `useCheckpoints.js` → `useLazyCheckpointProgress.js`), по уже принятой в проекте трёхслойной конвенции (`CLAUDE.md`). |
 | Новые сервисы/промежуточный слой бизнес-логики? | Да, но не Edge Function — RPC (`SECURITY DEFINER`) через уже аутентифицированную admin-сессию; `submit_scan_packet()` (Edge Function, тикет 122) расширяется, не заменяется. |
-| Изменение API? | Да — 3 новых RPC (`create_checkpoint`/`finish_checkpoint`/`reopen_checkpoint`/`remove_checkpoint`, фактически 4), расширение `submit_scan_packet()`; ни одного нового REST/Edge-эндпоинта. |
-| Какие экраны меняются? | 4 новых экрана Checkpoint (List/Bus/Group/Lazy) + 5 новых entity-экранов (Child card/edit, Betreuer card, Group entity, универсальный список) — все уже спроектированы в 130_2, переносятся с mock на реальные данные. `MainView.vue`/`router/index.js` — точки входа. `AdminBusView.vue`/`ChildrenView.vue` — удаляются (Phase 2, после стабилизации). |
-| Что можно оставить без изменений? | `ScannerBusView.vue`/`ScannerGroupView.vue`/`ScannerCheckinView.vue`/`useScanPacket.js` (клиент тикета 120) — контракт не меняется. `HeadcountView.vue` (тикет 123/126) — вне охвата. Схема `children`/`users`/`scans`/`scan_packets` (кроме новой колонки) — не меняется. |
+| Изменение API? | Да — 4 новых RPC (`create_checkpoint`/`finish_checkpoint`/`reopen_checkpoint`/`remove_checkpoint`), расширение `submit_scan_packet()`; ни одного нового REST/Edge-эндпоинта. |
+| Какие экраны меняются? | 4 новых экрана Checkpoint (List/Bus/Group/Lazy) + entity-экраны (Child card/edit-ссылка, Betreuer card, Group entity, универсальный список) — переносятся с mock на реальные данные. `ChildDetailView.vue` — точечная правка (кнопка «Präsenz registrieren»). `MainView.vue`/`router/index.js` — консолидация точки входа. `AdminBusView.vue`/`ChildrenView.vue`/`HeadcountView.vue` — удаляются. |
+| Что можно оставить без изменений? | `ScannerBusView.vue`/`ScannerGroupView.vue`/`ScannerCheckinView.vue`/`useScanPacket.js` (клиент тикета 120) — контракт не меняется. Схема `children`/`users`/`scans`/`scan_packets` (кроме новой колонки) — не меняется. |
 
 ---
 
 ## 3. Последовательный план миграции
 
+Деление на Phase 1 (рядом со старыми экранами) / Gate / Phase 2 из первой
+версии этого плана убрано — оно существовало только ради того, чтобы
+старые экраны продолжали работать во время миграции; при отсутствии
+живых пользователей это не нужно (см. `MIGRATION_PLAN_REVIEW_RESPONSE.md`,
+п.1). Вместо этого — один список тикетов с прямыми техническими
+зависимостями:
+
 ```
-Phase 0 (нет отдельного тикета — см. §1.4, рефакторинг не требуется)
+132 DB: полная схема Checkpoint (checkpoints+RLS, RPC×4,
+        submit_scan_packet() расширение)                    (без зависимостей)
    │
-Phase 1 — реальная функциональность РЯДОМ со старыми экранами
+   ├─ 133 Composable-слой + Entity-слой на реальных данных    (после 132)
+   │     │
+   │     ├─ 134 Экраны Checkpoint: List + Bus + Group          (после 133)
+   │     └─ 135 Экран Checkpoint: Lazy                         (после 133)
    │
-   ├─ 132 DB: таблица checkpoints + scan_packets.checkpoint_id + RLS
-   ├─ 133 DB: RPC create/finish/reopen/remove_checkpoint          (после 132)
-   ├─ 134 DB: submit_scan_packet() — авто-создание/поиск           (после 132, || 133)
-   ├─ 135 Composable-слой (useSupabaseCheckpoints/useCheckpoints/
-   │        useLazyCheckpointProgress)                             (после 132-134)
-   ├─ 136 Entity-слой на реальных данных (Child/Betreuer/Group
-   │        card, универсальный список)                            (может идти || с 132-135)
-   ├─ 137 CheckpointListView.vue (реальный) + маршруты + кнопка    (после 135, 136)
-   ├─ 138 CheckpointBusView.vue (реальный)                         (после 135, 136)
-   ├─ 139 CheckpointGroupView.vue (реальный)                       (после 135, 136)
-   ├─ 140 CheckpointLazyView.vue (реальный)                        (после 135, 136)
+   └─ 136 ChildDetailView.vue: Präsenz registrieren через
+           submit_scan_packet()                              (после 132)
+
+137 Удаление устаревшего кода + объединение меню администратора
+    (включая Kopfzählung/useChildPresence.js)                 (после 134, 135, 136)
    │
-Gate — 141 Сквозная ручная проверка Phase 1 на устройстве          (после 137-140)
+138 DB: date-scoped children_today/groups_today               (рекомендуется после 137,
+                                                                 жёсткой блокировки нет)
    │
-Phase 2 — замена старого механизма, уборка
-   │
-   ├─ 142 DB: date-scoped children_today/groups_today              (после 141)
-   ├─ 143 Удаление мёртвого кода + объединение меню                (после 141, 142)
-   └─ 144 Документация + финальная сквозная проверка               (после 143)
+139 Финальная сквозная проверка на устройстве + документация  (после 137, 138)
 ```
 
-Обоснование разбиения на Phase 1/Phase 2 — то же, что уже зафиксировано в
-`131/IMPLEMENTATION_PLAN.md`, «Этапность»: Phase 1 самодостаточна (не
-зависит от date-scoped миграции, т.к. `baseline_children_count` считается
-напрямую из `scans`/`scan_packets`), и первое в проекте использование
-Postgres RPC + новая таблица+RLS стоит проверить на реальном устройстве
-до более широкой и рискованной миграции `children_today`/`groups_today`.
+134 и 135 не зависят друг от друга и могут выполняться в любом порядке/
+параллельно; то же самое для 136 относительно 133/134/135 (зависит только
+от 132).
 
 ---
 
-## 4. Список тикетов 132–144
+## 4. Список тикетов 132–139
 
 Полные спецификации — в `tickets/<N>/<N>.txt`. Ниже — только сводка и
 граф зависимостей.
 
 | № | Название | Зависит от |
 |---|---|---|
-| [132](../132/132.txt) | DB: таблица `checkpoints` + `scan_packets.checkpoint_id` + RLS | — |
-| [133](../133/133.txt) | DB: RPC `create_checkpoint`/`finish_checkpoint`/`reopen_checkpoint`/`remove_checkpoint` | 132 |
-| [134](../134/134.txt) | DB: расширение `submit_scan_packet()` (авто-создание/поиск checkpoint) | 132 |
-| [135](../135/135.txt) | Composable-слой: `useSupabaseCheckpoints.js` / `useCheckpoints.js` / `useLazyCheckpointProgress.js` | 132, 133, 134 |
-| [136](../136/136.txt) | Entity-слой на реальных данных: `ChildLink`/`BetreuerLink`/`GroupLink`/`CountLink`/`EntityListCard` + карточки Child/Betreuer/Group + универсальный список | — (мягкая связь с 135, см. текст тикета) |
-| [137](../137/137.txt) | `CheckpointListView.vue` (реальный) + маршруты + кнопка в `MainView.vue`, рядом со старыми экранами | 135, 136 |
-| [138](../138/138.txt) | `CheckpointBusView.vue` (реальный) | 135, 136 |
-| [139](../139/139.txt) | `CheckpointGroupView.vue` (реальный) | 135, 136 |
-| [140](../140/140.txt) | `CheckpointLazyView.vue` (реальный) | 135, 136 |
-| [141](../141/141.txt) | Сквозная ручная проверка Phase 1 на устройстве | 137, 138, 139, 140 |
-| [142](../142/142.txt) | DB Phase 2: date-scoped `children_today`/`groups_today` | 141 |
-| [143](../143/143.txt) | Удаление мёртвого кода, объединение меню администратора | 141, 142 |
-| [144](../144/144.txt) | Обновление документации (vault/, dashboard) + финальная проверка | 143 |
+| [132](../132/132.txt) | DB: полная схема Checkpoint — таблица `checkpoints` + RLS + RPC `create/finish/reopen/remove_checkpoint` + расширение `submit_scan_packet()` | — |
+| [133](../133/133.txt) | Composable-слой (`useSupabaseCheckpoints.js`/`useCheckpoints.js`/`useLazyCheckpointProgress.js`) + Entity-слой на реальных данных (`ChildLink`/`BetreuerLink`/`GroupLink`/`CountLink`/`EntityListCard` + карточки + универсальный список) | 132 |
+| [134](../134/134.txt) | Экраны Checkpoint: `CheckpointListView.vue` + `CheckpointBusView.vue` + `CheckpointGroupView.vue` | 133 |
+| [135](../135/135.txt) | Экран `CheckpointLazyView.vue` | 133 |
+| [136](../136/136.txt) | `ChildDetailView.vue`: кнопка «Präsenz registrieren» через `submit_scan_packet()` вместо прямого `INSERT` в `scans` | 132 |
+| [137](../137/137.txt) | Удаление устаревшего кода (`AdminBusView.vue`/`ChildrenView.vue`/`HeadcountView.vue`/`useChildPresence.js`/`useGroups.js`/`useBusData.js`/prototype-слой/мёртвый `useDays.js`/`on_reset_event_insert`) + объединение меню администратора в одну кнопку «Checkpoints» | 134, 135, 136 |
+| [138](../138/138.txt) | DB: date-scoped `children_today`/`groups_today` (колонка `date`, новые unique-констрейнты, обновление `ON CONFLICT`-целей в живых батч-триггерах, чистка legacy RLS-политики) | 137 (рекомендуется, не блокирует технически) |
+| [139](../139/139.txt) | Финальная сквозная проверка на устройстве + документация (`vault/`, `CLAUDE.md`) + финальные статусы `tickets/dashboard.md` | 137, 138 |
 
-Каждый тикет самодостаточен (свой `132.txt` и т.д. со всеми обязательными
-полями — цель, что читать перед началом, затрагиваемые части,
-предполагаемые файлы, что реализовать, результат, зависимости) и не
-требует повторного архитектурного проектирования — вся архитектура уже
-зафиксирована в `tickets/130/decision.md` и `tickets/131/
-IMPLEMENTATION_PLAN.md`, тикеты 132–144 на них ссылаются, а не дублируют.
+Каждый тикет самодостаточен (свой `<N>.txt` со всеми обязательными полями
+— цель, что читать перед началом, затрагиваемые части, предполагаемые
+файлы, что реализовать, результат, зависимости) и не требует повторного
+архитектурного проектирования — вся архитектура уже зафиксирована в
+`tickets/130/decision.md` и `tickets/131/IMPLEMENTATION_PLAN.md`, тикеты
+132–139 на них ссылаются, а не дублируют.
+
+---
+
+## 5. История ревизий
+
+- **Ревизия 1** (2026-08-02, до ревью): 13 тикетов (132–144), деление
+  Phase 1 (рядом со старыми экранами) / Gate 141 / Phase 2.
+- **Ревизия 2** (2026-08-02, эта версия): по итогам
+  `tickets/131/migration_Plan_review.md` — 8 тикетов (132–139), без
+  деления на фазы (подтверждено пользователем: живых пользователей/данных
+  нет). Полный разбор замечаний ревью — `MIGRATION_PLAN_REVIEW_RESPONSE.md`.

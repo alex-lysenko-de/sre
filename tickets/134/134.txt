@@ -1,97 +1,116 @@
-# Тикет 134: DB — расширение `submit_scan_packet()` (авто-создание/поиск контрольной точки)
+# Тикет 134: Экраны Checkpoint — List + Bus + Group (реальные)
 
 Часть фазы реализации Checkpoint — см. `tickets/131/MIGRATION_PLAN.md`.
-Реализует гибридную модель со стороны недоверенного пути (воспитатель →
-Edge Function → `submit_scan_packet()`), симметрично явному
-администраторскому пути из тикета 133.
+По итогам архитектурного ревью (`tickets/131/MIGRATION_PLAN_REVIEW_RESPONSE.md`,
+п.1, п.14) объединяет то, что в первой версии плана было тремя тикетами
+(137/138/139) — List/Bus/Group однородны, прямые аналоги старых экранов,
+и не нужно временное состояние «4-я кнопка рядом со старыми тремя» — при
+отсутствии живых пользователей эти экраны разрабатываются и проверяются
+прямым переходом по маршруту, без правки `MainView.vue`. Единственная
+правка `MainView.vue` (замена трёх старых кнопок на одну «Checkpoints») —
+в тикете 137, один раз.
 
 ## Цель
 
-Расширить существующую функцию `submit_scan_packet()` так, чтобы каждый
-принятый пакет от воспитателя (`scan_packets`) был привязан к
-контрольной точке (`checkpoint_id`) — находя открытую точку того же
-типа/дня или создавая её автоматически, если такой ещё нет. Пакет
-**никогда** не должен отклоняться из-за отсутствия контрольной точки —
-это центральное отличие гибридной модели (`decision.md`) от более
-раннего варианта с явной блокировкой.
+Перенести `CheckpointListPrototypeView.vue`, `CheckpointBusPrototypeView.vue`,
+`CheckpointGroupPrototypeView.vue` на реальные данные: список/история
+точек за день с явным созданием, детальный мониторинг Bus-точки (по
+автобусам), детальный мониторинг Group-точки (по группам, со
+сворачиванием «чистых» групп).
 
 ## Что прочитать перед началом
 
-- `tickets/130/decision.md`, пп. 1 и 5 — «воспитатели никогда не
-  блокируются ожиданием действий главного администратора» и правило
-  обработки входящих пакетов.
-- `tickets/131/IMPLEMENTATION_PLAN.md`, раздел «Изменения БД» →
-  `doc/db/checkpoints_scan_packets_extension.sql` — точный псевдокод:
-  `INSERT ... ON CONFLICT (day, type) WHERE status=1 DO NOTHING`, затем
-  `SELECT id ... ORDER BY id DESC LIMIT 1` (устойчиво к гонке двух
-  воспитателей и к аварийному состоянию «две открытые одного типа»,
-  `decision.md` п. 6).
-- `doc/db/scan_packets.sql`, функция `submit_scan_packet()` целиком
-  (:183-241) — это модифицируемая функция, важно не сломать
-  идемпотентность по `client_packet_id` (`ON CONFLICT (client_packet_id)
-  DO NOTHING`, уже существующий и обязательный к сохранению механизм).
-- `tickets/131.txt`, раздел «Ограничения» — «клиентский контракт
-  `useScanPacket.js` (тикет 120) не меняется» — сервер сам находит/создаёт
-  точку по уже отправляемым полям `type_code`+`date`, без нового поля в
-  теле запроса и без новых кодов ошибок.
+- `src/views/CheckpointListPrototypeView.vue`,
+  `CheckpointBusPrototypeView.vue`, `CheckpointGroupPrototypeView.vue` —
+  эталонная раскладка и логика всех трёх экранов.
+- `src/components/checkpoints-prototype/CheckpointCreateModal.vue`,
+  `CheckpointStatusBadge.vue`, `CheckpointTypeBadge.vue`,
+  `CheckpointOriginBadge.vue` — переиспользуемые компоненты (бейдж
+  «Admin» vs «Auto (Betreuer X)» обязателен, `131.txt`, «Открытые
+  вопросы»).
+- `src/composables/useCheckpoints.js` (тикет 133, должен быть готов) —
+  реальный источник данных вместо мока: `summarizeCheckpoint`,
+  `checkpointHasOpenIssues`, `getBusChildrenBreakdown`, `getBusDelta`,
+  `getGroupChildrenBreakdown`, `getGroupDelta`, `getCheckpointBetreuerList`.
+- `tickets/130/decision.md`, пп. 3, 6 — несколько одновременно открытых
+  точек разных типов — нормальное состояние, не показывать как ошибку;
+  две открытые одного типа — аномалия, показывать как таковую, если
+  встретилась.
+- `src/views/AdminBusView.vue:102-186`, `src/components/BusDetailModal.vue:105-125`
+  — исходная таблица автобусов и логика списка пакетов, источник вёрстки
+  (не для копирования логики — та завязана на `children_today`, здесь
+  используются `scan_packets`/`scans` через `checkpoint_id`). Файлы
+  читаются только как референс — сами удаляются в тикете 137.
+- `src/views/ChildrenView.vue:75-135`, `src/components/GroupDetailModal.vue`
+  — то же самое для групп (`130.txt:225-227` — логика сворачивания
+  «чистых» групп уже реализована в прототипе, в `ChildrenView.vue` её не
+  было).
+- `src/composables/useGroups.js`, `fetchGroupDetails()` — уже возвращает
+  детей с `presenceNow`/`presenceToday`; оценить, что переиспользуется
+  как есть, а что заменяется на подсчёт через `checkpoint_id` (тикет 133
+  уже решил это в `getGroupChildrenBreakdown`/`getGroupDelta` — этот
+  тикет использует готовый результат, не пересматривает).
+- `tickets/131/IMPLEMENTATION_PLAN.md`, раздел «UI изменения» — примерные
+  маршруты (`/admin/checkpoints`, `/admin/checkpoints/list` и т.д.) —
+  пример, финализировать по месту.
 
 ## Затрагиваемые части проекта
 
-Только БД (`submit_scan_packet()`). Клиентский `useScanPacket.js` и
-Edge Function `supabase/functions/submit-scan-packet` **не меняются** —
-эта функция уже вызывает `submit_scan_packet()` без изменений
-интерфейса.
+`src/views/`, `src/router/index.js`. `MainView.vue` в этом тикете **не
+меняется** (см. заголовок).
 
 ## Файлы/подсистемы, которые будут изменены
 
-- **Новый файл** `doc/db/checkpoints_scan_packets_extension.sql` —
-  `CREATE OR REPLACE FUNCTION submit_scan_packet(...)`, полная замена
-  тела функции с добавленной логикой авто-создания/поиска точки в
-  начале, остальное тело — без изменений относительно `doc/db/
-  scan_packets.sql:183-241`.
+- Новые файлы `src/views/CheckpointListView.vue`, `CheckpointBusView.vue`,
+  `CheckpointGroupView.vue` (копии `*PrototypeView.vue` без суффикса
+  `Prototype`, без `DebugTag`/`Page N`/`elN` — были нужны только для
+  UX-согласования 130_2).
+- `src/router/index.js` — новые маршруты (например `/admin/checkpoints`,
+  `/admin/checkpoints/bus/:id`, `/admin/checkpoints/group/:id`), без
+  удаления `-prototype`-маршрутов (остаются до тикета 137).
 
 ## Что должно быть реализовано
 
-1. В начале тела функции, после разбора `payload` и до `INSERT INTO
-   scan_packets`:
-   - `INSERT INTO checkpoints (type, day, status, created_by) VALUES
-     ((payload->>'type_code')::smallint, payload->>'date', 1,
-     (payload->>'author_id')::bigint) ON CONFLICT (day, type) WHERE
-     status = 1 DO NOTHING;`
-   - `SELECT id INTO v_checkpoint_id FROM checkpoints WHERE day =
-     payload->>'date' AND type = (payload->>'type_code')::smallint AND
-     status = 1 ORDER BY id DESC LIMIT 1;`
-2. `v_checkpoint_id` передаётся в `INSERT INTO scan_packets (...,
-   checkpoint_id) VALUES (..., v_checkpoint_id)`.
-3. **Никакого нового `RAISE EXCEPTION`** в этом месте — единственные
-   ошибки, которые видит воспитатель, остаются те, что были до этого
-   тикета (валидация payload и т.п.).
-4. Сохранить без изменений: guard на `children[]` без `child_id`
-   (:194-199), идемпотентность по `client_packet_id` (:216-225), вставку
-   в `scans` (:227-237).
-5. Явный SQL-комментарий над новым блоком: почему `ON CONFLICT ...
-   WHERE status=1 DO NOTHING` + повторное чтение безопасны при гонке
-   двух воспитателей, приславших первый пакет своего типа одновременно.
+1. `CheckpointListView.vue`: список/история точек текущего дня через
+   `useCheckpoints.fetchCheckpointsForDay(day)` + Realtime-подписка, без
+   кнопки «Aktualisieren». Явное создание через `CheckpointCreateModal` →
+   `createCheckpoint(type)`, обработка `{error: 'ALREADY_OPEN',
+   existingId}`. Клик по строке → переход в `CheckpointBusView.vue`/
+   `CheckpointGroupView.vue`/маршрут Lazy (тикет 135) по `checkpoint.type`.
+   Бейдж «создана автоматически (Betreuer X)» / «создана администратором»
+   — обязателен на каждой строке.
+2. `CheckpointBusView.vue`: заголовок (`summarizeCheckpoint`, сравнение с
+   `baseline_children_count`), таблица автобусов (`config.total_buses`)
+   с количеством детей/Betreuer/списком пакетов раунда, `getBusDelta` для
+   сравнения с утренней точкой. Кнопки Finish (с предупреждением при
+   `checkpointHasOpenIssues`)/Reopen/Remove (с подтверждением,
+   необратимо). Realtime, без «Aktualisieren». Ссылки на карточки детей/
+   Betreuer через `ChildLink`/`BetreuerLink` (тикет 133).
+3. `CheckpointGroupView.vue`: заголовок (аналогично), список групп
+   (`config.total_groups`) — статус-индикатор, Morgen/Aktuell (подсчёт по
+   `checkpoint_id`, не `groups_today`), Betreuer, `Differenz`, список
+   недостающих детей по клику/разворачиванию, сворачивание групп без
+   проблем. Finish/Reopen/Remove — идентично Bus. Realtime. Ссылки через
+   `ChildLink`/`GroupLink`.
 
 ## Что не входит
 
-- RPC `create_checkpoint`/`finish_checkpoint`/`reopen_checkpoint`/
-  `remove_checkpoint` — тикет 133, независимая параллельная ветка.
-- Изменение Edge Function `submit-scan-packet` — не требуется, вызывает
-  ту же Postgres-функцию по имени.
-- Изменение `useScanPacket.js` — прямо запрещено (`131.txt`,
-  «Ограничения»).
+- Экран Lazy — тикет 135 (независим).
+- Замена `/admin-busses`/`/children`, правка `MainView.vue` — тикет 137.
+- Изменение `ScannerBusView.vue`/`ScannerGroupView.vue` — не входит ни в
+  один тикет этой фазы.
+- `BusDetailModal.vue`/`GroupDetailModal.vue`/`AdminBusView.vue`/
+  `ChildrenView.vue` не удаляются в этом тикете — тикет 137.
 
 ## Результат выполнения тикета
 
-- `doc/db/checkpoints_scan_packets_extension.sql` подготовлен.
-- Применён к боевой БД (после подтверждения пользователем).
-- Проверено вручную: отправка первого BUS-пакета за день создаёт новую
-  `checkpoints`-строку (`type=1, status=1`) и проставляет её
-  `checkpoint_id` в `scan_packets`; второй BUS-пакет того же дня
-  переиспользует ту же открытую точку, а не создаёт вторую.
+- Все три экрана работают на реальных данных, доступны по новым
+  маршрутам (прямым переходом, кнопки входа пока нет — см. заголовок).
+- `npm run build` проходит без ошибок.
+- Ручная проверка на устройстве: авто-создание Bus/Group-точки по первому
+  пакету (после 132), Finish/Reopen/Remove на реальной БД, Realtime-
+  обновление без ручного действия.
 
 ## Зависимости
 
-Требует 132 (таблица `checkpoints`, колонка `scan_packets.checkpoint_id`).
-Не зависит от 133 (может выполняться параллельно). Блокирует 135.
+Требует 133. Независим от 135, 136. Блокирует 137.

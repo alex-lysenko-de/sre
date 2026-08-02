@@ -1,123 +1,91 @@
-# Тикет 136: Entity-слой на реальных данных (Child/Betreuer/Group карточки, универсальный список)
+# Тикет 136: `ChildDetailView.vue` — «Präsenz registrieren» через `submit_scan_packet()`
 
 Часть фазы реализации Checkpoint — см. `tickets/131/MIGRATION_PLAN.md`.
-Переносит «энтити-центрированную» часть UI-прототипа (UX-фидбек Раунд 4
-тикета 130_2 — принципы 1–5 из `tickets/130/decision.md`, «Child /
-Group / Betreuer как самостоятельные сущности со своей карточкой и
-маршрутом») на реальные данные `children`/`users`/`user_group_day`.
+Находка независимого архитектурного ревью (`tickets/131/
+migration_Plan_review.md`, §5), не часть исходного охвата 130/131 —
+устраняет третий (помимо камерного `Scanner.vue` и удаляемого
+`useChildPresence.js`) обходной путь регистрации присутствия мимо
+Packet-модели. Решение и обоснование — `tickets/131/
+MIGRATION_PLAN_REVIEW_RESPONSE.md`, п.11.
 
 ## Цель
 
-Заменить mock-источники (`useChildEntityMock.js`, `useBetreuerEntityMock.js`,
-`useGroupEntityMock.js`, `useScanHistoryMock.js`) реальными Supabase-
-запросами, сохранив набор переиспользуемых presentational-компонентов
-(`ChildLink`/`BetreuerLink`/`GroupLink`/`CountLink`/`EntityListCard`) и
-экранов (Child card/edit, Betreuer card, Group entity, универсальный
-список), уже согласованных и принятых в 130_2.
+Кнопка «Präsenz registrieren» на `ChildDetailView.vue` сейчас вызывает
+`useScan.js.createScan()` — прямой `INSERT` в `scans`, без `packet_id` и
+без обращения к `submit_scan_packet()`. Экран достижим через реальный
+живой маршрут (физический QR/NFC на браслете → `?id=123` → `/armband/:id`
+→ при уже привязанном браслете сразу `/child/:id`). Ребёнок, отмеченный
+через эту кнопку, получает строку в `scans` без `checkpoint_id` и не
+попадёт ни в один Checkpoint-экран (все считают присутствие через
+`scans ⋈ scan_packets.checkpoint_id`) — расхождение в данных, которое
+Checkpoint-экраны не обнаружат и не предупредят о нём. Переделать кнопку
+так, чтобы она тоже создавала запись через `submit_scan_packet()`
+(CHECKIN-подобный пакет с одним ребёнком), сохранив UX «сразу после
+привязки браслета — отметить присутствие».
 
 ## Что прочитать перед началом
 
-- `src/composables/useChildEntityMock.js`, `useBetreuerEntityMock.js` —
-  эталонные сигнатуры (`getChildById`, `getChildrenByGroup`,
-  `updateChild`, `getBetreuerById`, `getBetreuerByName`) и комментарий о
-  том, какие поля мока не имеют реального аналога (родители/телефон
-  ребёнка — не переносить; email/phone Betreuer — **есть** в реальной
-  таблице `users`, см. `tickets/131/MIGRATION_PLAN.md`, §1.3, п.5).
-- `src/components/checkpoints-prototype/{ChildLink,BetreuerLink,GroupLink,
-  CountLink,EntityListCard}.vue` — переиспользуемые компоненты, переезжают
-  почти без изменений (только источник данных у вызывающих экранов).
-- `src/views/{ChildCardPrototypeView,ChildEditPrototypeView,
-  BetreuerCardPrototypeView,GroupEntityPrototypeView,
-  EntityListPrototypeView}.vue` — экраны-эталоны.
-- `src/views/ChildDetailView.vue`, `src/views/ChildEditView.vue` — уже
-  существующие реальные экраны карточки/редактирования ребёнка (не в
-  namespace прототипа) — реальная схема полей `children`
-  (`age`/`schwimmer`/`band_id`/`notes`/`group_id`/`bus_id`, без
-  родителей/телефона) уже используется здесь, ориентир для полей
-  реальной Checkpoint-карточки ребёнка.
-- `src/composables/useChildren.js`, `fetchChildDetailsAndScans(childId)`
-  — готовая функция для истории сканирований ребёнка, заменяет
-  `useScanHistoryMock.js`.
-- Реальная схема таблиц `children` (id, name, age, schwimmer, status,
-  notes, group_id, band_id, bus_id), `users` (id, email, phone,
-  display_name, role, active), `user_group_day` (user_id, group_id,
-  bus_id, day) — `backup/database/schema.sql:3650-3662, 3899-3910,
-  3938-3950` (сверить с живой БД, дамп может отставать, см.
-  `tickets/131/MIGRATION_PLAN.md`, §1.3, п.3).
+- `src/views/ChildDetailView.vue:56, 151, 159, 266` — текущий обработчик
+  кнопки, импорт `useScan`, вызов `createScan(...)`.
+- `src/composables/useScan.js`, функция `createScan` (:216-244) — что
+  именно сейчас происходит в обход Packet-модели (прямой `insert` в
+  `scans` с `payload = {date, user_id, child_id, band_id, bus_id, type,
+  created_at}`, без `packet_id`).
+- `src/composables/useScanPacket.js` целиком — уже содержит все нужные
+  примитивы: `createPacket('CHECKIN', {})`, `addManual(child)` (метод
+  `'MANUAL'`, готовое поле `scans.method` для различения «отсканирован»/
+  «внесён вручную»), `submitPacket()` (вызывает Edge Function
+  `submit-scan-packet` → `submit_scan_packet()`, тикет 132 уже
+  обеспечивает авто-создание/поиск Lazy/CHECKIN-точки для этого пакета).
+- `doc/db/checkpoints.sql` (тикет 132, должен быть применён к БД к началу
+  этого тикета) — расширение `submit_scan_packet()`, из-за которого этот
+  пакет получит `checkpoint_id` автоматически, без дополнительной логики
+  на клиенте.
 
 ## Затрагиваемые части проекта
 
-Новые файлы под `src/components/checkpoints/` и продолжение
-`src/views/*` без суффикса `Prototype`. Существующие
-`ChildDetailView.vue`/`ChildEditView.vue` не меняются — Checkpoint-карточка
-ребёнка ведёт кнопкой «Bearbeiten» на уже существующий `/child-edit/:id`,
-а не дублирует его (`131/IMPLEMENTATION_PLAN.md`, «UI изменения»).
+Только `src/views/ChildDetailView.vue`. `useScan.js` не меняется (его
+остальные функции — чтение истории/статуса присутствия — используются
+в других местах, не переделываются в рамках этого тикета, не
+проверялось, что они тоже мимо Packet-модели, т.к. они read-only).
 
 ## Файлы/подсистемы, которые будут изменены
 
-- Компоненты `src/components/checkpoints/{ChildLink,BetreuerLink,
-  GroupLink,CountLink,EntityListCard}.vue` — копии из
-  `checkpoints-prototype/`, без изменений логики (только импорт
-  реальных composables вместо мока в вызывающих экранах, сами эти
-  компоненты в основном presentational и получают данные через props).
-- Новые экраны: `src/views/ChildCardView.vue`, `src/views/BetreuerCardView.vue`,
-  `src/views/GroupEntityView.vue`, `src/views/EntityListView.vue`
-  (`ChildEditPrototypeView.vue` **не переносится** — см. «Что не входит»).
-- Новый файл `src/composables/useBetreuerEntity.js` (реальный, читает
-  `users` с фильтром `role != 'admin'` либо без фильтра — на усмотрение
-  реализации, см. открытый вопрос ниже).
-- `useChildren.js` — используется как есть для карточки ребёнка,
-  возможно, дополняется недостающей функцией списка по группе (если
-  `fetchGroupDetails()` из `useGroups.js` уже покрывает это — оценить по
-  месту, не дублировать).
+- `src/views/ChildDetailView.vue` — обработчик кнопки «Präsenz
+  registrieren».
 
 ## Что должно быть реализовано
 
-1. `getChildById(id)`/`getChildrenByGroup(groupId)` — реальные запросы к
-   `children`, без полей `parentA`/`parentB`/`phone` (не существуют в
-   реальной схеме — карточка ребёнка эти поля просто не показывает, как
-   уже сделано в `ChildDetailView.vue`).
-2. Реальный аналог `getBetreuerById(id)`/`getBetreuerByName(name)` —
-   запрос к `users`. **Открытый вопрос для решения по месту**: должен ли
-   список ограничиваться `role != 'admin'`, или показывать всех
-   пользователей — сверить с тем, как сегодня формируется список
-   Verantwortliche/Betreuer в `AdminBusView.vue`/`ChildrenView.vue`, не
-   изобретать новый критерий.
-3. `EntityListView.vue` — универсальный список (переезд из
-   `EntityListPrototypeView.vue`), источник данных переключается на
-   реальные `children`/`users` в зависимости от типа сущности.
-4. Карточка ребёнка вызывает `useChildren.fetchChildDetailsAndScans(childId)`
-   напрямую для истории сканирований, вместо `useScanHistoryMock.js`.
-5. Кнопка «Bearbeiten» на реальной карточке ребёнка ведёт на уже
-   существующий `/child-edit/:id` (`ChildEditView.vue`) — не создавать
-   параллельный редактор.
-6. Маршруты — по аналогии с прототипом, но без суффикса `-prototype`;
-   точные пути финализируются вместе с тикетом 137 (общий namespace
-   `/admin/checkpoints/...`), не обязательно фиксировать в этом тикете
-   изолированно.
+1. Заменить вызов `useScan().createScan(...)` в обработчике кнопки на:
+   `useScanPacket().createPacket('CHECKIN', {})` →
+   `addManual({ id: childId })` → `submitPacket()`.
+2. Сохранить текущий UX: кнопка сразу видна на карточке ребёнка после
+   привязки браслета, один клик — одно действие (пользователь не должен
+   ощущать, что теперь это «пакет» — внутренняя деталь).
+3. Обработка ошибок `submitPacket()` (сеть/сервер) — по аналогии с тем,
+   как это уже сделано в `ScannerCheckinView.vue`/других экранах тикета
+   120 (не изобретать новый паттерн обработки ошибок).
+4. Не менять `isChildPresentToday`/другие read-функции `useScan.js` — они
+   вне охвата этого тикета.
 
 ## Что не входит
 
-- `ChildEditPrototypeView.vue` не переносится вообще (см. п.5 выше).
-- Сами Checkpoint-экраны (List/Bus/Group/Lazy) — тикеты 137–140,
-  используют компоненты этого тикета, но реализуются отдельно.
-- Изменение реальной схемы `children`/`users` — полям
-  «родители»/«телефон ребёнка» из мока не добавляется реальный аналог.
+- Любые изменения `useChildPresence.js`/`Scanner.vue`/`ScannerCheckinView.vue`
+  — не входит.
+- Изменение самой функции `submit_scan_packet()` — уже расширена тикетом
+  132, этот тикет только клиент.
 
 ## Результат выполнения тикета
 
-- Presentational-компоненты и entity-экраны работают на реальных
-  Supabase-данных, визуально эквивалентны прототипу 130_2 (с поправкой
-  на реальные, не выдуманные поля).
+- Клик «Präsenz registrieren» создаёт `scan_packets`-запись типа CHECKIN
+  с одним ребёнком и привязанным `checkpoint_id`, ребёнок появляется в
+  соответствующем Lazy/Checkpoint-экране в реальном времени.
 - `npm run build` проходит без ошибок.
-- Ручная проверка на устройстве/в браузере: открытие карточки реального
-  ребёнка/Betreuer/группы показывает корректные данные.
+- Ручная проверка на устройстве: привязка нового браслета → «Präsenz
+  registrieren» → ребёнок виден как «отметился» в `CheckpointLazyView.vue`
+  (тикет 135) без дополнительных действий администратора.
 
 ## Зависимости
 
-Не требует 132–134/135 напрямую (работает с уже существующими таблицами
-`children`/`users`/`user_group_day`) — может выполняться параллельно с
-132–135. Мягкая связь: если экраны 137–140 к моменту готовности этого
-тикета уже используют `useCheckpoints.js` (135) для сводных данных,
-интеграция entity-ссылок с этими экранами требует и 135. Блокирует 137,
-138, 139, 140 (все используют `ChildLink`/`BetreuerLink`/`GroupLink`).
+Требует 132 (расширенный `submit_scan_packet()`). Не зависит от 133/134/
+135. Блокирует 137.
