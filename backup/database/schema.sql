@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict n2p2oxWmhaE3PJRsHk19z00cWykOPNENnyE2FYROeNc3QIR7LRQM3fd62KacTMd
+\restrict 9h40ZgIKjVfEMgv51QwuMNEZ4voAc6wyVRkwIMGmiP7LFG35LdzTSzgEt93W6xx
 
 -- Dumped from database version 17.4
 -- Dumped by pg_dump version 17.10
@@ -758,6 +758,121 @@ END;
 $$;
 
 
+SET default_tablespace = '';
+
+SET default_table_access_method = heap;
+
+--
+-- Name: checkpoints; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.checkpoints (
+    id bigint NOT NULL,
+    type smallint NOT NULL,
+    day character varying NOT NULL,
+    status smallint DEFAULT 1 NOT NULL,
+    created_by bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    finished_at timestamp with time zone,
+    finished_by bigint,
+    baseline_children_count smallint,
+    CONSTRAINT checkpoints_status_check CHECK ((status = ANY (ARRAY[1, 2]))),
+    CONSTRAINT checkpoints_type_check CHECK ((type = ANY (ARRAY[1, 2, 3])))
+);
+
+
+--
+-- Name: create_checkpoint(smallint, character varying); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.create_checkpoint(p_type smallint, p_day character varying) RETURNS public.checkpoints
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_admin_id bigint;
+  v_existing_id bigint;
+  v_row public.checkpoints;
+BEGIN
+  SELECT id INTO v_admin_id FROM public.users
+  WHERE user_id = auth.uid() AND role = 'admin' AND active = true;
+
+  IF v_admin_id IS NULL THEN
+    RAISE EXCEPTION 'NOT_ADMIN';
+  END IF;
+
+  SELECT id INTO v_existing_id FROM public.checkpoints
+  WHERE day = p_day AND type = p_type AND status = 1;
+
+  IF v_existing_id IS NOT NULL THEN
+    RAISE EXCEPTION 'ALREADY_OPEN' USING DETAIL = v_existing_id::text;
+  END IF;
+
+  INSERT INTO public.checkpoints (type, day, status, created_by)
+  VALUES (p_type, p_day, 1, v_admin_id)
+  RETURNING * INTO v_row;
+
+  RETURN v_row;
+END;
+$$;
+
+
+--
+-- Name: finish_checkpoint(bigint); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.finish_checkpoint(p_id bigint) RETURNS public.checkpoints
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_admin_id bigint;
+  v_row public.checkpoints;
+  v_is_first_of_day boolean;
+  v_baseline smallint;
+BEGIN
+  SELECT id INTO v_admin_id FROM public.users
+  WHERE user_id = auth.uid() AND role = 'admin' AND active = true;
+
+  IF v_admin_id IS NULL THEN
+    RAISE EXCEPTION 'NOT_ADMIN';
+  END IF;
+
+  -- Step 1: close the checkpoint.
+  UPDATE public.checkpoints
+  SET status = 2, finished_at = now(), finished_by = v_admin_id
+  WHERE id = p_id AND status = 1
+  RETURNING * INTO v_row;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'NOT_OPEN';
+  END IF;
+
+  -- Step 2: baseline, only for the first FINISHED checkpoint of the day
+  -- (independent of type - decision.md, "Roster" section: presentRoster is
+  -- fixed by the first roll-call of the day, whichever type it is).
+  SELECT NOT EXISTS (
+    SELECT 1 FROM public.checkpoints
+    WHERE day = v_row.day AND baseline_children_count IS NOT NULL
+  ) INTO v_is_first_of_day;
+
+  IF v_is_first_of_day THEN
+    SELECT COUNT(DISTINCT s.child_id) INTO v_baseline
+    FROM public.scans s
+    JOIN public.scan_packets sp ON sp.id = s.packet_id
+    WHERE sp.checkpoint_id = p_id;
+
+    UPDATE public.checkpoints
+    SET baseline_children_count = v_baseline
+    WHERE id = p_id
+    RETURNING * INTO v_row;
+  END IF;
+
+  RETURN v_row;
+END;
+$$;
+
+
 --
 -- Name: has_role(text); Type: FUNCTION; Schema: public; Owner: -
 --
@@ -1106,6 +1221,85 @@ $$;
 
 
 --
+-- Name: remove_checkpoint(bigint); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.remove_checkpoint(p_id bigint) RETURNS public.checkpoints
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_admin_id bigint;
+  v_row public.checkpoints;
+BEGIN
+  SELECT id INTO v_admin_id FROM public.users
+  WHERE user_id = auth.uid() AND role = 'admin' AND active = true;
+
+  IF v_admin_id IS NULL THEN
+    RAISE EXCEPTION 'NOT_ADMIN';
+  END IF;
+
+  SELECT * INTO v_row FROM public.checkpoints WHERE id = p_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'NOT_FOUND';
+  END IF;
+
+  DELETE FROM public.scans
+  WHERE packet_id IN (SELECT id FROM public.scan_packets WHERE checkpoint_id = p_id);
+
+  DELETE FROM public.scan_packets WHERE checkpoint_id = p_id;
+
+  DELETE FROM public.checkpoints WHERE id = p_id;
+
+  RETURN v_row;
+END;
+$$;
+
+
+--
+-- Name: reopen_checkpoint(bigint); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.reopen_checkpoint(p_id bigint) RETURNS public.checkpoints
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    AS $$
+DECLARE
+  v_admin_id bigint;
+  v_cp public.checkpoints;
+  v_existing_id bigint;
+  v_row public.checkpoints;
+BEGIN
+  SELECT id INTO v_admin_id FROM public.users
+  WHERE user_id = auth.uid() AND role = 'admin' AND active = true;
+
+  IF v_admin_id IS NULL THEN
+    RAISE EXCEPTION 'NOT_ADMIN';
+  END IF;
+
+  SELECT * INTO v_cp FROM public.checkpoints WHERE id = p_id AND status = 2;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'NOT_FINISHED';
+  END IF;
+
+  SELECT id INTO v_existing_id FROM public.checkpoints
+  WHERE day = v_cp.day AND type = v_cp.type AND status = 1;
+
+  IF v_existing_id IS NOT NULL THEN
+    RAISE EXCEPTION 'ALREADY_OPEN' USING DETAIL = v_existing_id::text;
+  END IF;
+
+  UPDATE public.checkpoints
+  SET status = 1, finished_at = NULL, finished_by = NULL
+  WHERE id = p_id
+  RETURNING * INTO v_row;
+
+  RETURN v_row;
+END;
+$$;
+
+
+--
 -- Name: submit_scan_packet(jsonb); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1115,12 +1309,8 @@ CREATE FUNCTION public.submit_scan_packet(payload jsonb) RETURNS TABLE(packet_id
 DECLARE
   v_packet_id bigint;
   v_client_packet_id uuid := (payload->>'client_packet_id')::uuid;
+  v_checkpoint_id bigint;
 BEGIN
-  -- A children[] entry without child_id is not a real-world state (the
-  -- scanning client only ever adds a child it already resolved from its own
-  -- roster, see src/composables/useScanPacket.js) - fail loudly instead of
-  -- silently writing an orphan scans row, same reasoning as the group_id
-  -- guard in on_scan_insert_batch() above.
   IF EXISTS (
     SELECT 1 FROM jsonb_array_elements(COALESCE(payload->'children', '[]'::jsonb)) AS c
     WHERE NULLIF(c->>'child_id', '') IS NULL
@@ -1128,9 +1318,21 @@ BEGIN
     RAISE EXCEPTION 'Packet children[] contains an entry without child_id - payload malformed';
   END IF;
 
+  -- Auto-create/find the open checkpoint of this packet's type/day (see
+  -- race-safety note above). No RAISE EXCEPTION here on purpose - a packet
+  -- is never rejected for lacking a checkpoint, that is the central
+  -- difference from the classic manual-open model (decision.md).
+  INSERT INTO checkpoints (type, day, status, created_by)
+  VALUES ((payload->>'type_code')::smallint, payload->>'date', 1, (payload->>'author_id')::bigint)
+  ON CONFLICT (day, type) WHERE status = 1 DO NOTHING;
+
+  SELECT id INTO v_checkpoint_id FROM checkpoints
+  WHERE day = payload->>'date' AND type = (payload->>'type_code')::smallint AND status = 1
+  ORDER BY id DESC LIMIT 1;
+
   INSERT INTO scan_packets (
     client_packet_id, type, author_id, bus_id, group_id,
-    date, started_at, finished_at, children_count
+    date, started_at, finished_at, children_count, checkpoint_id
   )
   VALUES (
     v_client_packet_id,
@@ -1141,7 +1343,8 @@ BEGIN
     payload->>'date',
     NULLIF(payload->>'started_at', '')::timestamptz,
     (payload->>'finished_at')::timestamptz,
-    jsonb_array_length(COALESCE(payload->'children', '[]'::jsonb))
+    jsonb_array_length(COALESCE(payload->'children', '[]'::jsonb)),
+    v_checkpoint_id
   )
   ON CONFLICT (client_packet_id) DO NOTHING
   RETURNING id INTO v_packet_id;
@@ -3084,10 +3287,6 @@ CREATE FUNCTION supabase_functions.http_request() RETURNS trigger
   $$;
 
 
-SET default_tablespace = '';
-
-SET default_table_access_method = heap;
-
 --
 -- Name: audit_log_entries; Type: TABLE; Schema: auth; Owner: -
 --
@@ -3793,6 +3992,20 @@ ALTER TABLE public.calendar ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY
 
 
 --
+-- Name: checkpoints_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.checkpoints ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME public.checkpoints_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: children; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3995,6 +4208,7 @@ CREATE TABLE public.scan_packets (
     received_at timestamp with time zone DEFAULT now() NOT NULL,
     children_count smallint DEFAULT 0 NOT NULL,
     cancelled_at timestamp with time zone,
+    checkpoint_id bigint,
     CONSTRAINT scan_packets_bus_group_check CHECK ((((type = 1) AND (bus_id IS NOT NULL) AND (group_id IS NULL)) OR ((type = 2) AND (group_id IS NOT NULL) AND (bus_id IS NULL)) OR ((type = 3) AND (bus_id IS NULL) AND (group_id IS NULL)))),
     CONSTRAINT scan_packets_type_check CHECK ((type = ANY (ARRAY[1, 2, 3])))
 );
@@ -4933,6 +5147,14 @@ ALTER TABLE ONLY public.calendar
 
 
 --
+-- Name: checkpoints checkpoints_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.checkpoints
+    ADD CONSTRAINT checkpoints_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: children children_band_id_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5701,6 +5923,13 @@ CREATE INDEX webauthn_credentials_user_id_idx ON auth.webauthn_credentials USING
 
 
 --
+-- Name: checkpoints_open_type_per_day; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX checkpoints_open_type_per_day ON public.checkpoints USING btree (day, type) WHERE (status = 1);
+
+
+--
 -- Name: idx_admin_logs_admin_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5729,6 +5958,13 @@ CREATE INDEX idx_challenges_expires_at ON public.webauthn_challenges USING btree
 
 
 --
+-- Name: idx_checkpoints_day; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_checkpoints_day ON public.checkpoints USING btree (day);
+
+
+--
 -- Name: idx_children_band_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5754,6 +5990,13 @@ CREATE INDEX idx_reset_events_day_type ON public.reset_events USING btree (day, 
 --
 
 CREATE INDEX idx_scan_packets_bus_date ON public.scan_packets USING btree (bus_id, date) WHERE (bus_id IS NOT NULL);
+
+
+--
+-- Name: idx_scan_packets_checkpoint_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_scan_packets_checkpoint_id ON public.scan_packets USING btree (checkpoint_id) WHERE (checkpoint_id IS NOT NULL);
 
 
 --
@@ -6279,6 +6522,22 @@ ALTER TABLE ONLY auth.webauthn_credentials
 
 
 --
+-- Name: checkpoints checkpoints_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.checkpoints
+    ADD CONSTRAINT checkpoints_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id);
+
+
+--
+-- Name: checkpoints checkpoints_finished_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.checkpoints
+    ADD CONSTRAINT checkpoints_finished_by_fkey FOREIGN KEY (finished_by) REFERENCES public.users(id);
+
+
+--
 -- Name: children_today children_today_child_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6300,6 +6559,14 @@ ALTER TABLE ONLY public.reset_events
 
 ALTER TABLE ONLY public.scan_packets
     ADD CONSTRAINT scan_packets_author_id_fkey FOREIGN KEY (author_id) REFERENCES public.users(id);
+
+
+--
+-- Name: scan_packets scan_packets_checkpoint_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.scan_packets
+    ADD CONSTRAINT scan_packets_checkpoint_id_fkey FOREIGN KEY (checkpoint_id) REFERENCES public.checkpoints(id);
 
 
 --
@@ -6740,6 +7007,19 @@ ALTER TABLE public.admin_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.calendar ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: checkpoints; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.checkpoints ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: checkpoints checkpoints_select_authenticated; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY checkpoints_select_authenticated ON public.checkpoints FOR SELECT TO authenticated USING (true);
+
+
+--
 -- Name: children; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -7061,5 +7341,5 @@ CREATE EVENT TRIGGER pgrst_drop_watch ON sql_drop
 -- PostgreSQL database dump complete
 --
 
-\unrestrict n2p2oxWmhaE3PJRsHk19z00cWykOPNENnyE2FYROeNc3QIR7LRQM3fd62KacTMd
+\unrestrict 9h40ZgIKjVfEMgv51QwuMNEZ4voAc6wyVRkwIMGmiP7LFG35LdzTSzgEt93W6xx
 

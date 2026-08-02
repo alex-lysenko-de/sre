@@ -108,6 +108,20 @@ legacy-политики не удалены явной миграцией.
 контроля; но по состоянию на тикет 108 он не везде реально ограничивает
 запись так, как задумано.
 
+## [[checkpoints]] (тикет 132)
+
+Пример таблицы, спроектированной без антипаттерна «неотозванных широких
+legacy-политик» с самого начала, а не исправленной задним числом (как
+`children_today`/`groups_today` — тикет 138): `SELECT` для `authenticated`
+(`USING (true)`), никакой `INSERT`/`UPDATE`/`DELETE`-политики для
+`authenticated` вообще — запись только через `SECURITY DEFINER` RPC
+(`create_checkpoint`/`finish_checkpoint`/`reopen_checkpoint`/
+`remove_checkpoint`, `doc/db/checkpoints.sql`) с явной проверкой
+`role='admin' AND active=true` внутри функции, либо через
+`submit_scan_packet()` (вызывается только Edge Function под `service_role`,
+RLS не применяется). Тот же паттерн, что уже использован для
+`scan_packets` (тикет 122).
+
 ## Связанные заметки
 
 - [[config]]
