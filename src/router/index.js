@@ -230,6 +230,36 @@ const routes = [
         component: () => import('@/views/GroupEntityPrototypeView.vue'),
         meta: { requiresAuth: true, requiresAdmin: true }
     },
+
+    // Ticket 133 - reale Entity-Bildschirme (Kind/Betreuer/Gruppe/
+    // universelle Liste), Supabase statt Mock. Namensraum ohne
+    // -prototype-Suffix, siehe tickets/131/IMPLEMENTATION_PLAN.md, "UI
+    // изменения". List/Bus/Group/Lazy-Checkpoint-Bildschirme folgen in
+    // 134/135 unter demselben /admin/checkpoints/-Namensraum.
+    {
+        path: '/admin/checkpoints/list',
+        name: 'CheckpointEntityList',
+        component: () => import('@/views/EntityListView.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
+        path: '/admin/checkpoints/child/:id',
+        name: 'CheckpointChildCard',
+        component: () => import('@/views/ChildCardView.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
+        path: '/admin/checkpoints/betreuer/:id',
+        name: 'CheckpointBetreuerCard',
+        component: () => import('@/views/BetreuerCardView.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
+        path: '/admin/checkpoints/group-entity/:id',
+        name: 'CheckpointGroupEntity',
+        component: () => import('@/views/GroupEntityView.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true }
+    },
 ]
 
 const router = createRouter({

@@ -113,6 +113,59 @@ export function useChildren() {
         return data;
     };
 
+    /**
+     * Ticket 133 - reales Pendant zu useChildEntityMock.getChildById(): ein
+     * Kind anhand der id, Feldnamen an ChildDetailView.vue orientiert.
+     * parentA/parentB/phone aus dem Mock existieren in der echten Tabelle
+     * nicht (tickets/133/133.txt, "Что не входит").
+     * @param {number} id - ID des Kindes
+     */
+    const getChildById = async (id) => {
+        const { data, error } = await supabase
+            .from('children')
+            .select('id, name, age, schwimmer, notes, group_id, band_id, bus_id, last_scan_at')
+            .eq('id', id)
+            .maybeSingle();
+
+        if (error) {
+            console.error('Fehler beim Abrufen des Kindes:', error);
+            throw new Error(error.message);
+        }
+        if (!data) return null;
+
+        return {
+            id : data.id,
+            name : data.name,
+            age : data.age,
+            groupId : data.group_id,
+            busId : data.bus_id,
+            schwimmer : data.schwimmer,
+            band_id : data.band_id,
+            notes : data.notes && data.notes !== '""' ? data.notes : '',
+            last_scan_at : data.last_scan_at
+        };
+    };
+
+    /**
+     * Ticket 133 - reales Pendant zu useChildEntityMock.getChildrenByGroup():
+     * Kurzform {id,name,groupId} fuer ChildLink/EntityListCard (camelCase
+     * groupId, wie im uebernommenen Prototyp-Markup erwartet).
+     * @param {number} groupId - ID der Gruppe
+     */
+    const getChildrenByGroup = async (groupId) => {
+        const { data, error } = await supabase
+            .from('children')
+            .select('id, name, group_id')
+            .eq('group_id', groupId)
+            .order('name', { ascending : true });
+
+        if (error) {
+            console.error('Fehler beim Abrufen der Kinder der Gruppe:', error);
+            throw new Error(error.message);
+        }
+        return (data || []).map(c => ({ id : c.id, name : c.name, groupId : c.group_id }));
+    };
+
 
     /**
      * Ruft eine Liste aller Kinder ab, optional mit Suchbegriff.
@@ -255,6 +308,8 @@ export function useChildren() {
         saveChild,
         deleteChild,
         unbindBracelet,
+        getChildById,
+        getChildrenByGroup,
 
     };
 }
