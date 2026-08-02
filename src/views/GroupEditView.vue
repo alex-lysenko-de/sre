@@ -63,11 +63,6 @@
               Neues Kind hinzufügen
             </button>
 
-            <button v-if="canShowHeadcountButton" class="btn btn-primary btn-lg" @click="goToHeadcount">
-              <font-awesome-icon :icon="['fas', 'clipboard-check']"/>
-              Kopfzählung
-            </button>
-
             <button class="btn btn-secondary btn-lg" @click="goBack">
               <font-awesome-icon :icon="['fas', 'arrow-left']"/>
               Zurück zur Auswahl
@@ -124,9 +119,6 @@ export default {
     children() {
       const groupID = parseInt(this.groupNumber)
       return (this.allChildrenData || []).filter(child => child.group_id === groupID)
-    },
-    canShowHeadcountButton() {
-      return !this.$route.params.id || Number(this.$route.params.id) === this.userStore.userInfo.group_id
     }
   },
   watch : {
@@ -229,10 +221,6 @@ export default {
 
     goBack() {
       this.$router.push('/main')
-    },
-
-    goToHeadcount() {
-      this.$router.push('/headcount')
     }
   }
 }

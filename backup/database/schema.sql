@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 9h40ZgIKjVfEMgv51QwuMNEZ4voAc6wyVRkwIMGmiP7LFG35LdzTSzgEt93W6xx
+\restrict 3mRrCnYWHt2llWp3Og2ZDkhCDK796rFrpL3KOmD1YbTkHyEdf88IlLcglDVlk1J
 
 -- Dumped from database version 17.4
 -- Dumped by pg_dump version 17.10
@@ -1036,74 +1036,6 @@ BEGIN
   RETURN OLD;
 END;
 $$;
-
-
---
--- Name: on_reset_event_insert(); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.on_reset_event_insert() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$DECLARE
-  resets_today INT;
-BEGIN
-  -- Zähle bisherige Resets am gleichen Tag
-  SELECT COUNT(*) INTO resets_today
-  FROM reset_events
-  WHERE day = NEW.day 
-    AND id < NEW.id
-    AND event_type = 1;  -- Nur "normale" Resets zählen
-
-  CASE NEW.event_type
-    -- ========================================
-    -- event_type = 0: TOTAL RESET (Tag schließen)
-    -- ========================================
-    WHEN 0 THEN
-      -- Tabellen komplett leeren
-      DELETE FROM groups_today  WHERE 1=1;
-      DELETE FROM children_today WHERE 1=1;
-      
-      RAISE NOTICE 'Total reset executed: all data cleared';
-
-    -- ========================================
-    -- event_type = 1: NORMAL RESET (Tag öffnen/zwischenzählen)
-    -- ========================================
-    WHEN 1 THEN
-      -- Erster Reset des Tages: _now → _today speichern
-      UPDATE groups_today 
-        SET 
-          children_today = children_now, 
-          children_now = 0
-      WHERE 1=1;  
-        RAISE NOTICE 'First reset of day: saved current counts to today';     
-      UPDATE children_today 
-      SET presence_now = 0
-      WHERE 1=1;
-
-    -- ========================================
-    -- event_type = 2: SOFT RESET (nur _now)
-    -- ========================================
-    WHEN 2 THEN
-      -- Nur aktuelle Anwesenheit zurücksetzen
-      UPDATE children_today 
-      SET presence_now = 0
-      WHERE 1=1;
-      
-      UPDATE groups_today 
-      SET children_now = 0
-      WHERE 1=1;
-      
-      RAISE NOTICE 'Soft reset: only current presence cleared';
-
-    -- ========================================
-    -- Unbekannter event_type
-    -- ========================================
-    ELSE
-      RAISE EXCEPTION 'Unknown event_type: %', NEW.event_type;
-  END CASE;
-
-  RETURN NEW;
-END;$$;
 
 
 --
@@ -6329,13 +6261,6 @@ CREATE TRIGGER trg_on_children_today_update AFTER UPDATE ON public.children_toda
 
 
 --
--- Name: reset_events trg_on_reset_event_insert; Type: TRIGGER; Schema: public; Owner: -
---
-
-CREATE TRIGGER trg_on_reset_event_insert AFTER INSERT ON public.reset_events FOR EACH ROW EXECUTE FUNCTION public.on_reset_event_insert();
-
-
---
 -- Name: scans trg_on_scan_insert; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -7341,5 +7266,5 @@ CREATE EVENT TRIGGER pgrst_drop_watch ON sql_drop
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 9h40ZgIKjVfEMgv51QwuMNEZ4voAc6wyVRkwIMGmiP7LFG35LdzTSzgEt93W6xx
+\unrestrict 3mRrCnYWHt2llWp3Og2ZDkhCDK796rFrpL3KOmD1YbTkHyEdf88IlLcglDVlk1J
 

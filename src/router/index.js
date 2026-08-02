@@ -6,7 +6,6 @@ import InviteGeneratorView from '@/views/InviteGeneratorView.vue'
 import WelcomeView from '@/views/WelcomeView.vue'
 import { supabase } from '@/supabase'
 import { getAuthItem } from '@/modules/storage'
-import ChildrenView from '@/views/ChildrenView.vue'
 import UsersView from '@/views/UsersView.vue'
 import GroupEditView from '@/views/GroupEditView.vue'
 import DaysEditView from '@/views/DaysEditView.vue'
@@ -17,7 +16,6 @@ import SelectChildView from "@/views/SelectChildView.vue"
 import ChildDetailView from "@/views/ChildDetailView.vue"
 import ChildEditView from "@/views/ChildEditView.vue"
 import MainView from "@/views/MainView.vue"
-import AdminBusView from "@/views/AdminBusView.vue";
 
 // Define routes
 const routes = [
@@ -44,19 +42,6 @@ const routes = [
         meta: { requiresAuth: false }
     },
     {
-        path: '/admin-busses',
-        name: 'AdminBus',
-        component: AdminBusView,
-        meta: { requiresAuth: true, requiresAdmin: true}
-    },
-
-    {
-        path: '/children',
-        name: 'Children',
-        component: ChildrenView,
-        meta: { requiresAuth: true, requiresAdmin: true}
-    },
-    {
         path: '/armband/:id',
         name: 'Armband',
         component: ArmbandView,
@@ -78,16 +63,6 @@ const routes = [
         path: '/select-child',
         name: 'SelectChild',
         component: SelectChildView,
-        meta: { requiresAuth: true, requiresAdmin: false }
-    },
-
-    {
-        path: '/headcount',
-        name: 'Headcount',
-        // Lazy wie die Scanner-Routen (Ticket 120) - HeadcountView bindet seit
-        // Ticket 123 Scanner.vue ein, das ueber html5-qrcode einen grossen
-        // Teil zum Bundle beitraegt (siehe tickets/123/IMPLEMENTATION_REPORT.md).
-        component: () => import('@/views/HeadcountView.vue'),
         meta: { requiresAuth: true, requiresAdmin: false }
     },
 
@@ -169,71 +144,9 @@ const routes = [
         meta: { requiresAuth: true }
     },
 
-    // Ticket 130_2 - UI-Prototyp "Checkpoint" (mock-Daten, kein Supabase-
-    // Zugriff). Isolierter Namensraum, ersetzt /admin-busses/-children
-    // nicht - siehe tickets/130_2/IMPLEMENTATION_PLAN.md.
-    {
-        path: '/admin/checkpoints-prototype',
-        name: 'CheckpointListPrototype',
-        component: () => import('@/views/CheckpointListPrototypeView.vue'),
-        meta: { requiresAuth: true, requiresAdmin: true }
-    },
-    {
-        path: '/admin/checkpoints-prototype/bus/:id',
-        name: 'CheckpointBusPrototype',
-        component: () => import('@/views/CheckpointBusPrototypeView.vue'),
-        meta: { requiresAuth: true, requiresAdmin: true }
-    },
-    {
-        path: '/admin/checkpoints-prototype/group/:id',
-        name: 'CheckpointGroupPrototype',
-        component: () => import('@/views/CheckpointGroupPrototypeView.vue'),
-        meta: { requiresAuth: true, requiresAdmin: true }
-    },
-    {
-        path: '/admin/checkpoints-prototype/lazy/:id',
-        name: 'CheckpointLazyPrototype',
-        component: () => import('@/views/CheckpointLazyPrototypeView.vue'),
-        meta: { requiresAuth: true, requiresAdmin: true }
-    },
-
-    // UX-Feedback Runde 4 ("Entity-zentrierte" Ueberarbeitung) - neue,
-    // ueberall wiederverwendbare Entitaeten-Bildschirme (Kind/Betreuer/
-    // Gruppe/universelle Liste), siehe tickets/130_2 Planungsnotizen.
-    {
-        path: '/admin/checkpoints-prototype/list',
-        name: 'CheckpointEntityListPrototype',
-        component: () => import('@/views/EntityListPrototypeView.vue'),
-        meta: { requiresAuth: true, requiresAdmin: true }
-    },
-    {
-        path: '/admin/checkpoints-prototype/child/:id/edit',
-        name: 'CheckpointChildEditPrototype',
-        component: () => import('@/views/ChildEditPrototypeView.vue'),
-        meta: { requiresAuth: true, requiresAdmin: true }
-    },
-    {
-        path: '/admin/checkpoints-prototype/child/:id',
-        name: 'CheckpointChildCardPrototype',
-        component: () => import('@/views/ChildCardPrototypeView.vue'),
-        meta: { requiresAuth: true, requiresAdmin: true }
-    },
-    {
-        path: '/admin/checkpoints-prototype/betreuer/:id',
-        name: 'CheckpointBetreuerCardPrototype',
-        component: () => import('@/views/BetreuerCardPrototypeView.vue'),
-        meta: { requiresAuth: true, requiresAdmin: true }
-    },
-    {
-        path: '/admin/checkpoints-prototype/group-entity/:id',
-        name: 'CheckpointGroupEntityPrototype',
-        component: () => import('@/views/GroupEntityPrototypeView.vue'),
-        meta: { requiresAuth: true, requiresAdmin: true }
-    },
-
     // Ticket 134 - reale Checkpoint-Bildschirme (List/Bus/Group), Supabase
-    // statt Mock. Kein Eintrag in MainView.vue - Direktnavigation per Route,
-    // siehe tickets/134/134.txt Kopfabschnitt (Menu-Umbau erst Ticket 137).
+    // statt Mock. Einzige Einstiegspunkt fuer Admins ueber MainView.vue
+    // (Ticket 137).
     {
         path: '/admin/checkpoints',
         name: 'CheckpointList',

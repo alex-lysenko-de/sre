@@ -55,66 +55,17 @@
             <font-awesome-icon :icon="['fas', 'arrow-right']" />
           </button>
 
-          <!-- Headcount Button -->
-          <button
-              v-if="isAuthenticated && userStore.userInfo.group_id"
-              @click="goToHeadcount"
-              class="btn btn-primary btn-lg d-flex align-items-center justify-content-between"
-          >
-            <span class="d-flex align-items-center">
-              <font-awesome-icon :icon="['fas', 'clipboard-check']" class="me-3" size="2x" />
-              <span>
-                <div class="fw-bold text-start">Kopfzählung</div>
-                <small class="text-white-50">Anwesenheit meiner Gruppe prüfen</small>
-              </span>
-            </span>
-            <font-awesome-icon :icon="['fas', 'arrow-right']" />
-          </button>
-
-          <!-- Admin Overview Button -->
+          <!-- Checkpoints Button (Ticket 137 - einziger Admin-Einstiegspunkt) -->
           <button
               v-if="userStore.isAdmin"
-              @click="goToAdminBus"
-              class="btn btn-warning btn-lg d-flex align-items-center justify-content-between"
-          >
-            <span class="d-flex align-items-center">
-              <font-awesome-icon :icon="['fas', 'bus']" class="me-3" size="2x" />
-              <span>
-                <div class="fw-bold text-start">Busse</div>
-                <small class="opacity-75">Alle Busse verwalten</small>
-              </span>
-            </span>
-            <font-awesome-icon :icon="['fas', 'arrow-right']" />
-          </button>
-
-
-          <!-- Admin Overview Button -->
-          <button
-              v-if="userStore.isAdmin"
-              @click="goToAdminOverview"
-              class="btn btn-warning btn-lg d-flex align-items-center justify-content-between"
-          >
-            <span class="d-flex align-items-center">
-              <font-awesome-icon :icon="['fas', 'chart-line']" class="me-3" size="2x" />
-              <span>
-                <div class="fw-bold text-start">Admin Übersicht</div>
-                <small class="opacity-75">Alle Gruppen verwalten</small>
-              </span>
-            </span>
-            <font-awesome-icon :icon="['fas', 'arrow-right']" />
-          </button>
-
-          <!-- Checkpoints Prototype Button (Ticket 130_2 - UI-Prototyp, mock-Daten) -->
-          <button
-              v-if="userStore.isAdmin"
-              @click="goToCheckpointsPrototype"
+              @click="goToCheckpoints"
               class="btn btn-warning btn-lg d-flex align-items-center justify-content-between"
           >
             <span class="d-flex align-items-center">
               <font-awesome-icon :icon="['fas', 'clipboard-check']" class="me-3" size="2x" />
               <span>
-                <div class="fw-bold text-start">Checkpoints (Prototyp)</div>
-                <small class="opacity-75">Neuer Checkpoint-Bildschirm, nur Mock-Daten</small>
+                <div class="fw-bold text-start">Checkpoints</div>
+                <small class="opacity-75">Anwesenheit verwalten</small>
               </span>
             </span>
             <font-awesome-icon :icon="['fas', 'arrow-right']" />
@@ -274,20 +225,8 @@ function goToMyGroup() {
   router.push(`/group-edit`)
 }
 
-function goToHeadcount() {
-  router.push('/headcount')
-}
-
-function goToAdminBus() {
-  router.push('/admin-busses')
-}
-
-function goToAdminOverview() {
-  router.push('/children')
-}
-
-function goToCheckpointsPrototype() {
-  router.push('/admin/checkpoints-prototype')
+function goToCheckpoints() {
+  router.push('/admin/checkpoints')
 }
 
 function goToScanBus() {
