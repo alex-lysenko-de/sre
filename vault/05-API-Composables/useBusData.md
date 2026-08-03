@@ -1,5 +1,10 @@
 # `useBusData.js`
 
+> **Историческая заметка (тикет 139).** Файл `src/composables/useBusData.js`
+> **удалён тикетом 137** вместе с его единственным потребителем
+> (`AdminBusView.vue`). Ниже — описание для истории; за текущей реализацией
+> подсчёта по автобусам см. [[Checkpoint]] (тип BUS) и `useCheckpoints.js`.
+
 > Источники: `src/composables/useBusData.js`, `doc/db/adminBusView.md`,
 > `doc/AdminBusView_TechTask.md` (оба doc-файла удалены в тикете 118, содержание перенесено сюда).
 

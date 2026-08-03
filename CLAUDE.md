@@ -32,6 +32,14 @@ Vue 3, Pinia, Supabase, LocalForage, Vite/PWA — см. `package.json` за
   `user_group_day`, не персистентные атрибуты пользователя.
 - Таблиц `groups`/`buses` не существует — это просто smallint-номера
   `1..config.total_groups` / `1..config.total_buses`.
+- Дня как отдельного явного действия («Tag starten»/«Tag schließen»,
+  Hard/Soft Reset) больше не существует (тикеты 137/138) — граница дня
+  автоматическая: `children_today`/`groups_today` date-scoped
+  (уникальность `(entity_id, date)`), новый день начинается сам собой с
+  первым сканом новой даты. Перекличка — сущность **Checkpoint**
+  (`checkpoints`, три независимых типа BUS/GROUP/LAZY, авто-создание по
+  первому пакету / explicit-only Finish). См.
+  `vault/02-Предметная-область/Checkpoint.md`.
 
 ## Активное ограничение: секреты в `doc/`
 

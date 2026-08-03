@@ -1,5 +1,13 @@
 # `useChildPresence.js`
 
+> **Историческая заметка (тикет 139).** Файл
+> `src/composables/useChildPresence.js` и его единственный потребитель
+> `HeadcountView.vue` (Kopfzählung) **удалены тикетом 137** — фича признана
+> неудачным экспериментом (тикет 123) и заменена [[Checkpoint]]. RLS-политики
+> `own_group_update_presence_now`/`own_group_insert_presence_now`, описанные
+> ниже, отозваны тикетом 138 (не имели больше потребителя). Ниже — описание
+> для истории.
+
 > Источник: `src/composables/useChildPresence.js`, тикет 106
 > (`tickets/106/IMPLEMENTATION_PLAN.md`, `tickets/106/IMPLEMENTATION_REPORT.md`).
 

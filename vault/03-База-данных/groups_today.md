@@ -1,8 +1,14 @@
 # `groups_today`
 
-> Источник: `doc/table_structure.md` (удалён в тикете 118), `doc/db_triggers.sql`.
+> Источник: `doc/table_structure.md` (удалён в тикете 118),
+> `doc/db_triggers.sql`, `doc/db/date_scoped_daily_tables.sql` (тикет 138 —
+> колонка `date`, подтверждено применённой к боевой БД). Предыдущая версия
+> этой заметки указывала констрейнт `groups_today_user_id_key UNIQUE
+> (user_id)` — **не существует и никогда не существовал в живой схеме**
+> (перепроверено при тикете 138 по `backup/database/schema.sql`; исправлено
+> здесь).
 
-Агрегированные счётчики присутствия по группам на сегодня — производные от
+Агрегированные счётчики присутствия по группам **на дату** — производные от
 [[children_today]], пересчитываются автоматически триггером, а не клиентским
 кодом.
 
@@ -13,30 +19,33 @@ create table public.groups_today (
   group_id smallint not null,
   children_today smallint null default '0'::smallint,
   children_now smallint null default '0'::smallint,
+  date character varying not null default to_char(now(), 'YYYY-MM-DD'), -- Ticket 138
   constraint groups_today_pkey primary key (id),
-  constraint groups_today_group_id_key unique (group_id),
-  constraint groups_today_user_id_key unique (user_id),
+  constraint groups_today_group_id_date_key unique (group_id, date),
   constraint groups_today_user_id_fkey foreign KEY (user_id) references users (id) on update CASCADE on delete CASCADE
 );
 ```
 
 - `children_today` — сколько детей группы были сегодня (`presence_today=1`).
 - `children_now` — сколько присутствуют прямо сейчас (`presence_now=1`).
-- Пересчитывается триггером `on_children_today_change` при каждом
-  INSERT/UPDATE в [[children_today]] (полный `COUNT(*) FILTER` по группе, не
-  инкремент/декремент — см. [[Триггеры]]).
-- Есть вспомогательная функция `recalculate_groups_today()` для ручного
-  восстановления консистентности при необходимости.
+- Пересчитывается триггером `on_children_today_change_batch` при каждой
+  батч-вставке в [[children_today]] (полный `COUNT(*) FILTER` по
+  `(group_id, date)`, не инкремент/декремент — см. [[Триггеры]]).
+- `recalculate_groups_today()` — ручной инструмент восстановления
+  консистентности (не вызывается ни одним триггером/кодом, задокументирован
+  для запуска через Supabase SQL Editor), обновлён тикетом 138 под
+  date-scoped схему.
 
 ## Кто читает
 
-- [[useGroups]].`fetchGroupsData()` — обзорная таблица по всем группам
-  (`ChildrenView`/`GroupEditView`)
-- Экран `AdminBusView` — общая статистика (через `useBusData`, косвенно)
+`useGroups.js`/`AdminBusView.vue` (читали эту таблицу до тикета 137) —
+**удалены**. Актуальный читатель — [[Checkpoint]] (тип GROUP,
+`CheckpointGroupView.vue`) через `useCheckpoints.js`.
 
 ## Связанные заметки
 
 - [[children_today]]
 - [[Триггеры]]
-- [[useGroups]]
+- [[Checkpoint]]
+- [[checkpoints]]
 - [[Группы-и-рабочий-день]]

@@ -20,9 +20,12 @@ CRUD-слой для карточек детей (администрирован
 - `fetchAllChildren()` — полный список для выпадающих списков (`id, name,
   group_id`).
 - `fetchChildrenByGroup(groupId)` — список детей группы (`id, name, age,
-  band_id`), добавлен в тикете 106 для `HeadcountView.vue`.
+  band_id`), добавлен в тикете 106 для удалённого `HeadcountView.vue`
+  (тикет 137); сейчас используется [[Checkpoint]]-composables
+  (`useCheckpoints.js`, `useLazyCheckpointProgress.js`).
 - `fetchChildrenList(searchTerm)` — поиск по имени (`ilike`) **или**
-  `band_id` (точное совпадение) — используется в `ChildrenView.vue`.
+  `band_id` (точное совпадение) — использовался в удалённом
+  `ChildrenView.vue` (тикет 137); актуальные потребители см. ниже.
 - `fetchChildDetailsAndScans(childId)` — карточка ребёнка + последние 50
   записей [[scans]] с человекочитаемым `type_name` (`Präsenz` / `Bus
   (Einstieg)` / `Bus (Ausstieg)` — сопоставление только для отображения,
@@ -38,10 +41,18 @@ CRUD-слой для карточек детей (администрирован
 и превращает его в понятное сообщение о том, что браслет уже занят другим
 ребёнком — вместо технического текста ошибки БД.
 
+## Текущие потребители (тикет 139)
+
+`ChildrenView.vue` удалён тикетом 137. Актуальный список (`^import`,
+проверено грепом): `GroupEditView.vue`, `ChildEditView.vue`,
+`SelectChildView.vue`, `AddEditChildModal.vue`, `ChildCardView.vue`
+(entity-экран, тикет 133), плюс [[Checkpoint]]-composables
+`useCheckpoints.js`/`useLazyCheckpointProgress.js`.
+
 ## Связанные заметки
 
 - [[children]]
 - [[scans]]
 - [[useArmband]]
-- [[useChildPresence]]
+- [[Checkpoint]]
 - [[Идентификация-ребёнка]]
