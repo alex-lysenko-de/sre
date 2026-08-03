@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict vUaUdcdZTcVvlXNdvldgEvuCfmNdC5KbUJ4ZMi3oKRFm244cmbDYIzWNXkl6UfC
+\restrict pyVqBmcupZQAhtax5HV9fLWRXK1AWGrayYx6PgaVqy7lppMj1x4yRbBHEKflLEI
 
 -- Dumped from database version 17.4
 -- Dumped by pg_dump version 17.10
@@ -858,37 +858,6 @@ $$;
 
 
 --
--- Name: on_children_today_change_batch(); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.on_children_today_change_batch() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-  -- Full COUNT(*) FILTER per affected group (not an increment) - same
-  -- race-safety property as the row-level version, just scoped to "every
-  -- distinct group touched by this statement" instead of "one call per row".
-  INSERT INTO groups_today (user_id, group_id, children_today, children_now)
-  SELECT
-    MAX(ct.user_id),
-    ct.group_id,
-    COUNT(*) FILTER (WHERE ct.presence_today = 1),
-    COUNT(*) FILTER (WHERE ct.presence_now = 1)
-  FROM children_today ct
-  WHERE ct.group_id IN (
-    SELECT DISTINCT group_id FROM new_table WHERE group_id IS NOT NULL
-  )
-  GROUP BY ct.group_id
-  ON CONFLICT (group_id) DO UPDATE
-    SET children_today = EXCLUDED.children_today,
-        children_now = EXCLUDED.children_now,
-        user_id = EXCLUDED.user_id;
-  RETURN NULL;
-END;
-$$;
-
-
---
 -- Name: on_children_today_delete(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1026,58 +995,6 @@ $$;
 
 
 --
--- Name: on_scan_insert_batch(); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.on_scan_insert_batch() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-DECLARE
-  v_groupless_child_id bigint;
-BEGIN
-  -- A child with no group assigned is not a real-world state (children are
-  -- provisioned with a group up front, see vault/03-База-данных/children.md) -
-  -- same hard-fail contract as the old row-level on_scan_insert(), which did
-  -- "IF v_group_id IS NULL THEN RAISE EXCEPTION" for the same reason. Kept
-  -- explicit here instead of silently letting the JOIN below drop such rows,
-  -- so a violated assumption is loud, not a silently vanishing scan.
-  SELECT s.child_id INTO v_groupless_child_id
-  FROM new_table s
-  JOIN children c ON c.id = s.child_id
-  WHERE c.group_id IS NULL
-  LIMIT 1;
-
-  IF v_groupless_child_id IS NOT NULL THEN
-    RAISE EXCEPTION 'Child % has no group_id assigned - scan batch rejected', v_groupless_child_id;
-  END IF;
-
-  -- DISTINCT ON guards against two rows for the same child_id within one
-  -- statement (client dedupes within a round via isDuplicate(), but the
-  -- server must not rely on that - INSERT ... ON CONFLICT fails outright if
-  -- the statement itself contains two conflicting rows for the same key).
-  INSERT INTO children_today (
-    user_id, child_id, group_id,
-    presence_today, presence_now, bus_today, bus_now, presence_morning
-  )
-  SELECT DISTINCT ON (s.child_id)
-    s.user_id, s.child_id, c.group_id,
-    1, 1, s.bus_id, s.bus_id,
-    CASE WHEN s.bus_id IS NOT NULL THEN 1 ELSE 0 END
-  FROM new_table s
-  JOIN children c ON c.id = s.child_id
-  ORDER BY s.child_id, s.created_at DESC
-  ON CONFLICT (child_id) DO UPDATE
-    SET presence_now = 1,
-        bus_now = EXCLUDED.bus_now,
-        user_id = EXCLUDED.user_id;
-    -- presence_morning intentionally not in the SET list, same invariant as
-    -- the row-level version (ticket 106, doc/db/headcount_presence_morning.sql)
-  RETURN NULL; -- statement-level trigger, NEW/OLD are not available
-END;
-$$;
-
-
---
 -- Name: recalculate_groups_today(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1101,72 +1018,6 @@ BEGIN
       user_id = EXCLUDED.user_id;
       
   RAISE NOTICE 'groups_today recalculated successfully';
-END;
-$$;
-
-
---
--- Name: submit_scan_packet(jsonb); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.submit_scan_packet(payload jsonb) RETURNS TABLE(packet_id bigint, created boolean)
-    LANGUAGE plpgsql
-    AS $$
-DECLARE
-  v_packet_id bigint;
-  v_client_packet_id uuid := (payload->>'client_packet_id')::uuid;
-BEGIN
-  -- A children[] entry without child_id is not a real-world state (the
-  -- scanning client only ever adds a child it already resolved from its own
-  -- roster, see src/composables/useScanPacket.js) - fail loudly instead of
-  -- silently writing an orphan scans row, same reasoning as the group_id
-  -- guard in on_scan_insert_batch() above.
-  IF EXISTS (
-    SELECT 1 FROM jsonb_array_elements(COALESCE(payload->'children', '[]'::jsonb)) AS c
-    WHERE NULLIF(c->>'child_id', '') IS NULL
-  ) THEN
-    RAISE EXCEPTION 'Packet children[] contains an entry without child_id - payload malformed';
-  END IF;
-
-  INSERT INTO scan_packets (
-    client_packet_id, type, author_id, bus_id, group_id,
-    date, started_at, finished_at, children_count
-  )
-  VALUES (
-    v_client_packet_id,
-    (payload->>'type_code')::smallint,
-    (payload->>'author_id')::bigint,
-    NULLIF(payload->>'bus_id', '')::smallint,
-    NULLIF(payload->>'group_id', '')::smallint,
-    payload->>'date',
-    NULLIF(payload->>'started_at', '')::timestamptz,
-    (payload->>'finished_at')::timestamptz,
-    jsonb_array_length(COALESCE(payload->'children', '[]'::jsonb))
-  )
-  ON CONFLICT (client_packet_id) DO NOTHING
-  RETURNING id INTO v_packet_id;
-
-  IF v_packet_id IS NULL THEN
-    -- Already exists: either a retry after a lost response, or a race between
-    -- two simultaneous retries (either way - do not create again).
-    SELECT id INTO v_packet_id FROM scan_packets WHERE client_packet_id = v_client_packet_id;
-    RETURN QUERY SELECT v_packet_id, false;
-    RETURN;
-  END IF;
-
-  INSERT INTO scans (date, user_id, child_id, bus_id, type, packet_id, method, created_at)
-  SELECT
-    payload->>'date',
-    (payload->>'author_id')::bigint,
-    (c->>'child_id')::bigint,
-    NULLIF(payload->>'bus_id', '')::smallint,
-    1,
-    v_packet_id,
-    CASE WHEN c->>'method' = 'MANUAL' THEN 2 ELSE 1 END,
-    COALESCE(NULLIF(c->>'timestamp', '')::timestamptz, now())
-  FROM jsonb_array_elements(COALESCE(payload->'children', '[]'::jsonb)) AS c;
-
-  RETURN QUERY SELECT v_packet_id, true;
 END;
 $$;
 
@@ -3979,42 +3830,6 @@ ALTER TABLE public.reset_events ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDEN
 
 
 --
--- Name: scan_packets; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.scan_packets (
-    id bigint NOT NULL,
-    client_packet_id uuid NOT NULL,
-    type smallint NOT NULL,
-    author_id bigint NOT NULL,
-    bus_id smallint,
-    group_id smallint,
-    date character varying NOT NULL,
-    started_at timestamp with time zone,
-    finished_at timestamp with time zone NOT NULL,
-    received_at timestamp with time zone DEFAULT now() NOT NULL,
-    children_count smallint DEFAULT 0 NOT NULL,
-    cancelled_at timestamp with time zone,
-    CONSTRAINT scan_packets_bus_group_check CHECK ((((type = 1) AND (bus_id IS NOT NULL) AND (group_id IS NULL)) OR ((type = 2) AND (group_id IS NOT NULL) AND (bus_id IS NULL)) OR ((type = 3) AND (bus_id IS NULL) AND (group_id IS NULL)))),
-    CONSTRAINT scan_packets_type_check CHECK ((type = ANY (ARRAY[1, 2, 3])))
-);
-
-
---
--- Name: scan_packets_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
-
-ALTER TABLE public.scan_packets ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
-    SEQUENCE NAME public.scan_packets_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1
-);
-
-
---
 -- Name: scan_type; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4036,9 +3851,7 @@ CREATE TABLE public.scans (
     child_id bigint,
     band_id bigint,
     bus_id smallint,
-    type smallint DEFAULT '1'::smallint,
-    packet_id bigint,
-    method smallint DEFAULT 1 NOT NULL
+    type smallint DEFAULT '1'::smallint
 );
 
 
@@ -4200,10 +4013,10 @@ PARTITION BY RANGE (inserted_at);
 
 
 --
--- Name: messages_2026_07_26; Type: TABLE; Schema: realtime; Owner: -
+-- Name: messages_2026_07_18; Type: TABLE; Schema: realtime; Owner: -
 --
 
-CREATE TABLE realtime.messages_2026_07_26 (
+CREATE TABLE realtime.messages_2026_07_18 (
     topic text NOT NULL,
     extension text NOT NULL,
     payload jsonb,
@@ -4218,10 +4031,10 @@ CREATE TABLE realtime.messages_2026_07_26 (
 
 
 --
--- Name: messages_2026_07_27; Type: TABLE; Schema: realtime; Owner: -
+-- Name: messages_2026_07_19; Type: TABLE; Schema: realtime; Owner: -
 --
 
-CREATE TABLE realtime.messages_2026_07_27 (
+CREATE TABLE realtime.messages_2026_07_19 (
     topic text NOT NULL,
     extension text NOT NULL,
     payload jsonb,
@@ -4236,10 +4049,10 @@ CREATE TABLE realtime.messages_2026_07_27 (
 
 
 --
--- Name: messages_2026_07_28; Type: TABLE; Schema: realtime; Owner: -
+-- Name: messages_2026_07_20; Type: TABLE; Schema: realtime; Owner: -
 --
 
-CREATE TABLE realtime.messages_2026_07_28 (
+CREATE TABLE realtime.messages_2026_07_20 (
     topic text NOT NULL,
     extension text NOT NULL,
     payload jsonb,
@@ -4254,10 +4067,10 @@ CREATE TABLE realtime.messages_2026_07_28 (
 
 
 --
--- Name: messages_2026_07_29; Type: TABLE; Schema: realtime; Owner: -
+-- Name: messages_2026_07_21; Type: TABLE; Schema: realtime; Owner: -
 --
 
-CREATE TABLE realtime.messages_2026_07_29 (
+CREATE TABLE realtime.messages_2026_07_21 (
     topic text NOT NULL,
     extension text NOT NULL,
     payload jsonb,
@@ -4272,10 +4085,10 @@ CREATE TABLE realtime.messages_2026_07_29 (
 
 
 --
--- Name: messages_2026_07_30; Type: TABLE; Schema: realtime; Owner: -
+-- Name: messages_2026_07_22; Type: TABLE; Schema: realtime; Owner: -
 --
 
-CREATE TABLE realtime.messages_2026_07_30 (
+CREATE TABLE realtime.messages_2026_07_22 (
     topic text NOT NULL,
     extension text NOT NULL,
     payload jsonb,
@@ -4290,10 +4103,10 @@ CREATE TABLE realtime.messages_2026_07_30 (
 
 
 --
--- Name: messages_2026_07_31; Type: TABLE; Schema: realtime; Owner: -
+-- Name: messages_2026_07_23; Type: TABLE; Schema: realtime; Owner: -
 --
 
-CREATE TABLE realtime.messages_2026_07_31 (
+CREATE TABLE realtime.messages_2026_07_23 (
     topic text NOT NULL,
     extension text NOT NULL,
     payload jsonb,
@@ -4308,10 +4121,10 @@ CREATE TABLE realtime.messages_2026_07_31 (
 
 
 --
--- Name: messages_2026_08_01; Type: TABLE; Schema: realtime; Owner: -
+-- Name: messages_2026_07_24; Type: TABLE; Schema: realtime; Owner: -
 --
 
-CREATE TABLE realtime.messages_2026_08_01 (
+CREATE TABLE realtime.messages_2026_07_24 (
     topic text NOT NULL,
     extension text NOT NULL,
     payload jsonb,
@@ -4583,52 +4396,52 @@ CREATE TABLE supabase_migrations.seed_files (
 
 
 --
--- Name: messages_2026_07_26; Type: TABLE ATTACH; Schema: realtime; Owner: -
+-- Name: messages_2026_07_18; Type: TABLE ATTACH; Schema: realtime; Owner: -
 --
 
-ALTER TABLE ONLY realtime.messages ATTACH PARTITION realtime.messages_2026_07_26 FOR VALUES FROM ('2026-07-26 00:00:00') TO ('2026-07-27 00:00:00');
-
-
---
--- Name: messages_2026_07_27; Type: TABLE ATTACH; Schema: realtime; Owner: -
---
-
-ALTER TABLE ONLY realtime.messages ATTACH PARTITION realtime.messages_2026_07_27 FOR VALUES FROM ('2026-07-27 00:00:00') TO ('2026-07-28 00:00:00');
+ALTER TABLE ONLY realtime.messages ATTACH PARTITION realtime.messages_2026_07_18 FOR VALUES FROM ('2026-07-18 00:00:00') TO ('2026-07-19 00:00:00');
 
 
 --
--- Name: messages_2026_07_28; Type: TABLE ATTACH; Schema: realtime; Owner: -
+-- Name: messages_2026_07_19; Type: TABLE ATTACH; Schema: realtime; Owner: -
 --
 
-ALTER TABLE ONLY realtime.messages ATTACH PARTITION realtime.messages_2026_07_28 FOR VALUES FROM ('2026-07-28 00:00:00') TO ('2026-07-29 00:00:00');
-
-
---
--- Name: messages_2026_07_29; Type: TABLE ATTACH; Schema: realtime; Owner: -
---
-
-ALTER TABLE ONLY realtime.messages ATTACH PARTITION realtime.messages_2026_07_29 FOR VALUES FROM ('2026-07-29 00:00:00') TO ('2026-07-30 00:00:00');
+ALTER TABLE ONLY realtime.messages ATTACH PARTITION realtime.messages_2026_07_19 FOR VALUES FROM ('2026-07-19 00:00:00') TO ('2026-07-20 00:00:00');
 
 
 --
--- Name: messages_2026_07_30; Type: TABLE ATTACH; Schema: realtime; Owner: -
+-- Name: messages_2026_07_20; Type: TABLE ATTACH; Schema: realtime; Owner: -
 --
 
-ALTER TABLE ONLY realtime.messages ATTACH PARTITION realtime.messages_2026_07_30 FOR VALUES FROM ('2026-07-30 00:00:00') TO ('2026-07-31 00:00:00');
-
-
---
--- Name: messages_2026_07_31; Type: TABLE ATTACH; Schema: realtime; Owner: -
---
-
-ALTER TABLE ONLY realtime.messages ATTACH PARTITION realtime.messages_2026_07_31 FOR VALUES FROM ('2026-07-31 00:00:00') TO ('2026-08-01 00:00:00');
+ALTER TABLE ONLY realtime.messages ATTACH PARTITION realtime.messages_2026_07_20 FOR VALUES FROM ('2026-07-20 00:00:00') TO ('2026-07-21 00:00:00');
 
 
 --
--- Name: messages_2026_08_01; Type: TABLE ATTACH; Schema: realtime; Owner: -
+-- Name: messages_2026_07_21; Type: TABLE ATTACH; Schema: realtime; Owner: -
 --
 
-ALTER TABLE ONLY realtime.messages ATTACH PARTITION realtime.messages_2026_08_01 FOR VALUES FROM ('2026-08-01 00:00:00') TO ('2026-08-02 00:00:00');
+ALTER TABLE ONLY realtime.messages ATTACH PARTITION realtime.messages_2026_07_21 FOR VALUES FROM ('2026-07-21 00:00:00') TO ('2026-07-22 00:00:00');
+
+
+--
+-- Name: messages_2026_07_22; Type: TABLE ATTACH; Schema: realtime; Owner: -
+--
+
+ALTER TABLE ONLY realtime.messages ATTACH PARTITION realtime.messages_2026_07_22 FOR VALUES FROM ('2026-07-22 00:00:00') TO ('2026-07-23 00:00:00');
+
+
+--
+-- Name: messages_2026_07_23; Type: TABLE ATTACH; Schema: realtime; Owner: -
+--
+
+ALTER TABLE ONLY realtime.messages ATTACH PARTITION realtime.messages_2026_07_23 FOR VALUES FROM ('2026-07-23 00:00:00') TO ('2026-07-24 00:00:00');
+
+
+--
+-- Name: messages_2026_07_24; Type: TABLE ATTACH; Schema: realtime; Owner: -
+--
+
+ALTER TABLE ONLY realtime.messages ATTACH PARTITION realtime.messages_2026_07_24 FOR VALUES FROM ('2026-07-24 00:00:00') TO ('2026-07-25 00:00:00');
 
 
 --
@@ -5021,22 +4834,6 @@ ALTER TABLE ONLY public.reset_events
 
 
 --
--- Name: scan_packets scan_packets_client_packet_id_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.scan_packets
-    ADD CONSTRAINT scan_packets_client_packet_id_key UNIQUE (client_packet_id);
-
-
---
--- Name: scan_packets scan_packets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.scan_packets
-    ADD CONSTRAINT scan_packets_pkey PRIMARY KEY (id);
-
-
---
 -- Name: scan_type scan_type_id_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5125,59 +4922,59 @@ ALTER TABLE ONLY realtime.messages
 
 
 --
--- Name: messages_2026_07_26 messages_2026_07_26_pkey; Type: CONSTRAINT; Schema: realtime; Owner: -
+-- Name: messages_2026_07_18 messages_2026_07_18_pkey; Type: CONSTRAINT; Schema: realtime; Owner: -
 --
 
-ALTER TABLE ONLY realtime.messages_2026_07_26
-    ADD CONSTRAINT messages_2026_07_26_pkey PRIMARY KEY (id, inserted_at);
-
-
---
--- Name: messages_2026_07_27 messages_2026_07_27_pkey; Type: CONSTRAINT; Schema: realtime; Owner: -
---
-
-ALTER TABLE ONLY realtime.messages_2026_07_27
-    ADD CONSTRAINT messages_2026_07_27_pkey PRIMARY KEY (id, inserted_at);
+ALTER TABLE ONLY realtime.messages_2026_07_18
+    ADD CONSTRAINT messages_2026_07_18_pkey PRIMARY KEY (id, inserted_at);
 
 
 --
--- Name: messages_2026_07_28 messages_2026_07_28_pkey; Type: CONSTRAINT; Schema: realtime; Owner: -
+-- Name: messages_2026_07_19 messages_2026_07_19_pkey; Type: CONSTRAINT; Schema: realtime; Owner: -
 --
 
-ALTER TABLE ONLY realtime.messages_2026_07_28
-    ADD CONSTRAINT messages_2026_07_28_pkey PRIMARY KEY (id, inserted_at);
-
-
---
--- Name: messages_2026_07_29 messages_2026_07_29_pkey; Type: CONSTRAINT; Schema: realtime; Owner: -
---
-
-ALTER TABLE ONLY realtime.messages_2026_07_29
-    ADD CONSTRAINT messages_2026_07_29_pkey PRIMARY KEY (id, inserted_at);
+ALTER TABLE ONLY realtime.messages_2026_07_19
+    ADD CONSTRAINT messages_2026_07_19_pkey PRIMARY KEY (id, inserted_at);
 
 
 --
--- Name: messages_2026_07_30 messages_2026_07_30_pkey; Type: CONSTRAINT; Schema: realtime; Owner: -
+-- Name: messages_2026_07_20 messages_2026_07_20_pkey; Type: CONSTRAINT; Schema: realtime; Owner: -
 --
 
-ALTER TABLE ONLY realtime.messages_2026_07_30
-    ADD CONSTRAINT messages_2026_07_30_pkey PRIMARY KEY (id, inserted_at);
-
-
---
--- Name: messages_2026_07_31 messages_2026_07_31_pkey; Type: CONSTRAINT; Schema: realtime; Owner: -
---
-
-ALTER TABLE ONLY realtime.messages_2026_07_31
-    ADD CONSTRAINT messages_2026_07_31_pkey PRIMARY KEY (id, inserted_at);
+ALTER TABLE ONLY realtime.messages_2026_07_20
+    ADD CONSTRAINT messages_2026_07_20_pkey PRIMARY KEY (id, inserted_at);
 
 
 --
--- Name: messages_2026_08_01 messages_2026_08_01_pkey; Type: CONSTRAINT; Schema: realtime; Owner: -
+-- Name: messages_2026_07_21 messages_2026_07_21_pkey; Type: CONSTRAINT; Schema: realtime; Owner: -
 --
 
-ALTER TABLE ONLY realtime.messages_2026_08_01
-    ADD CONSTRAINT messages_2026_08_01_pkey PRIMARY KEY (id, inserted_at);
+ALTER TABLE ONLY realtime.messages_2026_07_21
+    ADD CONSTRAINT messages_2026_07_21_pkey PRIMARY KEY (id, inserted_at);
+
+
+--
+-- Name: messages_2026_07_22 messages_2026_07_22_pkey; Type: CONSTRAINT; Schema: realtime; Owner: -
+--
+
+ALTER TABLE ONLY realtime.messages_2026_07_22
+    ADD CONSTRAINT messages_2026_07_22_pkey PRIMARY KEY (id, inserted_at);
+
+
+--
+-- Name: messages_2026_07_23 messages_2026_07_23_pkey; Type: CONSTRAINT; Schema: realtime; Owner: -
+--
+
+ALTER TABLE ONLY realtime.messages_2026_07_23
+    ADD CONSTRAINT messages_2026_07_23_pkey PRIMARY KEY (id, inserted_at);
+
+
+--
+-- Name: messages_2026_07_24 messages_2026_07_24_pkey; Type: CONSTRAINT; Schema: realtime; Owner: -
+--
+
+ALTER TABLE ONLY realtime.messages_2026_07_24
+    ADD CONSTRAINT messages_2026_07_24_pkey PRIMARY KEY (id, inserted_at);
 
 
 --
@@ -5750,20 +5547,6 @@ CREATE INDEX idx_reset_events_day_type ON public.reset_events USING btree (day, 
 
 
 --
--- Name: idx_scan_packets_bus_date; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_scan_packets_bus_date ON public.scan_packets USING btree (bus_id, date) WHERE (bus_id IS NOT NULL);
-
-
---
--- Name: idx_scan_packets_group_date; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_scan_packets_group_date ON public.scan_packets USING btree (group_id, date) WHERE (group_id IS NOT NULL);
-
-
---
 -- Name: idx_scans_band_date; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5775,13 +5558,6 @@ CREATE INDEX idx_scans_band_date ON public.scans USING btree (band_id, date);
 --
 
 CREATE INDEX idx_scans_child_date ON public.scans USING btree (child_id, date);
-
-
---
--- Name: idx_scans_packet_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_scans_packet_id ON public.scans USING btree (packet_id) WHERE (packet_id IS NOT NULL);
 
 
 --
@@ -5841,52 +5617,52 @@ CREATE INDEX messages_inserted_at_topic_index ON ONLY realtime.messages USING bt
 
 
 --
--- Name: messages_2026_07_26_inserted_at_topic_idx; Type: INDEX; Schema: realtime; Owner: -
+-- Name: messages_2026_07_18_inserted_at_topic_idx; Type: INDEX; Schema: realtime; Owner: -
 --
 
-CREATE INDEX messages_2026_07_26_inserted_at_topic_idx ON realtime.messages_2026_07_26 USING btree (inserted_at DESC, topic) WHERE ((extension = 'broadcast'::text) AND (private IS TRUE));
-
-
---
--- Name: messages_2026_07_27_inserted_at_topic_idx; Type: INDEX; Schema: realtime; Owner: -
---
-
-CREATE INDEX messages_2026_07_27_inserted_at_topic_idx ON realtime.messages_2026_07_27 USING btree (inserted_at DESC, topic) WHERE ((extension = 'broadcast'::text) AND (private IS TRUE));
+CREATE INDEX messages_2026_07_18_inserted_at_topic_idx ON realtime.messages_2026_07_18 USING btree (inserted_at DESC, topic) WHERE ((extension = 'broadcast'::text) AND (private IS TRUE));
 
 
 --
--- Name: messages_2026_07_28_inserted_at_topic_idx; Type: INDEX; Schema: realtime; Owner: -
+-- Name: messages_2026_07_19_inserted_at_topic_idx; Type: INDEX; Schema: realtime; Owner: -
 --
 
-CREATE INDEX messages_2026_07_28_inserted_at_topic_idx ON realtime.messages_2026_07_28 USING btree (inserted_at DESC, topic) WHERE ((extension = 'broadcast'::text) AND (private IS TRUE));
-
-
---
--- Name: messages_2026_07_29_inserted_at_topic_idx; Type: INDEX; Schema: realtime; Owner: -
---
-
-CREATE INDEX messages_2026_07_29_inserted_at_topic_idx ON realtime.messages_2026_07_29 USING btree (inserted_at DESC, topic) WHERE ((extension = 'broadcast'::text) AND (private IS TRUE));
+CREATE INDEX messages_2026_07_19_inserted_at_topic_idx ON realtime.messages_2026_07_19 USING btree (inserted_at DESC, topic) WHERE ((extension = 'broadcast'::text) AND (private IS TRUE));
 
 
 --
--- Name: messages_2026_07_30_inserted_at_topic_idx; Type: INDEX; Schema: realtime; Owner: -
+-- Name: messages_2026_07_20_inserted_at_topic_idx; Type: INDEX; Schema: realtime; Owner: -
 --
 
-CREATE INDEX messages_2026_07_30_inserted_at_topic_idx ON realtime.messages_2026_07_30 USING btree (inserted_at DESC, topic) WHERE ((extension = 'broadcast'::text) AND (private IS TRUE));
-
-
---
--- Name: messages_2026_07_31_inserted_at_topic_idx; Type: INDEX; Schema: realtime; Owner: -
---
-
-CREATE INDEX messages_2026_07_31_inserted_at_topic_idx ON realtime.messages_2026_07_31 USING btree (inserted_at DESC, topic) WHERE ((extension = 'broadcast'::text) AND (private IS TRUE));
+CREATE INDEX messages_2026_07_20_inserted_at_topic_idx ON realtime.messages_2026_07_20 USING btree (inserted_at DESC, topic) WHERE ((extension = 'broadcast'::text) AND (private IS TRUE));
 
 
 --
--- Name: messages_2026_08_01_inserted_at_topic_idx; Type: INDEX; Schema: realtime; Owner: -
+-- Name: messages_2026_07_21_inserted_at_topic_idx; Type: INDEX; Schema: realtime; Owner: -
 --
 
-CREATE INDEX messages_2026_08_01_inserted_at_topic_idx ON realtime.messages_2026_08_01 USING btree (inserted_at DESC, topic) WHERE ((extension = 'broadcast'::text) AND (private IS TRUE));
+CREATE INDEX messages_2026_07_21_inserted_at_topic_idx ON realtime.messages_2026_07_21 USING btree (inserted_at DESC, topic) WHERE ((extension = 'broadcast'::text) AND (private IS TRUE));
+
+
+--
+-- Name: messages_2026_07_22_inserted_at_topic_idx; Type: INDEX; Schema: realtime; Owner: -
+--
+
+CREATE INDEX messages_2026_07_22_inserted_at_topic_idx ON realtime.messages_2026_07_22 USING btree (inserted_at DESC, topic) WHERE ((extension = 'broadcast'::text) AND (private IS TRUE));
+
+
+--
+-- Name: messages_2026_07_23_inserted_at_topic_idx; Type: INDEX; Schema: realtime; Owner: -
+--
+
+CREATE INDEX messages_2026_07_23_inserted_at_topic_idx ON realtime.messages_2026_07_23 USING btree (inserted_at DESC, topic) WHERE ((extension = 'broadcast'::text) AND (private IS TRUE));
+
+
+--
+-- Name: messages_2026_07_24_inserted_at_topic_idx; Type: INDEX; Schema: realtime; Owner: -
+--
+
+CREATE INDEX messages_2026_07_24_inserted_at_topic_idx ON realtime.messages_2026_07_24 USING btree (inserted_at DESC, topic) WHERE ((extension = 'broadcast'::text) AND (private IS TRUE));
 
 
 --
@@ -5967,101 +5743,108 @@ CREATE INDEX supabase_functions_hooks_request_id_idx ON supabase_functions.hooks
 
 
 --
--- Name: messages_2026_07_26_inserted_at_topic_idx; Type: INDEX ATTACH; Schema: realtime; Owner: -
+-- Name: messages_2026_07_18_inserted_at_topic_idx; Type: INDEX ATTACH; Schema: realtime; Owner: -
 --
 
-ALTER INDEX realtime.messages_inserted_at_topic_index ATTACH PARTITION realtime.messages_2026_07_26_inserted_at_topic_idx;
-
-
---
--- Name: messages_2026_07_26_pkey; Type: INDEX ATTACH; Schema: realtime; Owner: -
---
-
-ALTER INDEX realtime.messages_pkey ATTACH PARTITION realtime.messages_2026_07_26_pkey;
+ALTER INDEX realtime.messages_inserted_at_topic_index ATTACH PARTITION realtime.messages_2026_07_18_inserted_at_topic_idx;
 
 
 --
--- Name: messages_2026_07_27_inserted_at_topic_idx; Type: INDEX ATTACH; Schema: realtime; Owner: -
+-- Name: messages_2026_07_18_pkey; Type: INDEX ATTACH; Schema: realtime; Owner: -
 --
 
-ALTER INDEX realtime.messages_inserted_at_topic_index ATTACH PARTITION realtime.messages_2026_07_27_inserted_at_topic_idx;
-
-
---
--- Name: messages_2026_07_27_pkey; Type: INDEX ATTACH; Schema: realtime; Owner: -
---
-
-ALTER INDEX realtime.messages_pkey ATTACH PARTITION realtime.messages_2026_07_27_pkey;
+ALTER INDEX realtime.messages_pkey ATTACH PARTITION realtime.messages_2026_07_18_pkey;
 
 
 --
--- Name: messages_2026_07_28_inserted_at_topic_idx; Type: INDEX ATTACH; Schema: realtime; Owner: -
+-- Name: messages_2026_07_19_inserted_at_topic_idx; Type: INDEX ATTACH; Schema: realtime; Owner: -
 --
 
-ALTER INDEX realtime.messages_inserted_at_topic_index ATTACH PARTITION realtime.messages_2026_07_28_inserted_at_topic_idx;
-
-
---
--- Name: messages_2026_07_28_pkey; Type: INDEX ATTACH; Schema: realtime; Owner: -
---
-
-ALTER INDEX realtime.messages_pkey ATTACH PARTITION realtime.messages_2026_07_28_pkey;
+ALTER INDEX realtime.messages_inserted_at_topic_index ATTACH PARTITION realtime.messages_2026_07_19_inserted_at_topic_idx;
 
 
 --
--- Name: messages_2026_07_29_inserted_at_topic_idx; Type: INDEX ATTACH; Schema: realtime; Owner: -
+-- Name: messages_2026_07_19_pkey; Type: INDEX ATTACH; Schema: realtime; Owner: -
 --
 
-ALTER INDEX realtime.messages_inserted_at_topic_index ATTACH PARTITION realtime.messages_2026_07_29_inserted_at_topic_idx;
-
-
---
--- Name: messages_2026_07_29_pkey; Type: INDEX ATTACH; Schema: realtime; Owner: -
---
-
-ALTER INDEX realtime.messages_pkey ATTACH PARTITION realtime.messages_2026_07_29_pkey;
+ALTER INDEX realtime.messages_pkey ATTACH PARTITION realtime.messages_2026_07_19_pkey;
 
 
 --
--- Name: messages_2026_07_30_inserted_at_topic_idx; Type: INDEX ATTACH; Schema: realtime; Owner: -
+-- Name: messages_2026_07_20_inserted_at_topic_idx; Type: INDEX ATTACH; Schema: realtime; Owner: -
 --
 
-ALTER INDEX realtime.messages_inserted_at_topic_index ATTACH PARTITION realtime.messages_2026_07_30_inserted_at_topic_idx;
-
-
---
--- Name: messages_2026_07_30_pkey; Type: INDEX ATTACH; Schema: realtime; Owner: -
---
-
-ALTER INDEX realtime.messages_pkey ATTACH PARTITION realtime.messages_2026_07_30_pkey;
+ALTER INDEX realtime.messages_inserted_at_topic_index ATTACH PARTITION realtime.messages_2026_07_20_inserted_at_topic_idx;
 
 
 --
--- Name: messages_2026_07_31_inserted_at_topic_idx; Type: INDEX ATTACH; Schema: realtime; Owner: -
+-- Name: messages_2026_07_20_pkey; Type: INDEX ATTACH; Schema: realtime; Owner: -
 --
 
-ALTER INDEX realtime.messages_inserted_at_topic_index ATTACH PARTITION realtime.messages_2026_07_31_inserted_at_topic_idx;
-
-
---
--- Name: messages_2026_07_31_pkey; Type: INDEX ATTACH; Schema: realtime; Owner: -
---
-
-ALTER INDEX realtime.messages_pkey ATTACH PARTITION realtime.messages_2026_07_31_pkey;
+ALTER INDEX realtime.messages_pkey ATTACH PARTITION realtime.messages_2026_07_20_pkey;
 
 
 --
--- Name: messages_2026_08_01_inserted_at_topic_idx; Type: INDEX ATTACH; Schema: realtime; Owner: -
+-- Name: messages_2026_07_21_inserted_at_topic_idx; Type: INDEX ATTACH; Schema: realtime; Owner: -
 --
 
-ALTER INDEX realtime.messages_inserted_at_topic_index ATTACH PARTITION realtime.messages_2026_08_01_inserted_at_topic_idx;
+ALTER INDEX realtime.messages_inserted_at_topic_index ATTACH PARTITION realtime.messages_2026_07_21_inserted_at_topic_idx;
 
 
 --
--- Name: messages_2026_08_01_pkey; Type: INDEX ATTACH; Schema: realtime; Owner: -
+-- Name: messages_2026_07_21_pkey; Type: INDEX ATTACH; Schema: realtime; Owner: -
 --
 
-ALTER INDEX realtime.messages_pkey ATTACH PARTITION realtime.messages_2026_08_01_pkey;
+ALTER INDEX realtime.messages_pkey ATTACH PARTITION realtime.messages_2026_07_21_pkey;
+
+
+--
+-- Name: messages_2026_07_22_inserted_at_topic_idx; Type: INDEX ATTACH; Schema: realtime; Owner: -
+--
+
+ALTER INDEX realtime.messages_inserted_at_topic_index ATTACH PARTITION realtime.messages_2026_07_22_inserted_at_topic_idx;
+
+
+--
+-- Name: messages_2026_07_22_pkey; Type: INDEX ATTACH; Schema: realtime; Owner: -
+--
+
+ALTER INDEX realtime.messages_pkey ATTACH PARTITION realtime.messages_2026_07_22_pkey;
+
+
+--
+-- Name: messages_2026_07_23_inserted_at_topic_idx; Type: INDEX ATTACH; Schema: realtime; Owner: -
+--
+
+ALTER INDEX realtime.messages_inserted_at_topic_index ATTACH PARTITION realtime.messages_2026_07_23_inserted_at_topic_idx;
+
+
+--
+-- Name: messages_2026_07_23_pkey; Type: INDEX ATTACH; Schema: realtime; Owner: -
+--
+
+ALTER INDEX realtime.messages_pkey ATTACH PARTITION realtime.messages_2026_07_23_pkey;
+
+
+--
+-- Name: messages_2026_07_24_inserted_at_topic_idx; Type: INDEX ATTACH; Schema: realtime; Owner: -
+--
+
+ALTER INDEX realtime.messages_inserted_at_topic_index ATTACH PARTITION realtime.messages_2026_07_24_inserted_at_topic_idx;
+
+
+--
+-- Name: messages_2026_07_24_pkey; Type: INDEX ATTACH; Schema: realtime; Owner: -
+--
+
+ALTER INDEX realtime.messages_pkey ATTACH PARTITION realtime.messages_2026_07_24_pkey;
+
+
+--
+-- Name: children_today trg_on_children_today_change; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_on_children_today_change AFTER INSERT OR UPDATE ON public.children_today FOR EACH ROW EXECUTE FUNCTION public.on_children_today_change();
 
 
 --
@@ -6069,20 +5852,6 @@ ALTER INDEX realtime.messages_pkey ATTACH PARTITION realtime.messages_2026_08_01
 --
 
 CREATE TRIGGER trg_on_children_today_delete AFTER DELETE ON public.children_today FOR EACH ROW EXECUTE FUNCTION public.on_children_today_delete();
-
-
---
--- Name: children_today trg_on_children_today_insert; Type: TRIGGER; Schema: public; Owner: -
---
-
-CREATE TRIGGER trg_on_children_today_insert AFTER INSERT ON public.children_today REFERENCING NEW TABLE AS new_table FOR EACH STATEMENT EXECUTE FUNCTION public.on_children_today_change_batch();
-
-
---
--- Name: children_today trg_on_children_today_update; Type: TRIGGER; Schema: public; Owner: -
---
-
-CREATE TRIGGER trg_on_children_today_update AFTER UPDATE ON public.children_today REFERENCING NEW TABLE AS new_table FOR EACH STATEMENT EXECUTE FUNCTION public.on_children_today_change_batch();
 
 
 --
@@ -6096,7 +5865,7 @@ CREATE TRIGGER trg_on_reset_event_insert AFTER INSERT ON public.reset_events FOR
 -- Name: scans trg_on_scan_insert; Type: TRIGGER; Schema: public; Owner: -
 --
 
-CREATE TRIGGER trg_on_scan_insert AFTER INSERT ON public.scans REFERENCING NEW TABLE AS new_table FOR EACH STATEMENT EXECUTE FUNCTION public.on_scan_insert_batch();
+CREATE TRIGGER trg_on_scan_insert AFTER INSERT ON public.scans FOR EACH ROW EXECUTE FUNCTION public.on_scan_insert();
 
 
 --
@@ -6295,27 +6064,11 @@ ALTER TABLE ONLY public.reset_events
 
 
 --
--- Name: scan_packets scan_packets_author_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.scan_packets
-    ADD CONSTRAINT scan_packets_author_id_fkey FOREIGN KEY (author_id) REFERENCES public.users(id);
-
-
---
 -- Name: scans scans_child_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.scans
     ADD CONSTRAINT scans_child_id_fkey FOREIGN KEY (child_id) REFERENCES public.children(id) ON UPDATE CASCADE ON DELETE CASCADE;
-
-
---
--- Name: scans scans_packet_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.scans
-    ADD CONSTRAINT scans_packet_id_fkey FOREIGN KEY (packet_id) REFERENCES public.scan_packets(id);
 
 
 --
@@ -6805,19 +6558,6 @@ CREATE POLICY own_group_update_presence_now ON public.children_today FOR UPDATE 
 ALTER TABLE public.reset_events ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: scan_packets; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.scan_packets ENABLE ROW LEVEL SECURITY;
-
---
--- Name: scan_packets scan_packets_select_authenticated; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY scan_packets_select_authenticated ON public.scan_packets FOR SELECT TO authenticated USING (true);
-
-
---
 -- Name: scan_type; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -7061,5 +6801,5 @@ CREATE EVENT TRIGGER pgrst_drop_watch ON sql_drop
 -- PostgreSQL database dump complete
 --
 
-\unrestrict vUaUdcdZTcVvlXNdvldgEvuCfmNdC5KbUJ4ZMi3oKRFm244cmbDYIzWNXkl6UfC
+\unrestrict pyVqBmcupZQAhtax5HV9fLWRXK1AWGrayYx6PgaVqy7lppMj1x4yRbBHEKflLEI
 

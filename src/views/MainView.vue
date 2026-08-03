@@ -104,38 +104,6 @@
             <font-awesome-icon :icon="['fas', 'arrow-right']" />
           </button>
 
-          <!-- Checkpoints Button (Ticket 131 - reale Implementierung, echte Supabase-Daten) -->
-          <button
-              v-if="userStore.isAdmin"
-              @click="goToCheckpoints"
-              class="btn btn-primary btn-lg d-flex align-items-center justify-content-between"
-          >
-            <span class="d-flex align-items-center">
-              <font-awesome-icon :icon="['fas', 'clipboard-check']" class="me-3" size="2x" />
-              <span>
-                <div class="fw-bold text-start">Checkpoints</div>
-                <small class="opacity-75">Bus/Group/Lazy-Kontrollpunkte verwalten</small>
-              </span>
-            </span>
-            <font-awesome-icon :icon="['fas', 'arrow-right']" />
-          </button>
-
-          <!-- Checkpoints Prototype Button (Ticket 130_2 - UI-Prototyp, mock-Daten) -->
-          <button
-              v-if="userStore.isAdmin"
-              @click="goToCheckpointsPrototype"
-              class="btn btn-warning btn-lg d-flex align-items-center justify-content-between"
-          >
-            <span class="d-flex align-items-center">
-              <font-awesome-icon :icon="['fas', 'clipboard-check']" class="me-3" size="2x" />
-              <span>
-                <div class="fw-bold text-start">Checkpoints (Prototyp)</div>
-                <small class="opacity-75">Neuer Checkpoint-Bildschirm, nur Mock-Daten</small>
-              </span>
-            </span>
-            <font-awesome-icon :icon="['fas', 'arrow-right']" />
-          </button>
-
           <!-- Bus Scan Button (for authenticated users, disabled without bus_id) -->
           <button
               v-if="isAuthenticated && !userStore.isCheckInRequired"
@@ -300,14 +268,6 @@ function goToAdminBus() {
 
 function goToAdminOverview() {
   router.push('/children')
-}
-
-function goToCheckpointsPrototype() {
-  router.push('/admin/checkpoints-prototype')
-}
-
-function goToCheckpoints() {
-  router.push('/admin/checkpoints')
 }
 
 function goToScanBus() {
