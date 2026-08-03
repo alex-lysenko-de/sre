@@ -2,9 +2,8 @@
 
 > Источник: `doc/db/checkpoints.sql` (тикет 132, применена к боевой БД —
 > подтверждено побайтовым совпадением со свежим дампом
-> `backup/database/schema.sql`). Архитектурное обоснование — не
-> дублируется здесь, см. `tickets/130/decision.md` («Принятое решение») и
-> [[Checkpoint]] за доменным описанием.
+> `backup/database/schema.sql`). Доменное обоснование модели (гибридный
+> жизненный цикл, зачем нужен именно такой) — [[Checkpoint]].
 
 Заменяет старый механизм «перекличка через `reset_events`» (см.
 [[reset_events]], помечена исторической). Контрольная точка — фиксация
@@ -55,9 +54,9 @@ Finish) и `remove_checkpoint()` (полное удаление), см. ниже
 Контракт ошибок: `RAISE EXCEPTION '<CODE>'` без интерполяции для
 плоских кодов (`NOT_OPEN`, `NOT_FINISHED`, `NOT_FOUND`, `NOT_ADMIN`); для
 `ALREADY_OPEN` id существующей точки передаётся через `DETAIL`
-(`error.details` в `supabase-js`) — без второго round-trip. Форма ошибок
-зафиксирована ещё в UI-прототипе 130_2 (`useCheckpointsMock.js`) и
-воспроизведена здесь 1:1.
+(`error.details` в `supabase-js`) — без второго round-trip. Та же форма
+ошибок используется клиентским composable-слоем (`useCheckpoints.js`,
+`translateRpcError()`).
 
 ## `submit_scan_packet()` — авто-создание/поиск контрольной точки
 
@@ -82,6 +81,7 @@ legacy-политик» с самого начала, см. [[RLS-политик
 ## Связанные заметки
 
 - [[Checkpoint]]
+- [[scan_packets]]
 - [[scans]]
 - [[RLS-политики]]
 - [[Триггеры]]
