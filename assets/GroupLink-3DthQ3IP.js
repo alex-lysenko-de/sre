@@ -1,1 +1,0 @@
-import{_ as r,a as n,o as p,t as u}from"./index-BC8xrMAy.js";const s={__name:"GroupLink",props:{groupId:{type:Number,required:!0}},setup(t){return(o,e)=>(p(),n("button",{type:"button",class:"cp-entity-link",onClick:e[0]||(e[0]=c=>o.$router.push(`/admin/checkpoints/group-entity/${t.groupId}`))}," Gruppe "+u(t.groupId),1))}},i=r(s,[["__scopeId","data-v-9c9b57cc"]]);export{i as G};
