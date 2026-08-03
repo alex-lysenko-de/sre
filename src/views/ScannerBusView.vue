@@ -12,7 +12,7 @@
       <h5 class="mode-title">Bus zählen — Bus {{ userStore.userInfo.bus_id }}</h5>
 
       <div class="mode-counter">
-        Отсканировано: <strong>{{ scannedList.length }}</strong>
+        Gescannt: <strong>{{ scannedList.length }}</strong>
       </div>
 
       <div v-if="lastFound" class="mode-last-found">
@@ -25,7 +25,7 @@
 
       <div class="mode-actions">
         <button class="btn btn-secondary" :disabled="isSending" @click="handleClose">
-          Close
+          Schließen
         </button>
         <button class="btn btn-success" :disabled="scannedList.length === 0 || isSending" @click="handleSend">
           Senden

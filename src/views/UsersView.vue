@@ -289,7 +289,7 @@ const Utils = {
     alertDiv.role = 'alert';
     alertDiv.innerHTML = `
       ${message}
-      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Schließen"></button>
     `;
     alertContainer.appendChild(alertDiv);
 

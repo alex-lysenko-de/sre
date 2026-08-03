@@ -23,6 +23,10 @@
       </div>
 
       <template v-if="checkpoint">
+        <div class="cp-header-line">
+          <CheckpointOriginBadge :created-by="checkpoint.created_by" />
+        </div>
+
         <div class="cp-status-row">
           <CheckpointStatusBadge :status="checkpoint.status" :day="checkpoint.day" />
           <button
@@ -43,22 +47,18 @@
           </button>
         </div>
 
-        <div v-if="resultSummary" class="cp-result-row">
-          <CountLink :count="`${resultSummary.present} / ${resultSummary.total}`" :icon="['fas', 'child']" variant="default" @click="openList({ kind: 'child', scope: 'checkpoint', filter: 'present' })" />
-          <template v-if="!resultSummary.isBaselineCheckpoint && (resultSummary.missing > 0 || resultSummary.extra > 0)">
-            <CountLink v-if="resultSummary.missing > 0" :count="resultSummary.missing" label="fehlen" :icon="['fas', 'exclamation-triangle']" variant="warning" @click="openList({ kind: 'child', scope: 'checkpoint', filter: 'missing' })" />
-            <CountLink v-if="resultSummary.extra > 0" :count="resultSummary.extra" label="mehr" :icon="['fas', 'exclamation-triangle']" variant="warning" @click="openList({ kind: 'child', scope: 'checkpoint', filter: 'extra' })" />
-          </template>
-        </div>
-
         <div v-if="actionError" class="alert alert-danger py-2">
           <template v-if="actionError.error === 'ALREADY_OPEN'">
             Es ist bereits ein anderer Group-Checkpoint offen (#{{ actionError.existingId }}). Zuerst diesen schließen.
           </template>
         </div>
 
-        <div class="cp-header-line">
-          <CheckpointOriginBadge :created-by="checkpoint.created_by" />
+        <div v-if="resultSummary" class="cp-result-row cp-result-row-final">
+          <CountLink :count="`${resultSummary.present} / ${resultSummary.total}`" :icon="['fas', 'child']" variant="default" @click="openList({ kind: 'child', scope: 'checkpoint', filter: 'present' })" />
+          <template v-if="!resultSummary.isBaselineCheckpoint && (resultSummary.missing > 0 || resultSummary.extra > 0)">
+            <CountLink v-if="resultSummary.missing > 0" :count="resultSummary.missing" label="fehlen" :icon="['fas', 'exclamation-triangle']" variant="warning" @click="openList({ kind: 'child', scope: 'checkpoint', filter: 'missing' })" />
+            <CountLink v-if="resultSummary.extra > 0" :count="resultSummary.extra" label="mehr" :icon="['fas', 'exclamation-triangle']" variant="warning" @click="openList({ kind: 'child', scope: 'checkpoint', filter: 'extra' })" />
+          </template>
         </div>
       </template>
     </div>
@@ -324,6 +324,20 @@ onUnmounted(() => {
   flex-wrap: wrap;
   gap: 14px;
   margin: 4px 0 8px;
+}
+
+.cp-result-row-final {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 2px solid #dee2e6;
+}
+
+.cp-result-row-final :deep(.cp-count-link-number) {
+  font-size: 1.9rem;
+}
+
+.cp-result-row-final :deep(.cp-count-link-label) {
+  font-size: 1.05rem;
 }
 
 .cp-aggregate-row {

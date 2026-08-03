@@ -66,7 +66,7 @@ const Utils = {
     const alertDiv = document.createElement('div');
     alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
     alertDiv.role = 'alert';
-    alertDiv.innerHTML = `${message}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>`;
+    alertDiv.innerHTML = `${message}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Schließen"></button>`;
     alertContainer.appendChild(alertDiv);
 
     setTimeout(() => { alertDiv.remove(); }, 5000);

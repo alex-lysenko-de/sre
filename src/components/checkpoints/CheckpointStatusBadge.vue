@@ -1,17 +1,20 @@
 <!-- src/components/checkpoints/CheckpointStatusBadge.vue -->
-<!-- Ticket 134 - Uebernahme aus checkpoints-prototype/CheckpointStatusBadge.vue,
-     unveraendert bis auf den Import (useCheckpoints statt useCheckpointsMock). -->
+<!-- Ticket 134 - Uebernahme aus checkpoints-prototype/CheckpointStatusBadge.vue.
+     Ticket 140, Punkt 3: der Haupt-Status ("Offen"/"Geschlossen") ist kein
+     Badge/Quadrat mehr (wirkte wie ein Button) - normaler Text, Farbe nur
+     noch auf dem Wort selbst. Ueberfaellig/Anomalie bleiben Badges (in
+     140.txt nicht genannt, sind echte Warnungen und werden nicht mit einem
+     Button verwechselt). -->
 <template>
   <span class="cp-status-wrap">
-    <span class="badge cp-status-badge" :class="statusClass">
-      <span class="cp-status-dot" :class="dotClass"></span>
-      {{ statusLabel }}
+    <span class="cp-status-line">
+      Status: <b :class="statusTextClass">{{ statusLabel }}</b>
     </span>
-    <span v-if="overdue" class="badge bg-warning text-dark ms-1 cp-status-badge">
+    <span v-if="overdue" class="badge bg-warning text-dark ms-1 cp-status-extra-badge">
       <font-awesome-icon :icon="['fas', 'exclamation-triangle']" class="me-1" />
       Überfällig
     </span>
-    <span v-if="anomaly" class="badge bg-danger ms-1 cp-status-badge" title="Mehrere gleichzeitig offene Checkpoints dieses Typs">
+    <span v-if="anomaly" class="badge bg-danger ms-1 cp-status-extra-badge" title="Mehrere gleichzeitig offene Checkpoints dieses Typs">
       <font-awesome-icon :icon="['fas', 'exclamation-triangle']" class="me-1" />
       Anomalie: mehrere offen
     </span>
@@ -45,19 +48,11 @@ const statusLabel = computed(() => {
   }
 })
 
-const statusClass = computed(() => {
+const statusTextClass = computed(() => {
   switch (props.status) {
-    case CHECKPOINT_STATUS.OPEN: return 'bg-success-subtle text-success-emphasis'
-    case CHECKPOINT_STATUS.FINISHED: return 'bg-secondary-subtle text-secondary-emphasis'
-    default: return 'bg-secondary-subtle'
-  }
-})
-
-const dotClass = computed(() => {
-  switch (props.status) {
-    case CHECKPOINT_STATUS.OPEN: return 'bg-success'
-    case CHECKPOINT_STATUS.FINISHED: return 'bg-secondary'
-    default: return 'bg-secondary'
+    case CHECKPOINT_STATUS.OPEN: return 'cp-status-text-open'
+    case CHECKPOINT_STATUS.FINISHED: return 'cp-status-text-finished'
+    default: return ''
   }
 })
 
@@ -68,17 +63,23 @@ const overdue = computed(() => {
 </script>
 
 <style scoped>
-.cp-status-badge {
-  font-size: 1.15rem;
-  font-weight: 800;
-  padding: 0.5rem 0.9rem;
+.cp-status-line {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #495057;
 }
 
-.cp-status-dot {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  margin-right: 0.4rem;
+.cp-status-text-open {
+  color: #198754;
+}
+
+.cp-status-text-finished {
+  color: #6c757d;
+}
+
+.cp-status-extra-badge {
+  font-size: 1rem;
+  font-weight: 700;
+  padding: 0.4rem 0.7rem;
 }
 </style>

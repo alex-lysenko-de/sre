@@ -14,7 +14,7 @@
       <h5 class="mode-title">Freie Meldung</h5>
 
       <div class="mode-counter">
-        Отсканировано: <strong>{{ scannedList.length }}</strong>
+        Gescannt: <strong>{{ scannedList.length }}</strong>
       </div>
 
       <ul v-if="scannedList.length > 0" class="mode-scanned-list">
@@ -27,7 +27,7 @@
 
       <div class="mode-actions">
         <button class="btn btn-secondary" :disabled="isSending" @click="handleClose">
-          Close
+          Schließen
         </button>
         <button class="btn btn-success" :disabled="scannedList.length === 0 || isSending" @click="handleSend">
           Senden

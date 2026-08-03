@@ -61,25 +61,14 @@
                 {{ formatTime(cp.created_at) }}
                 <template v-if="cp.finished_at"> – {{ formatTime(cp.finished_at) }}</template>
               </div>
-              <div v-if="results[cp.id]" class="cp-item-result">
-                <template v-if="cp.type === CHECKPOINT_TYPE.BUS">
-                  <span class="cp-item-stat-kinder">
-                    <font-awesome-icon :icon="['fas', 'child']" /> {{ results[cp.id].kinder }}
-                  </span>
-                  <span class="cp-item-stat-betreuer">
-                    <font-awesome-icon :icon="['fas', 'user']" /> {{ results[cp.id].betreuer }}
-                  </span>
-                </template>
-                <template v-else>
-                  <span class="cp-item-stat-present">
-                    {{ results[cp.id].present }}<template v-if="results[cp.id].total != null"> / {{ results[cp.id].total }}</template>
-                  </span>
-                </template>
+              <div class="cp-item-line">
+                <CheckpointOriginBadge :created-by="cp.created_by" />
+              </div>
+              <div class="cp-item-line">
+                <CheckpointStatusBadge :status="cp.status" :day="cp.day" />
               </div>
             </div>
             <div class="cp-item-footer">
-              <CheckpointStatusBadge :status="cp.status" :day="cp.day" />
-              <CheckpointOriginBadge :created-by="cp.created_by" />
               <div
                   v-if="results[cp.id] && !results[cp.id].isBaselineCheckpoint && (results[cp.id].missing > 0 || results[cp.id].extra > 0)"
                   class="cp-item-delta"
@@ -93,6 +82,21 @@
                 <font-awesome-icon :icon="['fas', 'exclamation-triangle']" class="me-1" />
                 Mehrere gleichzeitig offen
               </div>
+            </div>
+            <div v-if="results[cp.id]" class="cp-item-result">
+              <template v-if="cp.type === CHECKPOINT_TYPE.BUS">
+                <span class="cp-item-stat-kinder">
+                  <font-awesome-icon :icon="['fas', 'child']" /> {{ results[cp.id].kinder }}
+                </span>
+                <span class="cp-item-stat-betreuer">
+                  <font-awesome-icon :icon="['fas', 'user']" /> {{ results[cp.id].betreuer }}
+                </span>
+              </template>
+              <template v-else>
+                <span class="cp-item-stat-present">
+                  {{ results[cp.id].present }}<template v-if="results[cp.id].total != null"> / {{ results[cp.id].total }}</template>
+                </span>
+              </template>
             </div>
           </div>
         </div>
@@ -303,35 +307,34 @@ onUnmounted(() => {
   color: #868e96;
 }
 
+.cp-item-line {
+  margin-top: 2px;
+}
+
 .cp-item-result {
   display: flex;
-  gap: 14px;
-  margin-top: 4px;
+  gap: 18px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #e9ecef;
 }
 
 .cp-item-stat-kinder {
-  font-size: 1.25rem;
+  font-size: 1.6rem;
   font-weight: 800;
   color: #0d6efd;
 }
 
-.cp-item-card-closed .cp-item-stat-kinder {
-  color: #6c8fb5;
-}
-
 .cp-item-stat-betreuer {
-  font-size: 1.25rem;
+  font-size: 1.6rem;
   font-weight: 800;
   color: #dc3545;
 }
 
-.cp-item-card-closed .cp-item-stat-betreuer {
-  color: #b58a8e;
-}
-
 .cp-item-stat-present {
-  font-size: 1.25rem;
+  font-size: 1.6rem;
   font-weight: 800;
+  color: #212529;
 }
 
 .cp-item-delta {

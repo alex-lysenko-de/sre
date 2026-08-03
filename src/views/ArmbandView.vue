@@ -25,7 +25,7 @@
     <div v-else-if="!childData && !isAssigning" class="card shadow-sm">
       <div class="card-body p-4">
         <h3 class="card-title mb-4">
-          📍 Armband‑Zuordnung
+          📍 Armband‑Zuordnung (ID={{ bandId }})
         </h3>
 
         <p class="text-muted mb-4">
@@ -55,6 +55,7 @@
                 >
                 <label class="form-check-label" :for="'child-' + child.id">
                   {{ child.name }} ({{ child.age }} J)
+                  <span class="text-muted">— Armband: {{ child.band_id ?? '—' }}</span>
                 </label>
               </div>
             </li>

@@ -55,7 +55,7 @@
 
       <div class="mode-actions">
         <button class="btn btn-secondary" :disabled="isSending" @click="handleClose">
-          Close
+          Schließen
         </button>
         <button class="btn btn-success" :disabled="foundCount === 0 || isSending" @click="handleSend">
           Senden

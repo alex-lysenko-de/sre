@@ -40,10 +40,10 @@
 
         <div v-if="confirmation.persistent" class="proto-confirmation-actions">
           <button class="btn btn-outline-light" @click="handleConfirmationCancel">
-            Cancel
+            Abbrechen
           </button>
           <button class="btn btn-warning fw-bold" @click="handleConfirmationBind">
-            Привязать бейдж
+            Armband zuordnen
           </button>
         </div>
       </div>
