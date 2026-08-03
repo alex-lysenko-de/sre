@@ -6,7 +6,6 @@ import InviteGeneratorView from '@/views/InviteGeneratorView.vue'
 import WelcomeView from '@/views/WelcomeView.vue'
 import { supabase } from '@/supabase'
 import { getAuthItem } from '@/modules/storage'
-import ChildrenView from '@/views/ChildrenView.vue'
 import UsersView from '@/views/UsersView.vue'
 import GroupEditView from '@/views/GroupEditView.vue'
 import DaysEditView from '@/views/DaysEditView.vue'
@@ -17,7 +16,6 @@ import SelectChildView from "@/views/SelectChildView.vue"
 import ChildDetailView from "@/views/ChildDetailView.vue"
 import ChildEditView from "@/views/ChildEditView.vue"
 import MainView from "@/views/MainView.vue"
-import AdminBusView from "@/views/AdminBusView.vue";
 
 // Define routes
 const routes = [
@@ -44,19 +42,6 @@ const routes = [
         meta: { requiresAuth: false }
     },
     {
-        path: '/admin-busses',
-        name: 'AdminBus',
-        component: AdminBusView,
-        meta: { requiresAuth: true, requiresAdmin: true}
-    },
-
-    {
-        path: '/children',
-        name: 'Children',
-        component: ChildrenView,
-        meta: { requiresAuth: true, requiresAdmin: true}
-    },
-    {
         path: '/armband/:id',
         name: 'Armband',
         component: ArmbandView,
@@ -78,16 +63,6 @@ const routes = [
         path: '/select-child',
         name: 'SelectChild',
         component: SelectChildView,
-        meta: { requiresAuth: true, requiresAdmin: false }
-    },
-
-    {
-        path: '/headcount',
-        name: 'Headcount',
-        // Lazy wie die Scanner-Routen (Ticket 120) - HeadcountView bindet seit
-        // Ticket 123 Scanner.vue ein, das ueber html5-qrcode einen grossen
-        // Teil zum Bundle beitraegt (siehe tickets/123/IMPLEMENTATION_REPORT.md).
-        component: () => import('@/views/HeadcountView.vue'),
         meta: { requiresAuth: true, requiresAdmin: false }
     },
 
@@ -167,6 +142,63 @@ const routes = [
         name: 'ResetPassword',
         component: ResetPasswordView,
         meta: { requiresAuth: true }
+    },
+
+    // Ticket 134 - reale Checkpoint-Bildschirme (List/Bus/Group), Supabase
+    // statt Mock. Einzige Einstiegspunkt fuer Admins ueber MainView.vue
+    // (Ticket 137).
+    {
+        path: '/admin/checkpoints',
+        name: 'CheckpointList',
+        component: () => import('@/views/CheckpointListView.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
+        path: '/admin/checkpoints/bus/:id',
+        name: 'CheckpointBus',
+        component: () => import('@/views/CheckpointBusView.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
+        path: '/admin/checkpoints/group/:id',
+        name: 'CheckpointGroup',
+        component: () => import('@/views/CheckpointGroupView.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
+        path: '/admin/checkpoints/lazy/:id',
+        name: 'CheckpointLazy',
+        component: () => import('@/views/CheckpointLazyView.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true }
+    },
+
+    // Ticket 133 - reale Entity-Bildschirme (Kind/Betreuer/Gruppe/
+    // universelle Liste), Supabase statt Mock. Namensraum ohne
+    // -prototype-Suffix, siehe tickets/131/IMPLEMENTATION_PLAN.md, "UI
+    // изменения".
+    {
+        path: '/admin/checkpoints/list',
+        name: 'CheckpointEntityList',
+        component: () => import('@/views/EntityListView.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
+        path: '/admin/checkpoints/child/:id',
+        name: 'CheckpointChildCard',
+        component: () => import('@/views/ChildCardView.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
+        path: '/admin/checkpoints/betreuer/:id',
+        name: 'CheckpointBetreuerCard',
+        component: () => import('@/views/BetreuerCardView.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
+        path: '/admin/checkpoints/group-entity/:id',
+        name: 'CheckpointGroupEntity',
+        component: () => import('@/views/GroupEntityView.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true }
     },
 ]
 

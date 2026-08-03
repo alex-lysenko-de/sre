@@ -17,18 +17,16 @@
   ошибки Supabase и подменяет её более понятным сообщением; после `UPDATE`
   так же проверяет, что реально что-то обновилось.
 
-## Reset-операции (`AdminBusView.vue`, см. [[Учёт-автобусов]])
+## Reset-операции — удалены (тикет 137), историческая справка
 
-- `isDayStarted(date)` / `isDayClosed(date)` — читают последний
-  относящийся [[reset_events]] для даты, чтобы определить текущее
-  состояние дня (открыт/закрыт), не храня отдельного явного поля статуса
-  дня.
-- `startNewDay(date)` — `INSERT reset_events` с `event_type = 1`.
-- `softReset(date)` — `event_type = 2`.
-- `closeDay(date)` — `event_type = 0`.
-
-Во всех трёх — `user_id` берётся через `getCurrentUser()` (ре-экспорт
-[[useSupabaseUser]]) перед вставкой.
+`isDayStarted(date)`/`isDayClosed(date)`/`startNewDay(date)`/
+`softReset(date)`/`closeDay(date)` **удалены тикетом 137** вместе с их
+единственным потребителем `AdminBusView.vue` (см. [[Учёт-автобусов]],
+историческая). Граница дня теперь автоматическая — date-scoped
+[[children_today]]/[[groups_today]] (тикет 138), никакого явного
+«старт/сброс/закрытие дня» в UI больше нет, см. [[Checkpoint]]. Ранее эти
+методы делали: `startNewDay` — `INSERT reset_events` с `event_type = 1`,
+`softReset` — `event_type = 2`, `closeDay` — `event_type = 0`.
 
 ## Почему RLS-ошибки перехватываются и переформулируются здесь
 
@@ -42,8 +40,8 @@
 ## Связанные заметки
 
 - [[days]]
-- [[reset_events]]
+- [[reset_events]] (историческая)
+- [[Checkpoint]]
 - [[useSupabaseUser]]
 - [[Триггеры]]
 - [[RLS-политики]]
-- [[Учёт-автобусов]]

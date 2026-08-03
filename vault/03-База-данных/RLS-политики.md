@@ -46,6 +46,13 @@ Betreuer:
   Betreuer отмечает его вручную первым — тогда строки в `children_today`
   ещё не существует.
 
+> **Обновление (тикет 138):** `HeadcountView.vue`/`useChildPresence.js`
+> удалены тикетом 137 — обе политики этого раздела больше не имеют
+> потребителя и отозваны вместе с широкими legacy-политиками (см. ниже,
+> «Обновление (тикет 138)»). `children_today` сейчас — `SELECT` для
+> `authenticated`, запись только через `SECURITY DEFINER`-триггер на
+> `scans`.
+
 ## Общий паттерн для admin-only таблиц
 
 `children_today`/`reset_events`/`user_group_day` и подобные повторяют схожую
@@ -89,6 +96,21 @@ Betreuer этой группы) может писать в любую строк
 реальная граница сейчас — «любой авторизованный пользователь», пока
 legacy-политики не удалены явной миграцией.
 
+> **Обновление (тикет 138):** для `children_today`/`groups_today` этот
+> антипаттерн устранён — `doc/db/date_scoped_daily_tables.sql` отзывает все
+> широкие `USING/WITH CHECK (true)`-политики (`insert`/`update`/`delete`) на
+> обеих таблицах. Заодно отозваны и сами узкие `own_group_insert_presence_now`/
+> `own_group_update_presence_now` — их единственный когда-либо существовавший
+> потребитель, `HeadcountView.vue`/`useChildPresence.js`, удалён тикетом 137;
+> после этого под аутентифицированной сессией в эти таблицы никто больше не
+> пишет (единственный писатель — `SECURITY DEFINER`-триггер на `scans`,
+> `service_role`, RLS не применяется). Итоговый набор — `SELECT` для
+> `authenticated`, без единой политики записи, тот же паттерн, что уже
+> использован для [[checkpoints]] (тикет 132). Для `reset_events`/`children`/
+> `config`/`days` антипаттерн пока не устранён — актуально только к
+> перечисленным ниже таблицам этой заметки за пределами `children_today`/
+> `groups_today`.
+
 ## Почему RLS, а не только проверки в роутере
 
 Проверки в `router.beforeEach` (см. [[Карта-маршрутов]],
@@ -107,6 +129,20 @@ legacy-политики не удалены явной миграцией.
 обход новых узких политик. RLS как *механизм* — правильное место для
 контроля; но по состоянию на тикет 108 он не везде реально ограничивает
 запись так, как задумано.
+
+## [[checkpoints]] (тикет 132)
+
+Пример таблицы, спроектированной без антипаттерна «неотозванных широких
+legacy-политик» с самого начала, а не исправленной задним числом (как
+`children_today`/`groups_today` — тикет 138): `SELECT` для `authenticated`
+(`USING (true)`), никакой `INSERT`/`UPDATE`/`DELETE`-политики для
+`authenticated` вообще — запись только через `SECURITY DEFINER` RPC
+(`create_checkpoint`/`finish_checkpoint`/`reopen_checkpoint`/
+`remove_checkpoint`, `doc/db/checkpoints.sql`) с явной проверкой
+`role='admin' AND active=true` внутри функции, либо через
+`submit_scan_packet()` (вызывается только Edge Function под `service_role`,
+RLS не применяется). Тот же паттерн, что уже использован для
+`scan_packets` (тикет 122).
 
 ## Связанные заметки
 

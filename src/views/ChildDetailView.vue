@@ -149,6 +149,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { useArmband } from '@/composables/useArmband'
 import { useScan } from '@/composables/useScan'
+import { useScanPacket } from '@/composables/useScanPacket'
 import ChildPresenceModal from '@/components/ChildPresenceModal.vue'
 import Utils from '@/utils/utils'
 
@@ -157,6 +158,7 @@ const route = useRoute()
 const userStore = useUserStore()
 const armbandComposable = useArmband()
 const scanComposable = useScan()
+const scanPacketComposable = useScanPacket()
 
 const childId = computed(() => route.params.id)
 
@@ -237,9 +239,13 @@ function openPresenceModal() {
 }
 
 /**
- * Behandelt Bestätigung aus Modal
+ * Behandelt Bestätigung aus Modal - erstellt ein CHECKIN-Paket mit diesem
+ * einen Kind über useScanPacket (tickets/136/136.txt), statt direkt in
+ * `scans` zu schreiben. Das Kind erhält so einen `checkpoint_id` und taucht
+ * in den Checkpoint-Screens auf (tickets/131/MIGRATION_PLAN_REVIEW_RESPONSE.md,
+ * п.11).
  */
-async function handlePresenceConfirm(data) {
+async function handlePresenceConfirm() {
   try {
     // Set loading state in modal
     if (presenceModalRef.value) {
@@ -262,24 +268,16 @@ async function handlePresenceConfirm(data) {
       throw new Error('Armband für dieses Kind nicht zugeordnet')
     }
 
-    // Erstelle Scan-Eintrag
-    await scanComposable.createScan({
-      user_id: userStore.userInfo.id,
-      child_id: child.value.id,
-      band_id: child.value.band_id,
-      bus_id: data.busId,
-      type: 1 // Präsenz
-    })
+    // CHECKIN-Paket mit genau diesem Kind (manuell erfasst, nicht gescannt)
+    scanPacketComposable.createPacket('CHECKIN', {})
+    scanPacketComposable.addManual({ id: child.value.id })
+    await scanPacketComposable.submitPacket()
 
     // Modal schließen
     showPresenceModal.value = false
 
     // Success-Nachricht
-    let message = `✅ Präsenz für ${child.value.name} registriert`
-    if (data.busId) {
-      message += ` (Bus #${data.busId})`
-    }
-    successMessage.value = message
+    successMessage.value = `✅ Präsenz für ${child.value.name} registriert`
 
     // Aktualisiere Anwesenheitsinformationen
     await loadPresenceInfo()
@@ -292,11 +290,13 @@ async function handlePresenceConfirm(data) {
   } catch (err) {
     console.error('Fehler beim Registrieren der Präsenz:', err)
 
+    const message = scanPacketComposable.errorMessage.value || err.message || 'Fehler beim Registrieren der Präsenz'
+
     // Show error in modal
     if (presenceModalRef.value) {
-      presenceModalRef.value.setError(err.message || 'Fehler beim Registrieren der Präsenz')
+      presenceModalRef.value.setError(message)
     } else {
-      error.value = err.message || 'Fehler beim Registrieren der Präsenz'
+      error.value = message
     }
   }
 }

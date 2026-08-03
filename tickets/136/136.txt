@@ -1,0 +1,91 @@
+# Тикет 136: `ChildDetailView.vue` — «Präsenz registrieren» через `submit_scan_packet()`
+
+Часть фазы реализации Checkpoint — см. `tickets/131/MIGRATION_PLAN.md`.
+Находка независимого архитектурного ревью (`tickets/131/
+migration_Plan_review.md`, §5), не часть исходного охвата 130/131 —
+устраняет третий (помимо камерного `Scanner.vue` и удаляемого
+`useChildPresence.js`) обходной путь регистрации присутствия мимо
+Packet-модели. Решение и обоснование — `tickets/131/
+MIGRATION_PLAN_REVIEW_RESPONSE.md`, п.11.
+
+## Цель
+
+Кнопка «Präsenz registrieren» на `ChildDetailView.vue` сейчас вызывает
+`useScan.js.createScan()` — прямой `INSERT` в `scans`, без `packet_id` и
+без обращения к `submit_scan_packet()`. Экран достижим через реальный
+живой маршрут (физический QR/NFC на браслете → `?id=123` → `/armband/:id`
+→ при уже привязанном браслете сразу `/child/:id`). Ребёнок, отмеченный
+через эту кнопку, получает строку в `scans` без `checkpoint_id` и не
+попадёт ни в один Checkpoint-экран (все считают присутствие через
+`scans ⋈ scan_packets.checkpoint_id`) — расхождение в данных, которое
+Checkpoint-экраны не обнаружат и не предупредят о нём. Переделать кнопку
+так, чтобы она тоже создавала запись через `submit_scan_packet()`
+(CHECKIN-подобный пакет с одним ребёнком), сохранив UX «сразу после
+привязки браслета — отметить присутствие».
+
+## Что прочитать перед началом
+
+- `src/views/ChildDetailView.vue:56, 151, 159, 266` — текущий обработчик
+  кнопки, импорт `useScan`, вызов `createScan(...)`.
+- `src/composables/useScan.js`, функция `createScan` (:216-244) — что
+  именно сейчас происходит в обход Packet-модели (прямой `insert` в
+  `scans` с `payload = {date, user_id, child_id, band_id, bus_id, type,
+  created_at}`, без `packet_id`).
+- `src/composables/useScanPacket.js` целиком — уже содержит все нужные
+  примитивы: `createPacket('CHECKIN', {})`, `addManual(child)` (метод
+  `'MANUAL'`, готовое поле `scans.method` для различения «отсканирован»/
+  «внесён вручную»), `submitPacket()` (вызывает Edge Function
+  `submit-scan-packet` → `submit_scan_packet()`, тикет 132 уже
+  обеспечивает авто-создание/поиск Lazy/CHECKIN-точки для этого пакета).
+- `doc/db/checkpoints.sql` (тикет 132, должен быть применён к БД к началу
+  этого тикета) — расширение `submit_scan_packet()`, из-за которого этот
+  пакет получит `checkpoint_id` автоматически, без дополнительной логики
+  на клиенте.
+
+## Затрагиваемые части проекта
+
+Только `src/views/ChildDetailView.vue`. `useScan.js` не меняется (его
+остальные функции — чтение истории/статуса присутствия — используются
+в других местах, не переделываются в рамках этого тикета, не
+проверялось, что они тоже мимо Packet-модели, т.к. они read-only).
+
+## Файлы/подсистемы, которые будут изменены
+
+- `src/views/ChildDetailView.vue` — обработчик кнопки «Präsenz
+  registrieren».
+
+## Что должно быть реализовано
+
+1. Заменить вызов `useScan().createScan(...)` в обработчике кнопки на:
+   `useScanPacket().createPacket('CHECKIN', {})` →
+   `addManual({ id: childId })` → `submitPacket()`.
+2. Сохранить текущий UX: кнопка сразу видна на карточке ребёнка после
+   привязки браслета, один клик — одно действие (пользователь не должен
+   ощущать, что теперь это «пакет» — внутренняя деталь).
+3. Обработка ошибок `submitPacket()` (сеть/сервер) — по аналогии с тем,
+   как это уже сделано в `ScannerCheckinView.vue`/других экранах тикета
+   120 (не изобретать новый паттерн обработки ошибок).
+4. Не менять `isChildPresentToday`/другие read-функции `useScan.js` — они
+   вне охвата этого тикета.
+
+## Что не входит
+
+- Любые изменения `useChildPresence.js`/`Scanner.vue`/`ScannerCheckinView.vue`
+  — не входит.
+- Изменение самой функции `submit_scan_packet()` — уже расширена тикетом
+  132, этот тикет только клиент.
+
+## Результат выполнения тикета
+
+- Клик «Präsenz registrieren» создаёт `scan_packets`-запись типа CHECKIN
+  с одним ребёнком и привязанным `checkpoint_id`, ребёнок появляется в
+  соответствующем Lazy/Checkpoint-экране в реальном времени.
+- `npm run build` проходит без ошибок.
+- Ручная проверка на устройстве: привязка нового браслета → «Präsenz
+  registrieren» → ребёнок виден как «отметился» в `CheckpointLazyView.vue`
+  (тикет 135) без дополнительных действий администратора.
+
+## Зависимости
+
+Требует 132 (расширенный `submit_scan_packet()`). Не зависит от 133/134/
+135. Блокирует 137.

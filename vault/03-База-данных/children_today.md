@@ -2,14 +2,16 @@
 
 > Источники: `backup/database/schema.sql` (реальный `pg_dump`, тикет 111,
 > приоритетный источник), `doc/db_triggers.sql`,
-> `doc/db/headcount_presence_morning.sql` (тикет 106). `user_id` в реальной
-> схеме nullable — предыдущая версия заметки указывала `not null` по
-> устаревшему `doc/table_structure.md` (удалён в тикете 118) (`tickets/108/REVIEW_REPORT.md`,
-> Minor 6).
+> `doc/db/headcount_presence_morning.sql` (тикет 106),
+> `doc/db/date_scoped_daily_tables.sql` (тикет 138 — колонка `date`,
+> подтверждено применённой к боевой БД, побайтовое совпадение со свежим
+> дампом схемы). `user_id` в реальной схеме nullable — предыдущая версия
+> заметки указывала `not null` по устаревшему `doc/table_structure.md`
+> (удалён в тикете 118) (`tickets/108/REVIEW_REPORT.md`, Minor 6).
 
 Оперативная upsert-таблица — одно, ровно одно текущее состояние присутствия
-на каждого ребёнка (в отличие от append-only [[scans]]). Источник истины для
-[[Переклички]] и [[Учёт-автобусов]].
+на каждого ребёнка **на дату** (в отличие от append-only [[scans]]). Источник
+истины для [[Checkpoint]].
 
 ```sql
 create table public.children_today (
@@ -22,43 +24,60 @@ create table public.children_today (
   bus_today smallint null,
   bus_now smallint null,
   presence_morning smallint null default NULL, -- Ticket 106
+  date character varying not null default to_char(now(), 'YYYY-MM-DD'), -- Ticket 138
   constraint children_today_pkey primary key (id),
-  constraint children_today_child_id_key unique (child_id),
+  constraint children_today_child_id_date_key unique (child_id, date),
   constraint children_today_child_id_fkey foreign KEY (child_id) references children (id) on update CASCADE on delete CASCADE
 );
 ```
+
+## Граница дня (тикет 138)
+
+Уникальность теперь `(child_id, date)`, не просто `child_id` — одна строка
+на ребёнка **на каждую дату**, а не одна строка на ребёнка вообще. Новый
+день начинается сам собой с первым сканом новой даты (`date` пишется из
+`s.date` самого скана в `on_scan_insert_batch()`, не из `DEFAULT`/`now()`
+сервера) — никакого явного «старт дня»/`pg_cron` нет, заменяет весь
+диапазон Reset-событий [[reset_events]] (историческая). См. [[Checkpoint]].
 
 ## Поля присутствия
 
 | Поле | Значение | Кто пишет |
 |---|---|---|
-| `presence_today` | 1 = ребёнок был на мероприятии сегодня (хотя бы раз) | триггер `on_scan_insert`, INSERT-ветка |
-| `presence_now` | 1 = присутствует прямо сейчас, 0 = после reset | триггер `on_scan_insert` (=1) и `on_reset_event_insert` (=0); также напрямую [[useChildPresence]].`setPresentNow()` (Kopfzählung) |
-| `bus_today` / `bus_now` | автобус утром / текущий автобус | триггер `on_scan_insert` |
-| `presence_morning` | 1 = при первом скане дня был указан `bus_id`, 0 = первый скан без автобуса, `NULL` = сканов ещё не было | **только** INSERT-ветка `on_scan_insert`, сознательно никогда не перезаписывается (тикет 106) |
+| `presence_today` | 1 = ребёнок был на мероприятии сегодня (хотя бы раз) | триггер `on_scan_insert_batch()`, INSERT-ветка (тикет 122, batch) |
+| `presence_now` | 1 = присутствует прямо сейчас | триггер `on_scan_insert_batch()`, обе ветки (=1). Обнуление через `on_reset_event_insert` — историческое, функция удалена тикетом 137, заменено автоматической границей дня (тикет 138, см. выше) |
+| `bus_today` / `bus_now` | автобус утром / текущий автобус | триггер `on_scan_insert_batch()` |
+| `presence_morning` | 1 = при первом скане дня был указан `bus_id`, 0 = первый скан без автобуса, `NULL` = сканов ещё не было | **только** INSERT-ветка `on_scan_insert_batch()`, сознательно никогда не перезаписывается (тикет 106) |
+
+`on_scan_insert`/`on_children_today_change` (небатчевые построчные версии) и
+`on_reset_event_insert` — историческая номенклатура, замененная/удалённая
+тикетами 122/137/138, см. [[Триггеры]] для полной хронологии.
 
 ## Почему `presence_morning` пишется только один раз
 
 Нужен разовый снимок «был ли ребёнок утром», который не должен «мигать»
 обратно при повторных сканах в течение дня — иначе индикатор утреннего
 присутствия на экране Kopfzählung терял бы смысл после первой же
-перепроверки. Поэтому `ON CONFLICT (child_id) DO UPDATE` в `on_scan_insert`
-намеренно не включает `presence_morning` в `SET`-список (см. [[Триггеры]]).
+перепроверки. Поэтому `ON CONFLICT (child_id, date) DO UPDATE` в
+`on_scan_insert_batch()` намеренно не включает `presence_morning` в
+`SET`-список (см. [[Триггеры]]).
 
-## Kopfzählung (ручная отметка, тикет 106)
+## Kopfzählung (ручная отметка, тикет 106) — историческая, удалена тикетом 137
 
-`HeadcountView.vue` читает пары `(presence_morning, presence_now)` через
-[[useChildPresence]].`getTodayGroupPresence()` и переключает только
-`presence_now` через `setPresentNow()` — SELECT-затем-UPDATE/INSERT
-(не upsert), чтобы не задеть `presence_morning`/`presence_today`. Доступ на
-запись ограничен RLS-политиками `own_group_update_presence_now` /
-`own_group_insert_presence_now` — своя группа на сегодня (см.
-[[RLS-политики]]).
+`HeadcountView.vue` читал пары `(presence_morning, presence_now)` через
+[[useChildPresence]] (историческая) и переключал только `presence_now`
+через `setPresentNow()` — SELECT-затем-UPDATE/INSERT (не upsert), чтобы не
+задеть `presence_morning`/`presence_today`. RLS-политики
+`own_group_update_presence_now`/`own_group_insert_presence_now`,
+защищавшие этот путь записи, отозваны тикетом 138 (потребитель исчез) — см.
+[[RLS-политики]].
 
 ## Кто ещё читает
 
-- [[useBusData]] — подсчёт детей по автобусу (`bus_now IS NOT NULL AND presence_now > 0`)
-- [[useGroups]] — подсчёт присутствующих в группе
+Запись сейчас — только через `SECURITY DEFINER`-триггер на `scans`
+(`on_scan_insert_batch()`, [[Триггеры]]), под `service_role`, в обход RLS.
+Актуальные читатели — экраны [[Checkpoint]] через `useCheckpoints.js`
+(`useBusData`/`useGroups`, читавшие эту таблицу до тикета 137, удалены).
 
 ## Связанные заметки
 
@@ -66,7 +85,6 @@ create table public.children_today (
 - [[groups_today]]
 - [[Триггеры]]
 - [[RLS-политики]]
-- [[useChildPresence]]
-- [[useBusData]]
-- [[Переклички]]
+- [[Checkpoint]]
+- [[checkpoints]]
 - [[Первая-регистрация-дня]]

@@ -1,0 +1,140 @@
+# Тикет 138: DB — date-scoped `children_today`/`groups_today` + чистка legacy RLS
+
+Часть фазы реализации Checkpoint — см. `tickets/131/MIGRATION_PLAN.md`.
+По итогам архитектурного ревью (решение пользователя — мигрировать эти
+таблицы, не удалять, `MIGRATION_PLAN_REVIEW_RESPONSE.md`, п.8) остаётся
+отдельным тикетом, но **не является инертной уборкой мёртвого кода**: см.
+пояснение ниже — эти таблицы прямо сейчас пишутся живым триггером
+независимо от какого-либо UI.
+
+## Цель
+
+Добавить колонку `date` в `children_today`/`groups_today`, заменить
+unique-констрейнты на `(entity_id, date)`, обновить `ON CONFLICT`-цели
+существующих батч-триггеров, отозвать неотозванную широкую legacy
+RLS-политику на `children_today` — без `pg_cron`, переход дня становится
+следствием схемы, а не действием администратора.
+
+## Что прочитать перед началом
+
+- `tickets/130/IMPLEMENTATION_PLAN.md`, раздел «Автоматическая граница
+  дня» — полная спецификация: DDL, объяснение «почему это снимает
+  зависимость от `pg_cron`».
+- **Важно понять, зачем этот тикет обязателен, а не просто «уборка»:**
+  `doc/db/scan_packets.sql:73-117`, функция `on_scan_insert_batch()` — тот
+  же батч-триггер на `scans`, который обслуживает *живой* пакетный путь
+  тикетов 120/122 (`submit_scan_packet()`, применена во всех сценариях
+  сканирования воспитателей) — на каждой вставке в `scans` пишет и в
+  `children_today` (`ON CONFLICT (child_id) DO UPDATE`), а через
+  `on_children_today_change_batch()` (:126-149, `ON CONFLICT (group_id)
+  DO UPDATE`) — в `groups_today`. Это значит: `children_today`/
+  `groups_today` продолжают писаться при каждом реальном скане,
+  независимо от того, есть ли у них ещё читатель в `src/` (после тикета
+  137 — не остаётся). Если поменять unique-констрейнт на `(child_id,
+  date)`/`(group_id, date)`, но не поменять `ON CONFLICT`-цель в этих
+  двух функциях **атомарно, в одном файле/применении** — первый же
+  реальный скан после миграции уронит `submit_scan_packet()` целиком
+  (`ON CONFLICT` без совпадающего уникального индекса — ошибка Postgres),
+  то есть сломает боевой сканерный конвейер, а не только показания
+  старого экрана.
+- `tickets/131/MIGRATION_PLAN.md`, §1.3, п.4 — **подтверждено**:
+  `groups_today_user_id_key UNIQUE (user_id)` не существует (в дампе есть
+  только `groups_today_group_id_key UNIQUE (group_id)`,
+  `backup/database/schema.sql:4984-4988`) — соответствующий `DROP
+  CONSTRAINT` не нужен вовсе, это не требует повторной проверки на живой
+  БД.
+- `backup/database/schema.sql:895-923` (`on_children_today_delete()`),
+  `:1084-1100` (`recalculate_groups_today()`) — функции вне
+  `on_scan_insert_batch`/`on_children_today_change_batch`. Первая не
+  использует `ON CONFLICT` (работает через `WHERE group_id = OLD.group_id`)
+  — констрейнт её не касается, но после тикета 137 (удаление
+  `on_reset_event_insert`, единственного источника `DELETE FROM
+  children_today`) она фактически перестаёт срабатывать — не требует
+  правки. Вторая (`recalculate_groups_today()`) не вызывается ни одним
+  триггером и не встречается в `src/` (проверено на момент планирования)
+  — **перепроверить грепом перед реализацией**: если действительно не
+  используется — либо обновить её `ON CONFLICT (group_id)` →
+  `(group_id, date)` для консистентности, либо удалить как мёртвую;
+  решение по месту.
+- `backup/database/schema.sql:6522-6602, 6773-6796` — неотозванная
+  широкая RLS-политика на `children_today`: `"Allow authenticated users
+  to insert/update/delete/read children_today" USING (true)` сосуществует
+  с более узкими `own_group_insert_presence_now`/
+  `own_group_update_presence_now`. PostgreSQL объединяет permissive-
+  политики через OR — узкая политика сегодня ничего не ограничивает.
+  Задокументированный антипаттерн проекта, `vault/03-База-данных/
+  RLS-политики.md`.
+
+## Затрагиваемые части проекта
+
+Только БД (`children_today`, `groups_today`, их триггеры/функции, RLS).
+После тикета 137 в `src/` не остаётся ни одного читателя/писателя этих
+таблиц напрямую (запись идёт только через триггер на `scans`) — этот
+тикет не трогает `src/`.
+
+## Файлы/подсистемы, которые будут изменены
+
+- Новый файл `doc/db/date_scoped_daily_tables.sql` — DDL колонки `date` +
+  новые unique-констрейнты + обновлённые `ON CONFLICT`-цели в
+  `on_scan_insert_batch`/`on_children_today_change_batch` (`CREATE OR
+  REPLACE FUNCTION`, копии из `doc/db/scan_packets.sql` с изменённой
+  `ON CONFLICT`-целью) + отзыв широкой RLS-политики на `children_today`.
+- `vault/03-База-данных/RLS-политики.md` — отметить, что пример
+  «неотозванной широкой legacy-политики» на `children_today` устранён
+  этим тикетом (дата/номер тикета), не просто описан как проблема.
+
+## Что должно быть реализовано
+
+1. `ALTER TABLE children_today ADD COLUMN IF NOT EXISTS date varchar NOT
+   NULL DEFAULT to_char(now(), 'YYYY-MM-DD')`; замена
+   `children_today_child_id_key UNIQUE(child_id)` на `UNIQUE(child_id,
+   date)`. Аналогично для `groups_today` (`group_id, date` — без
+   `user_id`, см. выше).
+2. `on_scan_insert_batch`/`on_children_today_change_batch` — `ON
+   CONFLICT`-цель `(child_id)`/`(group_id)` → `(child_id, date)`/
+   `(group_id, date)`. **В том же файле/применении**, что и п.1 — не
+   раздельными шагами.
+3. `recalculate_groups_today()` — грепом подтвердить использование,
+   обновить или удалить по результату (см. выше).
+4. Отозвать `"Allow authenticated users to insert/update/delete/read
+   children_today"` (все 4 политики, `USING/WITH CHECK (true)`) —
+   `DROP POLICY`. Проверить, что оставшиеся узкие политики
+   (`own_group_insert_presence_now`/`own_group_update_presence_now`) дают
+   достаточный доступ для того немногого, что реально ещё может писать в
+   `children_today` под authenticated-сессией после тикета 137 (по факту
+   — ничего не должно остаться; если проверка это подтверждает, доступ
+   для `authenticated` можно сузить до `SELECT`, как сделано для
+   `checkpoints` в тикете 132; финальный набор политик — по месту, с
+   тем же обоснованием, что и в `checkpoints.sql`).
+5. Обновить `vault/03-База-данных/RLS-политики.md`.
+6. Файл идемпотентен (`ADD COLUMN IF NOT EXISTS`, `CREATE OR REPLACE
+   FUNCTION`, `DROP POLICY IF EXISTS`).
+
+## Что не входит
+
+- Изменения `src/` — не требуются, единственный писатель после тикета
+  137 — сам триггер на `scans`.
+- Удаление `AdminBusView.vue`/`ChildrenView.vue`/`useDays.js`-мертвяка/
+  `on_reset_event_insert` — тикет 137.
+- Удаление таблиц `children_today`/`groups_today` целиком — отклонено
+  решением пользователя (`MIGRATION_PLAN_REVIEW_RESPONSE.md`, п.8),
+  таблицы сохраняются в мигрированном виде.
+
+## Результат выполнения тикета
+
+- `doc/db/date_scoped_daily_tables.sql` подготовлен и применён к реальной
+  БД (после подтверждения пользователем).
+- Ручная проверка на устройстве: отправка скана через любой реальный
+  экран сканирования (после 137 — единственный путь) успешно создаёт
+  строки в `children_today`/`groups_today` с сегодняшней `date`, без
+  ошибок `ON CONFLICT`.
+- RLS `children_today` больше не содержит неотозванной широкой политики
+  — подтверждено чтением текущих политик через Supabase SQL Editor.
+
+## Зависимости
+
+Рекомендуется после 137 (тогда единственный писатель `children_today`/
+`groups_today` не пересекается по времени ни с каким чтением через уже
+удалённый старый Reset-механизм, что упрощает проверку корректности) —
+но не блокируется им технически, может выполняться и раньше. Блокирует
+139.

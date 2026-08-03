@@ -1,0 +1,178 @@
+# Тикет 133: Composable-слой Checkpoint + Entity-слой на реальных данных
+
+Часть фазы реализации Checkpoint — см. `tickets/131/MIGRATION_PLAN.md`.
+Первый клиентский тикет. По итогам архитектурного ревью
+(`tickets/131/MIGRATION_PLAN_REVIEW_RESPONSE.md`, п.1) объединяет то, что
+в первой версии плана было двумя тикетами (135 composable-слой + 136
+entity-слой) — при отсутствии живых пользователей нет причины сохранять
+между ними промежуточное рабочее состояние.
+
+## Цель
+
+1. Реализовать реальный composable-слой Checkpoint с **теми же именами и
+   формой функций**, что и `useCheckpointsMock.js`/
+   `useLazyCheckpointProgressMock.js` — мок спроектирован повторяющим
+   будущую сигнатуру именно ради этого: экраны (тикеты 134/135) почти не
+   должны меняться относительно `*PrototypeView.vue`, меняется только
+   источник данных.
+2. Перенести «энтити-центрированную» часть UI-прототипа (UX-фидбек Раунд
+   4 тикета 130_2, принципы 1-5 `decision.md`) на реальные данные
+   `children`/`users`/`user_group_day`, сохранив набор переиспользуемых
+   presentational-компонентов (`ChildLink`/`BetreuerLink`/`GroupLink`/
+   `CountLink`/`EntityListCard`) и экранов (Child card, Betreuer card,
+   Group entity, универсальный список).
+
+## Что прочитать перед началом
+
+- `src/composables/useCheckpointsMock.js` целиком — эталон сигнатур:
+  `fetchCheckpointsForDay`, `createCheckpoint`, `finishCheckpoint`,
+  `reopenCheckpoint`, `removeCheckpoint`, `fetchCheckpointDetail`,
+  `isOverdue`, `summarizeCheckpoint`, `checkpointHasOpenIssues`,
+  `getBusChildrenBreakdown`, `getGroupChildrenBreakdown`,
+  `getDayBaselineCheckpoint`, `getBusDelta`, `getGroupDelta`,
+  `getCheckpointBetreuerList`, `getBetreuerTodayAssignment`.
+- `src/composables/useLazyCheckpointProgressMock.js` — эталон
+  `fetchLazyCheckpointProgress(checkpointId)`.
+- `src/composables/useChildEntityMock.js`, `useBetreuerEntityMock.js` —
+  эталонные сигнатуры (`getChildById`, `getChildrenByGroup`,
+  `updateChild`, `getBetreuerById`, `getBetreuerByName`); комментарий о
+  «email/phone нет в реальной БД» неточен — есть в `users`, см.
+  `tickets/131/MIGRATION_PLAN.md`, §1.3, п.5.
+- `tickets/131/IMPLEMENTATION_PLAN.md`, раздел «Composable-слой» —
+  распределение по трём файлам (DB-слой/бизнес-логика/lazy-прогресс) уже
+  принято, не пересматривать.
+- `src/composables/useSupabaseUser.js` — образец DB-слоя проекта (стиль
+  прямых Supabase-запросов).
+- `src/views/AdminBusView.vue:480-534`, `src/composables/useGroups.js`
+  (Realtime-подписка `groups_today_changes`) — образец паттерна
+  `supabase.channel(...).on('postgres_changes', ...)`. Используется
+  только как образец паттерна — сами эти файлы удаляются в тикете 137,
+  не переиспользуются как зависимость.
+- `src/composables/useChildren.js`, `fetchChildDetailsAndScans(childId)`
+  (:146-171) — уже существует, не используется ни одним экраном; готовая
+  функция для истории сканирований ребёнка, заменяет `useScanHistoryMock.js`.
+- `src/components/checkpoints-prototype/{ChildLink,BetreuerLink,GroupLink,
+  CountLink,EntityListCard}.vue` — переиспользуемые компоненты, переезжают
+  почти без изменений (только источник данных у вызывающих экранов).
+- `src/views/{ChildCardPrototypeView,BetreuerCardPrototypeView,
+  GroupEntityPrototypeView,EntityListPrototypeView}.vue` — экраны-эталоны
+  (`ChildEditPrototypeView.vue` не переносится, см. «Что не входит»).
+- `src/views/ChildDetailView.vue`, `src/views/ChildEditView.vue` — уже
+  существующие реальные экраны карточки/редактирования ребёнка — реальная
+  схема полей `children` (`age`/`schwimmer`/`band_id`/`notes`/`group_id`/
+  `bus_id`, без родителей/телефона) уже используется здесь, ориентир для
+  полей реальной Checkpoint-карточки ребёнка.
+- Реальная схема таблиц `children`, `users`, `user_group_day` —
+  `backup/database/schema.sql:3650-3662, 3899-3910, 3938-3950` (общая
+  оговорка: сверять конкретные факты по актуальному состоянию, если
+  что-то выглядит подозрительно — см. `MIGRATION_PLAN.md`, §1.3, п.3).
+- `doc/db/checkpoints.sql` (тикет 132, к моменту начала этого тикета
+  должен быть применён к БД) — реальные имена RPC/таблиц/колонок, на
+  которые опирается DB-слой.
+
+## Затрагиваемые части проекта
+
+Новый слой `src/composables/`, новые компоненты `src/components/checkpoints/`,
+новые экраны `src/views/` без суффикса `Prototype`. Ни один существующий
+composable/экран не меняется.
+
+## Файлы/подсистемы, которые будут изменены
+
+- **Новый файл** `src/composables/useSupabaseCheckpoints.js` — DB-слой:
+  `fetchCheckpointsForDay`, `fetchCheckpointDetail`,
+  `rpcCreateCheckpoint`/`rpcFinishCheckpoint`/`rpcReopenCheckpoint`/
+  `rpcRemoveCheckpoint` (`supabase.rpc(...)` — первое использование RPC в
+  проекте), `subscribeToCheckpointsChanges` (Realtime на таблицу
+  `checkpoints`).
+- **Новый файл** `src/composables/useCheckpoints.js` — бизнес-логика:
+  оборачивает DB-слой, воспроизводит формы ошибок мока (RPC из тикета 132
+  выбрасывают Postgres-исключения с текстом, здесь перехватываются и
+  переводятся в объекты ошибок мока), плюс вычислительные функции
+  (`summarizeCheckpoint`, `checkpointHasOpenIssues`,
+  `getBusChildrenBreakdown`, `getGroupChildrenBreakdown`, `getBusDelta`,
+  `getGroupDelta`, `getCheckpointBetreuerList`,
+  `getBetreuerTodayAssignment`, `getDayBaselineCheckpoint`) — вычисляются
+  из реальных `scans`/`scan_packets`/`user_group_day`.
+- **Новый файл** `src/composables/useLazyCheckpointProgress.js` —
+  «отметился» = дети с записью в `scans`, чей `packet_id` ссылается на
+  `scan_packets` с этим `checkpoint_id`; «ещё нет» = ростер группы/дня
+  минус это множество; «время последней отметки» =
+  `MAX(scan_packets.received_at)` по `checkpoint_id`.
+- **Новый файл** `src/composables/useBetreuerEntity.js` — реальный, читает
+  `users`.
+- Компоненты `src/components/checkpoints/{ChildLink,BetreuerLink,
+  GroupLink,CountLink,EntityListCard}.vue` — копии из
+  `checkpoints-prototype/`, без изменений логики.
+- Новые экраны: `src/views/ChildCardView.vue`, `src/views/BetreuerCardView.vue`,
+  `src/views/GroupEntityView.vue`, `src/views/EntityListView.vue`.
+- `useChildren.js` — используется как есть; дополняется недостающей
+  функцией списка по группе только если `fetchGroupDetails()`-эквивалента
+  ещё нет (оценить по месту, не дублировать существующее).
+
+## Что должно быть реализовано
+
+1. `useSupabaseCheckpoints.fetchCheckpointsForDay(day)` — `SELECT *
+   FROM checkpoints WHERE day = ...`, с вычисляемым `seq` (`ROW_NUMBER()
+   OVER (PARTITION BY day ORDER BY id)`, на сервере или на клиенте, как
+   в моке `withSeq()`).
+2. `rpcCreateCheckpoint(type)`/`rpcFinishCheckpoint(id)`/
+   `rpcReopenCheckpoint(id)`/`rpcRemoveCheckpoint(id)` — тонкие обёртки
+   над `supabase.rpc('create_checkpoint', {...})` и т.д.; перехват
+   Postgres-исключений и перевод в единообразные объекты ошибок.
+3. `subscribeToCheckpointsChanges(onChange)` — канал `postgres_changes`
+   на `checkpoints`, по образцу существующих подписок в проекте.
+4. `getBusChildrenBreakdown`/`getGroupChildrenBreakdown` — читают
+   реальный ростер (`children` по `group_id`/присвоенному сегодня
+   `bus_id` через `scan_packets.bus_id` этой точки) и присутствие через
+   `scans`/`scan_packets.checkpoint_id` — не через `children_today`/
+   `groups_today` (тот же принцип, что и для `baseline_children_count` в
+   тикете 132 — консистентность между БД-подсчётом и клиентским).
+5. `getBetreuerTodayAssignment(betreuerId, day)` — читает
+   `user_group_day` (существующая таблица, поля `user_id`, `group_id`,
+   `bus_id`, `day`) вместо перебора checkpoints, как делал мок — более
+   прямой и уже доступный реальный источник.
+6. `useLazyCheckpointProgress.fetchLazyCheckpointProgress(checkpointId)`
+   — реальный join, как описано выше.
+7. `getChildById(id)`/`getChildrenByGroup(groupId)` — реальные запросы к
+   `children`, без полей `parentA`/`parentB`/`phone` (не существуют в
+   реальной схеме).
+8. `getBetreuerById(id)`/`getBetreuerByName(name)` — запрос к `users`.
+   Открытый вопрос по месту: `role != 'admin'` фильтр или все
+   пользователи — сверить с тем, как список Verantwortliche/Betreuer
+   формируется сегодня в реальных запросах `useGroups.js`/`useBusData.js`
+   (файлы читаются только как референс — они сами удаляются в тикете 137).
+9. `EntityListView.vue` — универсальный список (переезд из
+   `EntityListPrototypeView.vue`), источник данных — реальные
+   `children`/`users` в зависимости от типа сущности.
+10. Карточка ребёнка вызывает `useChildren.fetchChildDetailsAndScans(childId)`
+    напрямую вместо `useScanHistoryMock.js`. Кнопка «Bearbeiten» ведёт на
+    уже существующий `/child-edit/:id` (`ChildEditView.vue`) — не
+    создавать параллельный редактор.
+11. Маршруты для entity-экранов — по аналогии с прототипом, без суффикса
+    `-prototype`; точные пути финализируются вместе с тикетом 134 (общий
+    namespace `/admin/checkpoints/...`).
+
+## Что не входит
+
+- `ChildEditPrototypeView.vue` не переносится вообще.
+- Сами Checkpoint-экраны (List/Bus/Group/Lazy) — тикеты 134/135.
+- Изменение реальной схемы `children`/`users` — полям «родители»/
+  «телефон ребёнка» из мока не добавляется реальный аналог.
+
+## Результат выполнения тикета
+
+- Три composable-файла Checkpoint и `useBetreuerEntity.js` реализованы,
+  экспортируют те же имена/форму, что и mock-эквиваленты.
+- Presentational-компоненты и entity-экраны работают на реальных
+  Supabase-данных, визуально эквивалентны прототипу 130_2 (с поправкой на
+  реальные поля).
+- Ручная проверка в консоли/временном тестовом компоненте: каждая функция
+  против применённой в 132 БД возвращает ожидаемую форму данных.
+- Ручная проверка на устройстве/в браузере: открытие карточки реального
+  ребёнка/Betreuer/группы показывает корректные данные.
+- `npm run build` проходит без ошибок.
+
+## Зависимости
+
+Требует 132. Блокирует 134, 135. Не блокирует 136 (тот зависит только от
+132).

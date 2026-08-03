@@ -50,8 +50,8 @@
           <ul class="navbar-nav me-auto">
 
             <li v-if="isAdmin" class="nav-item">
-              <router-link to="/children" class="nav-link text-white" @click="closeMenu">
-                🧒 Kinder
+              <router-link to="/admin/checkpoints" class="nav-link text-white" @click="closeMenu">
+                📍 Checkpoints
               </router-link>
             </li>
             <li v-if="isAdmin" class="nav-item">

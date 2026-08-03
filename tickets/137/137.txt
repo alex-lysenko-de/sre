@@ -1,0 +1,131 @@
+# Тикет 137: Удаление устаревшего кода + объединение меню администратора
+
+Часть фазы реализации Checkpoint — см. `tickets/131/MIGRATION_PLAN.md`.
+По итогам архитектурного ревью (`tickets/131/MIGRATION_PLAN_REVIEW_RESPONSE.md`,
+пп. 1, 7, 9, 14) объединяет удаление старого Bus/Group-механизма
+(`AdminBusView.vue`/`ChildrenView.vue`/Reset) с удалением Kopfzählung
+(`HeadcountView.vue`/`useChildPresence.js` — решение пользователя, см.
+ниже) и с прямой заменой меню администратора одной кнопкой — без
+промежуточного состояния «4-я кнопка рядом со старыми тремя», так как
+живых пользователей, ради которых стоило бы это состояние сохранять, нет.
+
+## Цель
+
+Удалить весь мёртвый/замещённый код старого механизма учёта присутствия
+(Bus/Group-экраны, Reset, Kopfzählung), объединить меню администратора в
+`MainView.vue` в одну кнопку «Checkpoints», обновить `router/index.js`.
+
+## Что прочитать перед началом
+
+- `tickets/130/130.txt`, раздел «Пересмотр существующего меню
+  администратора» — что должно произойти с Hard Reset/Soft Reset/
+  Aktualisieren/Bus Alerts.
+- `tickets/130/IMPLEMENTATION_PLAN.md`, раздел «План реализации», п. 9 —
+  исходный список мёртвого кода на удаление.
+- `tickets/131/MIGRATION_PLAN.md`, §1.3 (пп. 6, 7) и §1.5 — подтверждённые
+  расхождения: `closeDay`/`isDayClosed` мёртвые; `useChildPresence.js`
+  пишет в `children_today` в обход Aggregation Model — причина, по
+  которой Kopfzählung удаляется, а не переносится на Checkpoint.
+- `src/composables/useDays.js` целиком — какие функции остаются мёртвыми/
+  удаляемыми (`startNewDay`, `softReset`, `closeDay`, `isDayStarted`,
+  `isDayClosed`), какие используются в другом месте (сверить грепом перед
+  удалением каждой — не полагаться только на этот список, он может
+  устареть к моменту реализации).
+- **Решение пользователя (Kopfzählung, зафиксировано при ревью 131,
+  согласуется с `tickets/dashboard.md`, строка 123 — фича уже отмечена
+  там как «признана неудачным экспериментом и должна быть удалена»):**
+  `HeadcountView.vue`/`useChildPresence.js` удаляются целиком, без
+  переноса функциональности на Lazy Checkpoint или что-либо ещё.
+- `src/views/GroupEditView.vue:66-68, 234-235` — кнопка «Kopfzählung»
+  (`goToHeadcount()` → `/headcount`) становится мёртвой ссылкой после
+  удаления `HeadcountView.vue` — найдено при аудите остальных экранов
+  (`MIGRATION_PLAN_REVIEW_RESPONSE.md`, п.9), не было ни в одном
+  документе 130/131 до этого ревью.
+
+## Затрагиваемые части проекта
+
+`src/views/`, `src/composables/useDays.js`, `src/composables/useGroups.js`,
+`src/composables/useBusData.js`, `src/composables/useChildPresence.js`,
+`src/router/index.js`, `src/views/MainView.vue`, `src/views/GroupEditView.vue`,
+БД (триггер `on_reset_event_insert`).
+
+## Файлы/подсистемы, которые будут изменены
+
+- **Удаляются**: `src/views/AdminBusView.vue`, `src/views/ChildrenView.vue`,
+  `src/views/HeadcountView.vue`, `src/composables/useChildPresence.js`,
+  `src/components/ResetHistoryPanel.vue`, `src/components/BusDetailModal.vue`,
+  `src/components/GroupDetailModal.vue`, все `*PrototypeView.vue`/
+  `*Mock.js`/`src/components/checkpoints-prototype/*` (заменены реальными
+  эквивалентами тикетов 133-135).
+- **Проверить грепом перед удалением, затем удалить, если подтверждено
+  мёртвыми**: `src/composables/useGroups.js`, `src/composables/useBusData.js`
+  целиком — на момент написания этого тикета оба файла используются
+  только из `ChildrenView.vue`/`AdminBusView.vue`/`BusDetailModal.vue`/
+  `GroupDetailModal.vue`/`ResetHistoryPanel.vue` (все — из списка выше),
+  то есть после их удаления оба composable-файла целиком теряют
+  потребителей — но это нужно **перепроверить грепом на момент
+  реализации**, не полагаться на этот список: если к тому времени
+  `useCheckpoints.js`/`useBetreuerEntity.js` (тикет 133) стали
+  переиспользовать что-то из них напрямую (а не только как образец
+  паттерна) — удалять только неиспользуемые части, не файл целиком.
+- `src/composables/useDays.js` — удаление `startNewDay`/`softReset`/
+  `closeDay`/`isDayStarted`/`isDayClosed`; `fetchDaysList`/`saveDay`/
+  `deleteDay` (управление `days`-справочником) остаются — не связаны с
+  Reset-механизмом.
+- `src/router/index.js` — удаление маршрутов `/admin-busses`, `/children`,
+  `/headcount`, всех `*-prototype`-маршрутов; маршруты Checkpoint (уже
+  введённые в 134/135) становятся единственными административными.
+- `src/views/MainView.vue` — кнопки «Busse», «Admin Übersicht»,
+  «Checkpoints (Prototyp)» заменяются одной кнопкой «Checkpoints», ведущей
+  на `CheckpointListView.vue` (тикет 134), `v-if="userStore.isAdmin"`,
+  тот же паттерн.
+- `src/views/GroupEditView.vue` — удаление кнопки «Kopfzählung»/
+  `goToHeadcount()`.
+- БД/`doc/db/` — новый файл `doc/db/remove_reset_events_trigger.sql`
+  (`DROP TRIGGER`/`DROP FUNCTION` для `on_reset_event_insert`, не
+  редактирование `doc/db_triggers.sql` задним числом — проект хранит
+  миграции как последовательность файлов).
+
+## Что должно быть реализовано
+
+1. Грепом подтвердить отсутствие оставшихся потребителей для каждого
+   удаляемого файла/функции перед удалением (не удалять «по списку из
+   документа» вслепую).
+2. Удаление файлов/функций из списка выше.
+3. `MainView.vue` — одна кнопка «Checkpoints» вместо трёх.
+4. `router/index.js` — актуальный набор маршрутов без старых/прототипных
+   путей.
+5. `GroupEditView.vue` — убрать кнопку «Kopfzählung».
+6. `doc/db/remove_reset_events_trigger.sql` — `DROP TRIGGER
+   trg_on_reset_event_insert`, `DROP FUNCTION on_reset_event_insert()`.
+   Применяется после подтверждения пользователем, как и все миграции
+   этой серии.
+7. **Не удаляется** в этом тикете: `reset_events` как таблица (данные —
+   история, не мешают; удаление таблицы не требуется ни одним документом,
+   только связанный триггер и клиентские вызовы). Триггер
+   `trg_on_children_today_delete`/функция `on_children_today_delete()`
+   технически становится «висящей» (единственный источник `DELETE FROM
+   children_today` был в `on_reset_event_insert`, который удаляется этим
+   тикетом) — оставить как есть, триггер просто перестаёт срабатывать,
+   удаление необязательно (не входит в объём, не мешает).
+
+## Что не входит
+
+- Удаление таблиц `reset_events`/`children`/`users`/`children_today`/
+  `groups_today`/схемы — не входит.
+- Date-scoped миграция `children_today`/`groups_today` — тикет 138.
+- Любые новые функциональные изменения — только удаление/объединение.
+
+## Результат выполнения тикета
+
+- Единственная точка входа администратора — «Checkpoints».
+- `npm run build` проходит без ошибок, нет мёртвых импортов.
+- Ручная проверка на устройстве: старые маршруты (`/admin-busses`,
+  `/children`, `/headcount` и т.д.) больше не существуют (редирект/404 по
+  политике приложения), новый флоу полностью покрывает прежнюю
+  функциональность.
+
+## Зависимости
+
+Требует 134, 135, 136. Блокирует 138 (рекомендательно, не технически —
+см. `tickets/131/MIGRATION_PLAN.md`, §3), 139.

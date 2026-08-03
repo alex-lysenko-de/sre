@@ -1,0 +1,167 @@
+# Тикет 132: DB — полная схема Checkpoint (таблица + RLS + RPC + расширение submit_scan_packet())
+
+Первый тикет фазы реализации «Контрольная точка» (Checkpoint) —
+см. `tickets/131/MIGRATION_PLAN.md` за общей картиной и порядком
+тикетов 132–139. По итогам архитектурного ревью (`tickets/131/
+MIGRATION_PLAN_REVIEW_RESPONSE.md`, п.13) объединяет то, что в первой
+версии плана было тремя тикетами (132/133/134) — вся спецификация уже
+зафиксирована в `131/IMPLEMENTATION_PLAN.md`, design-неопределённости
+нет, разделение не добавляло пользы. Единственный тикет этой серии,
+целиком в БД, без клиентского кода.
+
+## Цель
+
+Создать в реальной БД проекта: таблицу `checkpoints`, колонку
+`scan_packets.checkpoint_id`, узкие RLS-политики с самого начала, четыре
+RPC-функции для явного администраторского управления (`create_checkpoint`/
+`finish_checkpoint`/`reopen_checkpoint`/`remove_checkpoint`) и расширение
+`submit_scan_packet()` для авто-создания/поиска точки со стороны
+недоверенного пути (воспитатель → Edge Function).
+
+## Что прочитать перед началом
+
+- `tickets/130/decision.md` — гибридная модель целиком: зачем нужен
+  именно такой уникальный индекс, почему воспитатели никогда не
+  блокируются, семантика конфликтов.
+- `tickets/131/IMPLEMENTATION_PLAN.md`, разделы «Изменения БД» и
+  «Решённые в этой сессии открытые вопросы» — таблица `checkpoints` (без
+  `CANCELLED`, `status CHECK IN (1,2)`), все 4 RPC, расширение
+  `submit_scan_packet()` уже спроектированы там, это основа DDL этого
+  тикета, не писать заново с нуля.
+- `src/composables/useCheckpointsMock.js`, функции `createCheckpoint`,
+  `finishCheckpoint`, `reopenCheckpoint`, `removeCheckpoint` (строки
+  244-365) — точная сигнатура и формы ошибок (`{error: 'ALREADY_OPEN',
+  existingId}`, `{error: 'NOT_OPEN'}`, `{error: 'NOT_FINISHED'}`,
+  `{error: 'NOT_FOUND'}`), которые RPC-слой должен воспроизвести один в
+  один — тикет 133 полагается именно на эти формы ошибок.
+- `doc/db/scan_packets.sql` целиком — образец конвенции проекта (шапка-
+  комментарий, `IF NOT EXISTS`, RLS-блок в конце) и функция
+  `submit_scan_packet()` (:183-241), которая расширяется этим тикетом —
+  важно не сломать идемпотентность по `client_packet_id` (:216-225).
+- `vault/03-База-данных/RLS-политики.md` — пример задокументированной
+  ошибки проекта («неотозванные широкие legacy-политики»), которую нужно
+  не повторить на новой таблице.
+
+## Затрагиваемые части проекта
+
+Только БД. Ни один файл в `src/` не меняется этим тикетом — клиентский
+`useScanPacket.js` и Edge Function `submit-scan-packet` не меняются
+(вызывают ту же функцию по имени, интерфейс не меняется).
+
+## Файлы/подсистемы, которые будут изменены
+
+- **Новый файл** `doc/db/checkpoints.sql` — DDL таблицы `checkpoints` +
+  `ALTER TABLE scan_packets ADD COLUMN checkpoint_id` + RLS + все 4 RPC +
+  расширение `submit_scan_packet()`. Один файл (по аналогии с тикетом
+  122, где таблица+триггеры+функция+RLS были в одном `scan_packets.sql`).
+  Применяется вручную через Supabase SQL Editor/CLI — явно подтверждаемый
+  пользователем шаг, не автоматический.
+
+## Что должно быть реализовано
+
+1. `CREATE TABLE IF NOT EXISTS public.checkpoints` по спецификации
+   `tickets/131/IMPLEMENTATION_PLAN.md`: поля `id, type (smallint,
+   1=BUS/2=GROUP/3=LAZY), day (varchar), status (smallint, DEFAULT 1,
+   CHECK IN (1,2) — без CANCELLED), created_by (bigint REFERENCES users),
+   created_at, finished_at, finished_by, baseline_children_count`.
+2. Уникальный частичный индекс «не более одной открытой контрольной
+   точки на тип в день»: `CREATE UNIQUE INDEX ... ON checkpoints(day,
+   type) WHERE status = 1` — центральный механизм гибридной модели.
+3. `ALTER TABLE public.scan_packets ADD COLUMN IF NOT EXISTS
+   checkpoint_id bigint NULL REFERENCES public.checkpoints(id)`.
+4. RLS для `checkpoints`: `ENABLE ROW LEVEL SECURITY`, `SELECT` для
+   `authenticated` (`USING (true)`). **Никакой** `INSERT`/`UPDATE`/
+   `DELETE`-политики для `authenticated` — запись только через
+   `SECURITY DEFINER`-функции из п.5-8. Явно прокомментировать в файле
+   почему (по образцу комментария в конце `doc/db/scan_packets.sql`),
+   чтобы не повторить ошибку `reset_events`/`children_today`/`groups_today`
+   (см. тикет 138 — там это уже существующая ошибка исправляется).
+5. `create_checkpoint(p_type smallint, p_day varchar)` — `SECURITY
+   DEFINER`, явная проверка `role='admin' AND active=true` внутри (не
+   переиспользовать существующие `has_role()`/`is_admin()`, если такие
+   есть — у них нет проверки `active`). Если уже есть открытая точка
+   того же `(type, day)` — `RAISE EXCEPTION` (не переиспользовать молча,
+   в отличие от авто-создания в п.9) — иначе `INSERT INTO checkpoints`.
+   `SET search_path = public, pg_temp`.
+6. `finish_checkpoint(p_id bigint)` — `SECURITY DEFINER`, та же проверка
+   роли. Два явно разделённых шага внутри функции (`131.txt`,
+   «Ограничения» — не одна непрозрачная транзакция без комментариев):
+   - шаг 1: `UPDATE checkpoints SET status=2, finished_at=now(),
+     finished_by=... WHERE id=p_id AND status=1`;
+   - шаг 2: если это первая `FINISHED`-точка этого `day` (независимо от
+     типа) — посчитать и записать `baseline_children_count` универсально
+     через `scans ⋈ scan_packets.checkpoint_id = p_id` (не через
+     `children_today`/`groups_today` — они пока не date-scoped, тикет 138).
+7. `reopen_checkpoint(p_id bigint)` — отменяет случайный Finish. Только
+   для `status=2`. Отклоняет (`RAISE EXCEPTION`), если тем временем уже
+   открыта другая точка того же типа/дня (та же форма конфликта, что и
+   `create_checkpoint`).
+8. `remove_checkpoint(p_id bigint)` — удаляет ошибочно созданную точку
+   целиком. Процедурный каскад **тремя явными `DELETE`** внутри функции
+   (сначала `scans` через `packet_id IN (SELECT id FROM scan_packets
+   WHERE checkpoint_id=p_id)`, затем `scan_packets WHERE
+   checkpoint_id=p_id`, затем сама `checkpoints`-строка) — **не** через
+   `ON DELETE CASCADE` на `scans.packet_id` (изменило бы поведение любого
+   будущего удаления `scan_packets`, не только этой кнопки). Явно
+   задокументировать в SQL-комментарии: после удаления
+   `client_packet_id` удалённых пакетов освобождается, повторная отправка
+   того же офлайн-пакета больше не дедуплицируется.
+9. Расширение `submit_scan_packet()` — `CREATE OR REPLACE FUNCTION`, в
+   начале тела, после разбора `payload` и до `INSERT INTO scan_packets`:
+   - `INSERT INTO checkpoints (type, day, status, created_by) VALUES
+     ((payload->>'type_code')::smallint, payload->>'date', 1,
+     (payload->>'author_id')::bigint) ON CONFLICT (day, type) WHERE
+     status = 1 DO NOTHING;`
+   - `SELECT id INTO v_checkpoint_id FROM checkpoints WHERE day =
+     payload->>'date' AND type = (payload->>'type_code')::smallint AND
+     status = 1 ORDER BY id DESC LIMIT 1;`
+   - `v_checkpoint_id` передаётся в `INSERT INTO scan_packets (...,
+     checkpoint_id) VALUES (..., v_checkpoint_id)`.
+   - **Никакого нового `RAISE EXCEPTION`** в этом месте — пакет никогда
+     не отклоняется из-за отсутствия точки (центральное отличие гибридной
+     модели). Сохранить без изменений: guard на `children[]` без
+     `child_id` (:194-199), идемпотентность по `client_packet_id`
+     (:216-225), вставку в `scans` (:227-237).
+   - Явный SQL-комментарий: почему `ON CONFLICT ... WHERE status=1 DO
+     NOTHING` + повторное чтение безопасны при гонке двух воспитателей,
+     приславших первый пакет своего типа одновременно.
+10. Все новые функции — `SECURITY DEFINER`, `SET search_path = public,
+    pg_temp` (защита от search-path hijacking).
+11. Файл идемпотентен (безопасно перезапускаемый): `IF NOT EXISTS`/`ADD
+    COLUMN IF NOT EXISTS`/`CREATE INDEX IF NOT EXISTS`/`CREATE OR REPLACE
+    FUNCTION`.
+12. Дополнить `vault/03-База-данных/RLS-политики.md` короткой сноской:
+    `checkpoints` — пример таблицы, спроектированной сразу без
+    антипаттерна «неотозванных широких legacy-политик» (см. тикет 138,
+    где этот же антипаттерн устраняется на уже существующей таблице).
+
+## Что не входит
+
+- Composable-слой, который вызывает эти RPC/расширенный
+  `submit_scan_packet()` — тикет 133.
+- Любой клиентский код — тикеты 133+.
+- Фактическое применение SQL к боевой БД не обязательно завершать в
+  рамках этого тикета кодом ИИ-ассистента — это явно подтверждаемый
+  пользователем шаг (см. `IMPLEMENTATION_REPORT.md` шаблон предыдущих
+  тикетов, напр. 122).
+
+## Результат выполнения тикета
+
+- `doc/db/checkpoints.sql` подготовлен, идемпотентен, соответствует
+  RLS-паттерну проекта.
+- Применён к реальной БД (после подтверждения пользователем) и проверен
+  вручную: `SELECT` из `checkpoints` работает под authenticated-сессией,
+  `INSERT` под authenticated-сессией — отклоняется RLS;
+  `create_checkpoint` дважды подряд для одного типа/дня — второй вызов
+  `RAISE EXCEPTION`; `finish_checkpoint` на первой за день точке —
+  записывает `baseline_children_count`, на второй — нет;
+  `reopen_checkpoint`/`remove_checkpoint` — базовые сценарии; отправка
+  первого пакета за день через `submit_scan_packet()` создаёт
+  `checkpoints`-строку и проставляет `checkpoint_id`, второй пакет того
+  же типа/дня переиспользует ту же точку.
+- Зафиксировано в `IMPLEMENTATION_REPORT.md`, применена ли миграция к
+  боевой БД в рамках этой сессии или отложена на явное подтверждение.
+
+## Зависимости
+
+Нет (первый тикет фазы реализации). Блокирует 133, 136.
