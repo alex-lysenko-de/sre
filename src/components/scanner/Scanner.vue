@@ -409,7 +409,21 @@ const onScanError = () => {
 
 // Fuer extern ausgeloeste Meldungen (z. B. Ergebnis von "Senden" in
 // ScannerPrototypeView.vue), die denselben Bestaetigungsbildschirm wie ein
-// Scan-Ergebnis wiederverwenden sollen, ohne selbst ein Scan-Ereignis zu sein.
+// Scan-Ereignis wiederverwenden sollen, ohne selbst ein Scan-Ereignis zu sein.
+//
+// Am Ende bewusst kein html5QrCode.resume(): resume() haengt vom nativen
+// <video>-Event "playing" ab (html5-qrcode/esm/camera/core-impl.js,
+// RenderedCameraImpl.prototype.resume), das bei ueberlappenden
+// pause()/play()-Aufrufen auf demselben <video>-Element (z. B. wenn dieser
+// Zyklus mit dem Scan-Bestaetigungszyklus in onScanSuccess/
+// resumeAfterConfirmation kollidiert) nachweislich nicht immer feuert - ohne
+// Exception oder rejected Promise. Der interne FSM von html5-qrcode bleibt
+// dann fuer immer in PAUSED haengen: Kamerabild laeuft weiter, Decode ist
+// aber dauerhaft aus (tickets/141/141.txt). Ein try/catch um resume() kann
+// das nicht erkennen. Stattdessen: garantierter Kaltstart ueber
+// stopScanning()/startCamera() - denselben, bereits als zuverlaessig
+// getesteten Pfad wie beim ersten Oeffnen des Scanners (tickets/141/
+// IMPLEMENTATION_PLAN.md).
 const showExternalMessage = async (variant, display, durationMs) => {
   const wasActive = scannerActive.value
   if (wasActive) {
@@ -425,11 +439,8 @@ const showExternalMessage = async (variant, display, durationMs) => {
   hideConfirmationScreen()
 
   if (wasActive) {
-    try {
-      html5QrCode.resume()
-    } catch (error) {
-      console.warn('⚠️ Fehler beim Fortsetzen des Scanners:', error)
-    }
+    await stopScanning()
+    await startCamera()
   }
 }
 
