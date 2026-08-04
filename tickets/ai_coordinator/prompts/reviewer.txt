@@ -5,8 +5,7 @@
 * описание задачи: `tickets/{{TICKET}}/{{TICKET}}.txt`;
 * план реализации: `tickets/{{TICKET}}/IMPLEMENTATION_PLAN.md`;
 * отчет разработчика: `tickets/{{TICKET}}/IMPLEMENTATION_REPORT.md`;
-* измененные файлы проекта. Их список можно получить командой `git diff`, которая показывает изменения последнего коммита и все локальные изменения, еще не закоммиченные в репозиторий.
-
+* измененные файлы проекта. Используй `git diff` и `git log` by commit message {{TICKET}}
 
 Проведи полный code review.
 

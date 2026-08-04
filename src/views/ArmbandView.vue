@@ -25,11 +25,11 @@
     <div v-else-if="!childData && !isAssigning" class="card shadow-sm">
       <div class="card-body p-4">
         <h3 class="card-title mb-4">
-          📍 Armband‑Zuordnung (ID={{ bandId }})
+          📍 Armband‑Zuordnung 
         </h3>
 
         <p class="text-muted mb-4">
-          Dieses Armband ist noch keinem Kind zugeordnet.<br>
+          Dieses Armband (ID=<strong>{{ bandId }}</strong>) ist noch keinem Kind zugeordnet.<br>
           Bitte wählen Sie ein Kind aus Ihrer Gruppe aus.
         </p>
 

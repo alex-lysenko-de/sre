@@ -1,0 +1,23 @@
+Требуется такие доработки:
+
+1.Страница **Armband-zuordnung** (ArmbandView.vue)
+
+"""
+    <label class="form-check-label" :for="'child-' + child.id">
+                  {{ child.name }} ({{ child.age }} J)
+                  <span class="text-muted">— Armband: {{ child.band_id ?? '—' }}</span>
+                </label>
+"""
+
+Информация о ребенке записана в одну строку.
+
+Надо: Информация о ребенке разбита на несколько строк:
+FOR EXAMPLE
+"""
+Max Mustermann
+Alter: 10 
+Armband Id: 104
+"""
+
+
+2. 

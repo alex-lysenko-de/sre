@@ -19,6 +19,18 @@
     <!-- Child detail card -->
     <div v-else-if="child" class="card shadow-sm">
       <div class="card-body p-4">
+	  
+	    <!-- Action buttons -->
+        <div class="d-grid gap-2 mb-3">
+          <!-- Back to group button -->
+          <button
+              @click="goBack"
+              class="btn btn-outline-secondary w-100"
+          >
+            ↩️ Zurück
+          </button>
+        </div>
+	  
         <!-- Header -->
         <div class="d-flex align-items-start justify-content-center mb-4">
           <div>
@@ -47,16 +59,7 @@
           <strong>Heute noch nicht anwesend</strong>
         </div>
 
-        <!-- Action buttons -->
-        <div class="d-grid gap-2 mb-3">
-          <!-- Back to group button -->
-          <button
-              @click="goBack"
-              class="btn btn-outline-secondary w-100"
-          >
-            ↩️ Zurück
-          </button>
-        </div>
+ 
 
           <!-- Child info grid -->
         <div class="row mb-4">
