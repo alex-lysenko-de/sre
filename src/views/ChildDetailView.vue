@@ -49,12 +49,6 @@
 
         <!-- Action buttons -->
         <div class="d-grid gap-2 mb-3">
-          <button
-              @click="openPresenceModal"
-              class="btn btn-success btn-lg"
-          >
-            ✅ Präsenz registrieren
-          </button>
           <!-- Back to group button -->
           <button
               @click="goBack"
@@ -118,61 +112,41 @@
           >
             ✏️ Bearbeiten
           </button>
-        </div>
-
-
-        <!-- Success message -->
-        <div v-if="successMessage" class="alert alert-success mt-3" role="alert">
-          {{ successMessage }}
+          <button
+              @click="removeChild"
+              class="btn btn-outline-danger btn-lg"
+          >
+            🗑️ Entfernen
+          </button>
         </div>
       </div>
     </div>
-
-    <!-- Presence Modal Component -->
-    <ChildPresenceModal
-        v-if="showPresenceModal"
-        ref="presenceModalRef"
-        :show="showPresenceModal"
-        :child-name="child?.name || ''"
-        :is-first-check-today="!presenceInfo.isPresent"
-        :current-bus-id="presenceInfo.busId"
-        :default-bus-id="userStore.userInfo.bus_id"
-        @close="showPresenceModal = false"
-        @confirm="handlePresenceConfirm"
-    />
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { useUserStore } from '@/stores/user'
 import { useArmband } from '@/composables/useArmband'
 import { useScan } from '@/composables/useScan'
-import { useScanPacket } from '@/composables/useScanPacket'
-import ChildPresenceModal from '@/components/ChildPresenceModal.vue'
+import { useChildren } from '@/composables/useChildren'
 import Utils from '@/utils/utils'
 
 const router = useRouter()
 const route = useRoute()
-const userStore = useUserStore()
 const armbandComposable = useArmband()
 const scanComposable = useScan()
-const scanPacketComposable = useScanPacket()
+const childrenComposable = useChildren()
 
 const childId = computed(() => route.params.id)
 
 const isLoading = ref(true)
 const error = ref(null)
-const successMessage = ref(null)
 const child = ref(null)
 const presenceInfo = ref({
   isPresent: false,
   busId: null
 })
-
-const showPresenceModal = ref(false)
-const presenceModalRef = ref(null)
 
 onMounted(async () => {
   await loadChildDetails()
@@ -226,87 +200,33 @@ async function loadPresenceInfo() {
 }
 
 /**
- * Öffnet Präsenz-Modal
- */
-function openPresenceModal() {
-  // Validate user bus_id is available
-  if (!userStore.userInfo.bus_id) {
-    error.value = 'Dein Arbeitsbus ist nicht zugeordnet. Kontaktiere einen Administrator.'
-    return
-  }
-
-  showPresenceModal.value = true
-}
-
-/**
- * Behandelt Bestätigung aus Modal - erstellt ein CHECKIN-Paket mit diesem
- * einen Kind über useScanPacket (tickets/136/136.txt), statt direkt in
- * `scans` zu schreiben. Das Kind erhält so einen `checkpoint_id` und taucht
- * in den Checkpoint-Screens auf (tickets/131/MIGRATION_PLAN_REVIEW_RESPONSE.md,
- * п.11).
- */
-async function handlePresenceConfirm() {
-  try {
-    // Set loading state in modal
-    if (presenceModalRef.value) {
-      presenceModalRef.value.setLoading(true)
-    }
-
-    error.value = null
-    successMessage.value = null
-
-    // Validierung
-    if (!userStore.userInfo.id) {
-      throw new Error('Benutzer nicht authentifiziert')
-    }
-
-    if (!child.value.id) {
-      throw new Error('Kind-ID nicht gefunden')
-    }
-
-    if (!child.value.band_id) {
-      throw new Error('Armband für dieses Kind nicht zugeordnet')
-    }
-
-    // CHECKIN-Paket mit genau diesem Kind (manuell erfasst, nicht gescannt)
-    scanPacketComposable.createPacket('CHECKIN', {})
-    scanPacketComposable.addManual({ id: child.value.id })
-    await scanPacketComposable.submitPacket()
-
-    // Modal schließen
-    showPresenceModal.value = false
-
-    // Success-Nachricht
-    successMessage.value = `✅ Präsenz für ${child.value.name} registriert`
-
-    // Aktualisiere Anwesenheitsinformationen
-    await loadPresenceInfo()
-
-    // Verstecke Nachricht nach 3 Sekunden
-    setTimeout(() => {
-      successMessage.value = null
-    }, 3000)
-
-  } catch (err) {
-    console.error('Fehler beim Registrieren der Präsenz:', err)
-
-    const message = scanPacketComposable.errorMessage.value || err.message || 'Fehler beim Registrieren der Präsenz'
-
-    // Show error in modal
-    if (presenceModalRef.value) {
-      presenceModalRef.value.setError(message)
-    } else {
-      error.value = message
-    }
-  }
-}
-
-/**
  * Bearbeitet Kinderdaten
  */
 function editChild() {
   if (child.value?.id) {
     router.push({ name: 'ChildDetailEdit', params: { id: child.value.id } })
+  }
+}
+
+/**
+ * Entfernt das Kind nach Bestätigung und kehrt zur Gruppenliste zurück.
+ */
+async function removeChild() {
+  if (!child.value?.id) {
+    return
+  }
+
+  if (!confirm(`Möchten Sie das Kind "${child.value.name}" (ID: ${child.value.id}) wirklich entfernen?`)) {
+    return
+  }
+
+  try {
+    const groupId = child.value.group_id
+    await childrenComposable.deleteChild(child.value.id)
+    router.push(groupId ? { name: 'GroupEdit', params: { id: groupId } } : { name: 'GroupEdit' })
+  } catch (err) {
+    console.error('Fehler beim Entfernen des Kindes:', err)
+    error.value = err.message || 'Fehler beim Entfernen des Kindes'
   }
 }
 

@@ -1,0 +1,100 @@
+# Измененные файлы
+
+- `src/views/ChildDetailView.vue`
+- `src/views/GroupEditView.vue`
+
+# Новые файлы
+
+Нет.
+
+# Реализованные изменения
+
+## `ChildDetailView.vue` (требование 1 и 2.3)
+
+- Убрана кнопка «✅ Präsenz registrieren» и весь связанный с ней код:
+  функция `openPresenceModal()`, обработчик `handlePresenceConfirm()`,
+  `<ChildPresenceModal>` из шаблона, состояние `showPresenceModal`/
+  `presenceModalRef`/`successMessage`.
+- Удалены ставшие неиспользуемыми импорты `ChildPresenceModal` и
+  `useScanPacket` (композабл использовался только внутри
+  `handlePresenceConfirm()`).
+- Дополнительно (не отдельным пунктом плана, но прямое следствие
+  удаления кнопки): `useUserStore`/`userStore` удалены как ставшие
+  неиспользуемыми — единственным местом их применения была валидация
+  `userStore.userInfo.bus_id` внутри удалённого `openPresenceModal()`.
+- Информационный баннер «Heute anwesend»/«Heute noch nicht anwesend»
+  (`presenceInfo`, `loadPresenceInfo()`) оставлен без изменений — по
+  плану это не призыв к действию, а факт-статус, тикет просит убрать
+  только регистрацию присутствия.
+- Добавлена кнопка «🗑️ Entfernen» сразу после «✏️ Bearbeiten»: по клику
+  — `confirm()`-диалог (тот же паттерн, что был в
+  `GroupEditView.vue::removeChild()`), при подтверждении —
+  `useChildren().deleteChild(child.value.id)`, при успехе — переход на
+  `{ name: 'GroupEdit', params: { id: group_id } }` (или без `params`,
+  если у ребёнка нет `group_id` — `GroupEdit` сам подставит группу
+  текущего пользователя), при ошибке — тот же `error.value`/блок
+  `alert-danger`, что уже используется на странице.
+
+## `GroupEditView.vue` (требование 2.1, 2.2, 2.4, 2.5)
+
+- Из строки `<li>` списка детей убраны кнопки «Bearbeiten»/«Entfernen»
+  (иконки `edit`/`trash-alt`).
+- Строка `<li>` целиком стала кликабельной (`role="button"`,
+  `@click="openChildDetail(child)"`) и ведёт на
+  `{ name: 'ChildDetail', params: { id: child.id } }`.
+- Методы `editChild()`/`removeChild()` удалены, вместо `editChild()`
+  добавлен `openChildDetail()`. Деструктурированный `deleteChild` из
+  `useChildren()` удалён как ставший неиспользуемым (был нужен только
+  внутри удалённого `removeChild()`).
+- CSS: точечные правила для кнопок в строке списка (`.list-group-item
+  .btn`, `.btn-outline-primary`/`.btn-outline-danger` внутри строки)
+  убраны как ставшие неприменимыми; добавлен `cursor: pointer` для
+  `.list-group-item[role="button"]`, чтобы кликабельность строки была
+  визуально понятна (уже существующий hover-эффект `.list-group-item:hover`
+  не менялся).
+- «Neues Kind hinzufügen» → `AddEditChildModal` в режиме создания — без
+  изменений.
+
+## `ChildPresenceModal.vue` — удалён
+
+Единственный потребитель (`ChildDetailView.vue`) больше его не
+использует — файл удалён целиком, осиротевших ссылок не осталось
+(проверено grep по `src/` — совпадений нет).
+
+# Отклонения от плана
+
+Формально одно небольшое расширение мимо явного текста плана: удаление
+`useUserStore`/`userStore` из `ChildDetailView.vue` и `deleteChild` из
+деструктуризации `useChildren()` в `GroupEditView.vue`. План перечислял
+только `ChildPresenceModal`/`useScanPacket` как становящиеся
+неиспользуемыми импорты, но не упомянул эти две — по факту оба стали
+мёртвым кодом как прямое следствие того же самого удаления кнопок,
+описанного в плане. Removed по той же причине и тем же принципом,
+что уже применялся в проекте (тикет 137 — не оставлять осиротевший
+код). Архитектурных решений при этом не принималось — чисто
+механическая уборка ставших недостижимыми переменных.
+
+В остальном реализация строго соответствует
+`IMPLEMENTATION_PLAN.md` (шаги 1–5 «План реализации»).
+
+# Миграции
+
+Не требуются — БД/RLS/API не менялись, `deleteChild()` используется
+без изменений с того же самого набора прав, что и раньше
+(просто вызывается с другого экрана).
+
+# Проверки
+
+- `npm run build` — пройден успешно, сборка завершилась без ошибок.
+- `grep` по `src/` подтверждает отсутствие оставшихся ссылок на
+  `ChildPresenceModal`, `openPresenceModal`, `handlePresenceConfirm`,
+  `showPresenceModal`, `editChild`/`removeChild` (в `GroupEditView.vue`).
+- Ручная проверка в браузере (п.6 плана реализации: сканирование →
+  привязка Armband → отсутствие предложения регистрации присутствия;
+  `/group-edit` → клик по ребёнку → `/child/:id`; «Bearbeiten» →
+  `/child-edit/:id` → сохранение → назад; «Entfernen» → подтверждение
+  → удаление → переход на `/group-edit`; «Neues Kind hinzufügen»)
+  **не выполнена** в рамках этой сессии — как и во всех предыдущих
+  тикетах серии, у сессии ИИ-ассистента нет доступа к браузеру.
+  Требуется подтверждение пользователем перед переводом тикета в
+  `DONE`.

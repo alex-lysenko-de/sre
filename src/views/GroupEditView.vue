@@ -34,7 +34,7 @@
               Keine Kinder in dieser Gruppe.
             </li>
 
-            <li v-for="child in children" :key="child.id" class="list-group-item d-flex justify-content-between align-items-center">
+            <li v-for="child in children" :key="child.id" class="list-group-item" role="button" @click="openChildDetail(child)">
               <div>
                 <strong>{{ child.name }}</strong> ({{ child.age }} J.) -
                 <span class="badge" :class="getSwimBadgeClass(child.schwimmer)">
@@ -44,15 +44,6 @@
                    style="font-size: 0.9em;">
                   Notizen: {{ child.notes }}
                 </p>
-              </div>
-
-              <div class="d-flex">
-                <button class="btn btn-outline-primary btn-sm me-2" @click="editChild(child)" title="Kind bearbeiten">
-                  <font-awesome-icon :icon="['fas', 'edit']"/>
-                </button>
-                <button class="btn btn-outline-danger btn-sm" @click="removeChild(child.id, child.name)" title="Kind entfernen">
-                  <font-awesome-icon :icon="['fas', 'trash-alt']"/>
-                </button>
               </div>
             </li>
           </ul>
@@ -97,8 +88,8 @@ export default {
   },
   setup() {
     const userStore = useUserStore()
-    const { fetchChildrenList, deleteChild } = useChildren()
-    return { userStore, fetchChildrenList, deleteChild }
+    const { fetchChildrenList } = useChildren()
+    return { userStore, fetchChildrenList }
   },
 
   data() {
@@ -177,9 +168,8 @@ export default {
       this.showChildModal = true
     },
 
-    editChild(child) {
-      this.selectedChild = child
-      this.showChildModal = true
+    openChildDetail(child) {
+      this.$router.push({ name: 'ChildDetail', params: { id: child.id } })
     },
 
     closeChildModal() {
@@ -199,23 +189,6 @@ export default {
         // Add new child
         this.allChildrenData.push(savedChild)
         this.showAlert(`Kind "${savedChild.name}" erfolgreich hinzugefügt.`, 'success')
-      }
-    },
-
-    async removeChild(childId, childName) {
-      if (confirm(`Möchten Sie das Kind "${childName}" (ID: ${childId}) wirklich entfernen?`)) {
-        try {
-          await this.deleteChild(childId)
-
-          const index = this.allChildrenData.findIndex(c => c.id === childId)
-          if (index !== -1) {
-            this.allChildrenData.splice(index, 1)
-          }
-
-          this.showAlert(`Kind "${childName}" erfolgreich entfernt.`, 'success')
-        } catch (error) {
-          this.showAlert(`Fehler beim Entfernen des Kindes: ${error.message}`, 'danger')
-        }
       }
     },
 
@@ -268,24 +241,12 @@ export default {
   transition: background-color 0.3s;
 }
 
+.list-group-item[role="button"] {
+  cursor: pointer;
+}
+
 .list-group-item:hover {
   background-color: #f1f1f1;
-}
-
-.list-group-item .btn {
-  margin-left: 10px;
-  padding: 0.25rem 0.5rem;
-  font-size: 0.875rem;
-}
-
-.list-group-item .btn-outline-primary {
-  color: #007bff;
-  border-color: #007bff;
-}
-
-.list-group-item .btn-outline-danger {
-  color: #dc3545;
-  border-color: #dc3545;
 }
 
 .btn-secondary {
