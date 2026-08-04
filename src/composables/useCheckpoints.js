@@ -32,8 +32,7 @@ const {
     rpcCreateCheckpoint,
     rpcFinishCheckpoint,
     rpcReopenCheckpoint,
-    rpcRemoveCheckpoint,
-    subscribeToCheckpointsChanges
+    rpcRemoveCheckpoint
 } = useSupabaseCheckpoints()
 
 const { fetchAllChildren, getChildrenByGroup } = useChildren()
@@ -621,8 +620,6 @@ export async function fetchGroupEntity(groupId, day = todayString()) {
     }
 }
 
-export { subscribeToCheckpointsChanges }
-
 export default {
     CHECKPOINT_TYPE,
     CHECKPOINT_STATUS,
@@ -643,6 +640,5 @@ export default {
     getGroupDelta,
     getCheckpointBetreuerList,
     getBetreuerTodayAssignment,
-    fetchGroupEntity,
-    subscribeToCheckpointsChanges
+    fetchGroupEntity
 }

@@ -78,6 +78,16 @@ checkpoints ... ON CONFLICT (day, type) WHERE status = 1 DO NOTHING`, затем
 legacy-политик» с самого начала, см. [[RLS-политики]], раздел
 «[[checkpoints]] (тикет 132)».
 
+## Realtime
+
+Состоит в публикации `supabase_realtime` (`doc/db/checkpoints_realtime_publication.sql`,
+тикет 143) — без этого клиентские Realtime-подписки (`CheckpointListView.vue`
+и три детальных экрана, `postgres_changes` на `checkpoints`) корректны, но
+никогда не получают событие: Postgres физически не публикует WAL-изменения
+таблицы, не состоящей в публикации, независимо от клиентского кода/RLS. До
+тикета 143 таблица в публикации не состояла — баг «состояние переклички не
+обновляется в реальном времени».
+
 ## Связанные заметки
 
 - [[Checkpoint]]

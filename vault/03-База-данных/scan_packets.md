@@ -63,6 +63,13 @@ CREATE INDEX idx_scan_packets_group_date ON public.scan_packets(group_id, date) 
 «Неотозванные широкие legacy-политики», почему этот паттерн уже обесценил
 более узкие политики в других местах проекта.
 
+## Realtime
+
+Состоит в публикации `supabase_realtime` (`doc/db/checkpoints_realtime_publication.sql`,
+тикет 143) — см. [[checkpoints]], раздел «Realtime», та же причина и то же
+исправление касаются обеих таблиц одновременно (детальные экраны переклички
+подписываются на `scan_packets` по `checkpoint_id`/`date`).
+
 ## Связанные заметки
 
 - [[Checkpoint]]

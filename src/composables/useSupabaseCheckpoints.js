@@ -173,27 +173,6 @@ const fetchUserGroupDayAssignment = async (userId, day) => {
     return data
 }
 
-/**
- * Realtime-Subscription auf die checkpoints-Tabelle - Muster aus
- * AdminBusView.vue setupRealtimeSubscription()/useGroups.js. Der Aufrufer
- * ist fuer supabase.removeChannel(channel) beim Unmount verantwortlich.
- *
- * @param {Function} onChange - Callback fuer jedes postgres_changes-Event
- * @returns {Object} Supabase RealtimeChannel
- */
-const subscribeToCheckpointsChanges = (onChange) => {
-    const channel = supabase
-        .channel('checkpoints-changes')
-        .on(
-            'postgres_changes',
-            { event: '*', schema: 'public', table: 'checkpoints' },
-            (payload) => onChange(payload)
-        )
-        .subscribe()
-
-    return channel
-}
-
 export function useSupabaseCheckpoints() {
     return {
         fetchCheckpointRowsForDay,
@@ -205,8 +184,7 @@ export function useSupabaseCheckpoints() {
         rpcCreateCheckpoint,
         rpcFinishCheckpoint,
         rpcReopenCheckpoint,
-        rpcRemoveCheckpoint,
-        subscribeToCheckpointsChanges
+        rpcRemoveCheckpoint
     }
 }
 

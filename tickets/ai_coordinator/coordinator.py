@@ -13,6 +13,7 @@ MAP={
 "Fix":"fix.txt",
 "Recheck":"recheck.txt",
 "Commit":"commit.txt",
+"Designer":"designer.txt"
 }
 
 history_files=[]
