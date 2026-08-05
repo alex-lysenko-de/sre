@@ -195,6 +195,56 @@ festhalten") — до применения `finish_checkpoint()` продолж�
 параметрами, получит ошибку от Postgres, пока миграция не применена.
 Безопасна к повторному запуску (`CREATE OR REPLACE FUNCTION`).
 
+# Исправления после ревью
+
+Исправлены оба пункта из `REVIEW_REPORT.md` → «Список обязательных
+исправлений». Три пункта из «Список необязательных улучшений»
+(`groupCardClass()` без `hasBaseline`, дублирующиеся запросы в
+breakdown-функциях, обновление `vault/03-База-данных/checkpoints.md`,
+усиление `finish_checkpoint()` против гонки администраторов) не
+затронуты — как и раньше в этой серии тикетов (см. `tickets/142/
+REVIEW_REPORT.md`), необязательные улучшения оставлены вне объёма
+багфикса.
+
+## 1. Critical — бесконечная рекурсия в `getDayPresentRosterIds()`
+
+`getDayPresentRosterIds(day)` (`useCheckpoints.js`) больше не вызывает
+`getDayBaselineCheckpoint(day)` (который тянет **полный**
+`fetchCheckpointDetail()` → `attachTypeData()` → для GROUP
+`buildGroupsForCheckpoint()` → снова `getDayPresentRosterIds(day)`).
+Вместо этого — прямой лёгкий поиск Baseline-строки через уже
+импортированную `fetchCheckpointRowsForDay(day)` (тот же паттерн, что
+уже был в приватной копии `getPresentRosterIds()` в
+`useLazyCheckpointProgress.js`, которая рекурсии не подвержена).
+Цикл разорван: если Baseline-точка дня — GROUP, повторного вызова
+`getDayPresentRosterIds()` больше не возникает.
+
+`getDayBaselineCheckpoint()` (использующая полный
+`fetchCheckpointDetail()`) сохранена без изменений — она по-прежнему
+используется `getDayBaseline()`/`getBusDelta()`/`getGroupDelta()`, но
+эти вызовы больше не образуют цикл, так как внутренний
+`getDayPresentRosterIds()` в `buildGroupsForCheckpoint()` её больше не
+вызывает.
+
+## 2. Major — `checkpointHasOpenIssues()` для GROUP игнорировал отсутствие Baseline
+
+`checkpointHasOpenIssues(cp)` для `CHECKPOINT_TYPE.GROUP` теперь сначала
+проверяет `getDayPresentRosterIds(cp.day)`: если `null` (день ещё без
+Tagesbasis), `missingTotal` принудительно `0` — диалог «Schließen» на
+первой перекличке дня больше не показывает «N Kinder fehlen» на основе
+непоказательного полного состава группы (тот же `missingChildren`,
+который тикет 147 явно называет ненужным до фиксации Baseline).
+`noDataGroups`-часть сообщения не тронута — она не зависит от Baseline.
+Выбран вариант «занулить», а не «явно задокументировать как принятое
+отклонение» — это прямое следствие явного требования тикета («fehlend
+не нужен даже в первой перекличке»), не новое архитектурное решение,
+требующее согласования с заказчиком.
+
+# Измененные файлы
+
+- `src/composables/useCheckpoints.js` — `getDayPresentRosterIds()`,
+  `checkpointHasOpenIssues()`.
+
 # Проверки
 
 - `npm run build` — пройден успешно, сборка завершилась без ошибок (те же
@@ -220,3 +270,23 @@ festhalten") — до применения `finish_checkpoint()` продолж�
   выполнена** в рамках этой сессии, как и во всех предыдущих тикетах
   серии Checkpoint (нет доступа к браузеру/устройству у ассистента).
   Требует применения SQL-миграции пользователем как предпосылки.
+
+## После исправлений ревью
+
+- `npm run build` — повторно пройден успешно после обеих правок
+  (`getDayPresentRosterIds()`, `checkpointHasOpenIssues()`), без новых
+  ошибок/предупреждений.
+- Прочитан итоговый код `getDayPresentRosterIds()`,
+  `getDayBaselineCheckpoint()`, `buildGroupsForCheckpoint()`,
+  `attachTypeData()`, `checkpointHasOpenIssues()` — подтверждено, что
+  цепочка `getDayPresentRosterIds()` → `getDayBaselineCheckpoint()` →
+  `fetchCheckpointDetail()` → `attachTypeData()` →
+  `buildGroupsForCheckpoint()` → `getDayPresentRosterIds()` разорвана:
+  новая версия `getDayPresentRosterIds()` использует только
+  `fetchCheckpointRowsForDay()`, не вызывает `fetchCheckpointDetail()`.
+- **Ручная проверка на устройстве** сценария из Critical-находки (первая
+  закрытая точка дня — GROUP-тип, становится Baseline, после этого
+  открыть список чекпоинтов дня и любую из трёх detail-вью) — **не
+  выполнена** в рамках этой сессии (нет доступа к устройству/браузеру у
+  ассистента); как и указано выше, требует предварительного применения
+  SQL-миграции.

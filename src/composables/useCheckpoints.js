@@ -397,13 +397,21 @@ async function getDayBaseline(day) {
  * baseline_children_count berechnet wird). null, wenn der Tag noch keine
  * Tagesbasis hat (tickets/147/147.txt).
  *
+ * Liest die Tagesbasis-Zeile direkt ueber fetchCheckpointRowsForDay() statt
+ * ueber getDayBaselineCheckpoint()/fetchCheckpointDetail() (Review 147,
+ * Critical 1): Letzteres deckoriert die Zeile ueber attachTypeData(), die
+ * fuer GROUP-Checkpoints buildGroupsForCheckpoint() aufruft - und die ruft
+ * ihrerseits diese Funktion auf. Ist die Tagesbasis eine GROUP-Checkpoint,
+ * waere das eine endlose Rekursion aus echten Supabase-Requests.
+ *
  * @param {string} day
  * @returns {Promise<Set<number>|null>}
  */
 export async function getDayPresentRosterIds(day) {
-    const baselineCp = await getDayBaselineCheckpoint(day)
-    if (!baselineCp) return null
-    const packets = await fetchScanPacketsForCheckpoint(baselineCp.id)
+    const rows = await fetchCheckpointRowsForDay(day)
+    const baselineRow = rows.find(r => r.baseline_children_count != null)
+    if (!baselineRow) return null
+    const packets = await fetchScanPacketsForCheckpoint(baselineRow.id)
     const scans = await fetchScansForPacketIds(packets.map(p => p.id))
     return new Set(scans.map(s => s.child_id))
 }
@@ -451,7 +459,15 @@ export async function summarizeCheckpoint(cp) {
  */
 export async function checkpointHasOpenIssues(cp) {
     if (cp.type === CHECKPOINT_TYPE.GROUP) {
-        const missingTotal = cp.groups.reduce((sum, g) => sum + g.missingChildren.length, 0)
+        // Tag noch ohne Tagesbasis: missingChildren faellt auf den vollen
+        // Gruppenbestand zurueck (buildGroupsForCheckpoint(), Risiko #3 des
+        // Plans) - "fehlend" ist in diesem Zustand aber laut Ticket 147
+        // nicht aussagekraeftig und wird deshalb hier wie ueberall sonst im
+        // UI ignoriert (Review 147, Major 1).
+        const presentRosterIds = await getDayPresentRosterIds(cp.day)
+        const missingTotal = presentRosterIds
+            ? cp.groups.reduce((sum, g) => sum + g.missingChildren.length, 0)
+            : 0
         const noDataGroups = cp.groups.filter(g => !g.hasData).length
         if (missingTotal > 0 || noDataGroups > 0) {
             const parts = []
