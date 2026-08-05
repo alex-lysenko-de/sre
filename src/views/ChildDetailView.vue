@@ -108,6 +108,11 @@
           </div>
         </div>
 
+        <!-- Delete error (in-place, does not hide the card) -->
+        <div v-if="deleteError" class="alert alert-danger mb-3" role="alert">
+          {{ deleteError }}
+        </div>
+
         <div class="d-grid gap-2 mb-3">
           <button
               @click="editChild"
@@ -118,8 +123,9 @@
           <button
               @click="removeChild"
               class="btn btn-outline-danger btn-lg"
+              :disabled="isDeleting"
           >
-            🗑️ Entfernen
+            🗑️ {{ isDeleting ? 'Wird entfernt...' : 'Entfernen' }}
           </button>
         </div>
       </div>
@@ -145,6 +151,8 @@ const childId = computed(() => route.params.id)
 
 const isLoading = ref(true)
 const error = ref(null)
+const deleteError = ref(null)
+const isDeleting = ref(false)
 const child = ref(null)
 const presenceInfo = ref({
   isPresent: false,
@@ -215,7 +223,7 @@ function editChild() {
  * Entfernt das Kind nach Bestätigung und kehrt zur Gruppenliste zurück.
  */
 async function removeChild() {
-  if (!child.value?.id) {
+  if (!child.value?.id || isDeleting.value) {
     return
   }
 
@@ -223,13 +231,17 @@ async function removeChild() {
     return
   }
 
+  isDeleting.value = true
+  deleteError.value = null
+
   try {
     const groupId = child.value.group_id
     await childrenComposable.deleteChild(child.value.id)
     router.push(groupId ? { name: 'GroupEdit', params: { id: groupId } } : { name: 'GroupEdit' })
   } catch (err) {
     console.error('Fehler beim Entfernen des Kindes:', err)
-    error.value = err.message || 'Fehler beim Entfernen des Kindes'
+    deleteError.value = err.message || 'Fehler beim Entfernen des Kindes'
+    isDeleting.value = false
   }
 }
 
