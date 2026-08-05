@@ -83,6 +83,44 @@
               @change="settings.setErrorDurationMs(Number($event.target.value))"
           >
         </div>
+
+        <hr class="my-4">
+
+        <div class="mb-3">
+          <label for="confirmResumeRetries" class="form-label fw-semibold text-dark">
+            Versuche zur Wiederaufnahme-Prüfung: {{ settings.confirmResumeRetries.value }}
+          </label>
+          <input
+              id="confirmResumeRetries"
+              type="range"
+              class="form-range"
+              :min="retriesRange.min"
+              :max="retriesRange.max"
+              :step="retriesRange.step"
+              :value="settings.confirmResumeRetries.value"
+              @change="settings.setConfirmResumeRetries(Number($event.target.value))"
+          >
+          <div class="form-text">
+            Nach dem schnellen Fortsetzen der Kamera wird so oft geprüft, ob sie
+            wirklich wieder scannt, bevor auf einen Kaltstart zurückgefallen wird.
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <label for="confirmResumeDelayMs" class="form-label fw-semibold text-dark">
+            Abstand zwischen den Prüfungen: {{ settings.confirmResumeDelayMs.value }} ms
+          </label>
+          <input
+              id="confirmResumeDelayMs"
+              type="range"
+              class="form-range"
+              :min="delayRange.min"
+              :max="delayRange.max"
+              :step="delayRange.step"
+              :value="settings.confirmResumeDelayMs.value"
+              @change="settings.setConfirmResumeDelayMs(Number($event.target.value))"
+          >
+        </div>
       </div>
     </div>
   </div>
@@ -90,9 +128,15 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { useScannerSettings } from '@/composables/useScannerSettings'
+import {
+  useScannerSettings,
+  CONFIRM_RESUME_RETRIES_RANGE,
+  CONFIRM_RESUME_DELAY_MS_RANGE
+} from '@/composables/useScannerSettings'
 
 const settings = useScannerSettings()
+const retriesRange = CONFIRM_RESUME_RETRIES_RANGE
+const delayRange = CONFIRM_RESUME_DELAY_MS_RANGE
 
 const loadingCameras = ref(true)
 const cameraLoadError = ref('')

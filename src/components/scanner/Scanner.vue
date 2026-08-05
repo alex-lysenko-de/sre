@@ -53,7 +53,7 @@
 
 <script setup>
 import { ref, reactive, onMounted, onBeforeUnmount } from 'vue'
-import { Html5Qrcode } from 'html5-qrcode'
+import { Html5Qrcode, Html5QrcodeScannerState } from 'html5-qrcode'
 import { useArmband } from '@/composables/useArmband'
 import { useConfigStore } from '@/stores/config.js'
 import { useScannerFeedback } from '@/composables/useScannerFeedback'
@@ -115,7 +115,15 @@ const scannerActive = ref(false)
 // (siehe tickets/126/REVIEW_REPORT.md, Critical 1).
 const isTransitioning = ref(false)
 // Sperrt neue Scans, waehrend der letzte Scan noch verarbeitet/angezeigt wird.
+// Seit tickets/141_2/141_2.txt kein manuell gesetztes Flag mehr, sondern
+// Spiegelbild der enqueueCycle()-Warteschlange (siehe unten) - wird nur noch
+// dort gesetzt/zurueckgesetzt.
 const isProcessing = ref(false)
+// tickets/141_2/141_2.txt, Minor 1 aus tickets/141/REVIEW_REPORT.md: schuetzt
+// den finalen startCamera()-Aufruf am Ende eines Zyklus davor, nach dem
+// Unmounten der Komponente noch auf die Kamera zuzugreifen (z. B. Browser-
+// "Zurueck" waehrend showExternalMessage() noch wartet).
+let isComponentMounted = true
 
 const confirmation = reactive({
   show: false,
@@ -161,6 +169,70 @@ const VIBRATION_LONG = [300]
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 
 const durationFor = (variant) => variant === 'success' ? settings.successDurationMs.value : settings.errorDurationMs.value
+
+// ============================================
+// WARTESCHLANGE FUER KAMERA-ZYKLEN (tickets/141_2/141_2.txt, Teil A)
+// ============================================
+// Sowohl ein normaler Scan (onScanSuccess) als auch eine extern ausgeloeste
+// Meldung (showExternalMessage) durchlaufen "pause -> Bestaetigung anzeigen
+// -> warten -> Kamera wieder aufnehmen" auf demselben html5QrCode-Objekt.
+// enqueueCycle() serialisiert beide Aufrufer ueber eine gemeinsame
+// Promise-Kette, statt sich auf einen manuell gesetzten/geprueften Flag zu
+// verlassen (der genau das schon einmal verpasst hat, siehe
+// tickets/141/REVIEW_REPORT.md Major 1) - ein zweiter Zyklus kann strukturell
+// erst beginnen, wenn der vorherige fertig ist.
+let queueLength = 0
+let tail = Promise.resolve()
+
+function enqueueCycle(task) {
+  queueLength++
+  isProcessing.value = true
+  const settle = () => {
+    queueLength--
+    if (queueLength === 0) {
+      isProcessing.value = false
+    }
+  }
+  tail = tail.then(task, task).then(settle, settle)
+  return tail
+}
+
+// tickets/141_2/141_2.txt, Teil B: resume() bleibt der schnelle Regelfall
+// (kein sichtbares Kamera-Blinken), wird aber nicht mehr blind akzeptiert -
+// der reale Zustand wird per getState() nachgeprueft. Schlaegt resume() fehl
+// oder bestaetigt sich innerhalb der eingestellten Versuche nicht, folgt der
+// zuverlaessige Kaltstart stop()+start(), der bereits als Startpfad
+// getestet ist (tickets/141/IMPLEMENTATION_PLAN.md).
+async function confirmResumed() {
+  const retries = settings.confirmResumeRetries.value
+  const delayMs = settings.confirmResumeDelayMs.value
+  for (let i = 0; i < retries; i++) {
+    await wait(delayMs)
+    if (html5QrCode?.getState?.() === Html5QrcodeScannerState.SCANNING) {
+      return true
+    }
+  }
+  return false
+}
+
+async function restartCameraReliably() {
+  try {
+    html5QrCode.resume()
+    if (await confirmResumed()) {
+      return
+    }
+  } catch (error) {
+    console.warn('⚠️ resume() fehlgeschlagen, Fallback auf Kaltstart:', error)
+  }
+  if (!isComponentMounted) {
+    return
+  }
+  await stopScanning()
+  if (!isComponentMounted) {
+    return
+  }
+  await startCamera()
+}
 
 // ============================================
 // KAMERA-STEUERUNG
@@ -296,39 +368,39 @@ const hideConfirmationScreen = () => {
   confirmation.bandId = null
 }
 
-const resumeAfterConfirmation = () => {
-  hideConfirmationScreen()
-  try {
-    html5QrCode.resume()
-  } catch (error) {
-    console.warn('⚠️ Fehler beim Fortsetzen des Scanners:', error)
-  }
-  isProcessing.value = false
-}
+// Persistenter Zweig (nicht-verbundenes Armband, siehe unten): der laufende
+// enqueueCycle()-Zyklus wartet auf diese Aufloesung, statt selbst zu enden -
+// das haelt die Warteschlange fuer nachfolgende Aufrufer (z. B. "Senden"
+// waehrend der Bildschirm noch steht) korrekt blockiert, ohne eine eigene
+// zweite enqueueCycle()-Runde zu starten (der laufende Zyklus ist ja noch
+// nicht fertig).
+let pendingPersistentResolve = null
 
 // Nicht-verbundenes Armband: Meldung bleibt stehen, bis der Nutzer Cancel
 // oder "Привязать бейдж" waehlt (tickets/126/126.txt Punkt 7) - kein Auto-Hide.
-const handleConfirmationCancel = () => {
-  resumeAfterConfirmation()
+const handleConfirmationCancel = async () => {
+  hideConfirmationScreen()
+  await restartCameraReliably()
+  pendingPersistentResolve?.()
+  pendingPersistentResolve = null
 }
 
 const handleConfirmationBind = () => {
   const bandId = confirmation.bandId
   hideConfirmationScreen()
-  isProcessing.value = false
   try {
     props.onBindRequested?.(bandId)
   } catch (error) {
     console.error('❌ Fehler in onBindRequested:', error)
   }
+  // Kamera wird hier bewusst NICHT fortgesetzt - das ist Sache des
+  // Aufrufers (Navigation weg von diesem Bildschirm oder expliziter
+  // stop()-Aufruf), unveraendert gegenueber vor tickets/141_2.
+  pendingPersistentResolve?.()
+  pendingPersistentResolve = null
 }
 
-const onScanSuccess = async (decodedText) => {
-  if (isProcessing.value) {
-    return
-  }
-  isProcessing.value = true
-
+const runScanCycle = async (decodedText) => {
   try {
     await html5QrCode.pause(true)
   } catch (error) {
@@ -392,15 +464,32 @@ const onScanSuccess = async (decodedText) => {
   // Persistenter Zweig fuer nicht-verbundenes Armband (Punkt 7): Bildschirm
   // bleibt stehen, bis der Nutzer Cancel/"Привязать бейдж" waehlt - kein
   // automatisches Fortsetzen. Nur aktiv, wenn die aufrufende Seite
-  // onBindRequested uebergeben hat (z. B. nicht in HeadcountView.vue).
+  // onBindRequested uebergeben hat (z. B. nicht in HeadcountView.vue). Der
+  // enqueueCycle()-Zyklus bleibt bis zur Nutzeraktion offen (siehe
+  // pendingPersistentResolve oben) - so bleibt z. B. ein waehrenddessen
+  // ausgeloestes "Senden" korrekt in der Warteschlange, statt parallel zu laufen.
   if (result.status === 'not-found' && props.onBindRequested) {
     showConfirmationScreen(variant, display, true, result.bandId)
+    await new Promise(resolve => { pendingPersistentResolve = resolve })
     return
   }
 
   showConfirmationScreen(variant, display)
   await wait(durationFor(variant))
-  resumeAfterConfirmation()
+  hideConfirmationScreen()
+  await restartCameraReliably()
+}
+
+const onScanSuccess = (decodedText) => {
+  // Guenstiger synchroner Guard: waehrend die Kamera pausiert ist, sollte
+  // gar kein neuer Decode ankommen. enqueueCycle() selbst wuerde einen
+  // zweiten Aufruf ebenfalls korrekt serialisieren statt verwerfen - dieser
+  // Guard vermeidet nur, ueberhaupt unnoetig einen zweiten Zyklus in die
+  // Warteschlange zu stellen.
+  if (isProcessing.value) {
+    return
+  }
+  enqueueCycle(() => runScanCycle(decodedText))
 }
 
 const onScanError = () => {
@@ -411,20 +500,16 @@ const onScanError = () => {
 // ScannerPrototypeView.vue), die denselben Bestaetigungsbildschirm wie ein
 // Scan-Ereignis wiederverwenden sollen, ohne selbst ein Scan-Ereignis zu sein.
 //
-// Am Ende bewusst kein html5QrCode.resume(): resume() haengt vom nativen
-// <video>-Event "playing" ab (html5-qrcode/esm/camera/core-impl.js,
-// RenderedCameraImpl.prototype.resume), das bei ueberlappenden
-// pause()/play()-Aufrufen auf demselben <video>-Element (z. B. wenn dieser
-// Zyklus mit dem Scan-Bestaetigungszyklus in onScanSuccess/
-// resumeAfterConfirmation kollidiert) nachweislich nicht immer feuert - ohne
-// Exception oder rejected Promise. Der interne FSM von html5-qrcode bleibt
-// dann fuer immer in PAUSED haengen: Kamerabild laeuft weiter, Decode ist
-// aber dauerhaft aus (tickets/141/141.txt). Ein try/catch um resume() kann
-// das nicht erkennen. Stattdessen: garantierter Kaltstart ueber
-// stopScanning()/startCamera() - denselben, bereits als zuverlaessig
-// getesteten Pfad wie beim ersten Oeffnen des Scanners (tickets/141/
-// IMPLEMENTATION_PLAN.md).
-const showExternalMessage = async (variant, display, durationMs) => {
+// Laeuft seit tickets/141_2/141_2.txt ueber dieselbe enqueueCycle()-
+// Warteschlange wie ein normaler Scan (runScanCycle) - vorher liefen beide
+// Zyklen unkoordiniert nebeneinander her und konnten sich beim Verschieben
+// von confirmation/Kamera gegenseitig stoeren (tickets/141/REVIEW_REPORT.md,
+// Major 1). Die urspruengliche resume()-Vermeidung dieser Funktion
+// (tickets/141/141.txt: resume() haengt vom nativen <video>-Event "playing"
+// ab und kann dauerhaft in PAUSED haengen bleiben, ohne Exception) ist jetzt
+// in restartCameraReliably() zentralisiert: schneller resume()-Versuch,
+// per getState() bestaetigt, sonst garantierter Kaltstart.
+const runExternalMessageCycle = async (variant, display, durationMs) => {
   const wasActive = scannerActive.value
   if (wasActive) {
     try {
@@ -439,9 +524,12 @@ const showExternalMessage = async (variant, display, durationMs) => {
   hideConfirmationScreen()
 
   if (wasActive) {
-    await stopScanning()
-    await startCamera()
+    await restartCameraReliably()
   }
+}
+
+const showExternalMessage = (variant, display, durationMs) => {
+  return enqueueCycle(() => runExternalMessageCycle(variant, display, durationMs))
 }
 
 // ============================================
@@ -456,6 +544,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(async () => {
+  isComponentMounted = false
   window.removeEventListener('touchend', feedback.unlockAudioContext)
   window.removeEventListener('click', feedback.unlockAudioContext)
   feedback.closeAudioContext()
