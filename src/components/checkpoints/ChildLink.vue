@@ -1,8 +1,10 @@
 <!-- src/components/checkpoints/ChildLink.vue -->
 <!-- Ticket 133 - Uebernahme aus checkpoints-prototype/ChildLink.vue,
-     unveraendert bis auf den Routenpfad (ohne -prototype-Suffix). -->
+     unveraendert bis auf den Routenpfad (ohne -prototype-Suffix).
+     Ticket 151 - Ziel auf /child/:id (vereinheitlichte Kindkarte)
+     umgestellt, Checkpoint-Detailansicht ist von dort per Button erreichbar. -->
 <template>
-  <button type="button" class="cp-entity-link" @click="$router.push(`/admin/checkpoints/child/${child.id}`)">
+  <button type="button" class="cp-entity-link" @click="$router.push(`/child/${child.id}`)">
     {{ child.name }}
     <span v-if="child.groupId != null" class="cp-entity-link-tag">G-{{ child.groupId }}</span>
   </button>

@@ -1,6 +1,30 @@
 <!-- src/views/ChildDetailView.vue -->
+<!-- Ticket 151 - vereinheitlichte Kindkarte: Stil/Struktur von
+     ChildCardView.vue/CheckpointBusView.vue uebernommen (kompakte
+     Zurueck-Taste, .cp-info-grid, kompakte Entfernen-Taste). Datenquelle
+     auf useChildren().getChildById() umgestellt (camelCase), Gruppe bleibt
+     Text (kein GroupLink - fuehrt auf einen requiresAdmin-Route, dieser
+     Screen ist auch fuer Betreuer erreichbar). -->
 <template>
-  <div class="child-detail-container">
+  <div class="cp-child-view">
+    <div class="cp-header">
+      <div class="cp-header-top">
+        <button class="cp-back-btn me-2" @click="goBack">
+          <font-awesome-icon :icon="['fas', 'arrow-left']" />
+        </button>
+        <span class="cp-header-title">{{ child?.name || 'Kind' }}</span>
+        <button
+            v-if="child"
+            class="cp-remove-btn"
+            title="Entfernen"
+            :disabled="isDeleting"
+            @click="removeChild"
+        >
+          <font-awesome-icon :icon="['fas', 'trash-alt']" />
+        </button>
+      </div>
+    </div>
+
     <!-- Loading state -->
     <div v-if="isLoading" class="text-center py-5">
       <div class="spinner-border text-success" role="status">
@@ -13,139 +37,99 @@
     <div v-else-if="error" class="alert alert-danger" role="alert">
       <h4 class="alert-heading">⚠️ Fehler</h4>
       <p>{{ error }}</p>
-      <hr>
     </div>
 
-    <!-- Child detail card -->
-    <div v-else-if="child" class="card shadow-sm">
-      <div class="card-body p-4">
-	  
-	    <!-- Action buttons -->
-        <div class="d-grid gap-2 mb-3">
-          <!-- Back to group button -->
-          <button
-              @click="goBack"
-              class="btn btn-outline-secondary w-100"
-          >
-            ↩️ Zurück
-          </button>
-        </div>
-	  
-        <!-- Header -->
-        <div class="d-flex align-items-start justify-content-center mb-4">
+    <template v-else-if="child">
+      <!-- Presence status banner -->
+      <div v-if="presenceInfo.isPresent" class="alert alert-success mb-3" role="alert">
+        <div class="d-flex align-items-center">
+          <i class="fas fa-check-circle me-2 fs-5"></i>
           <div>
-            <h2 class="card-title mb-1">
-              {{ child.name }}
-            </h2>
-          </div>
-        </div>
-
-        <!-- Presence status banner -->
-        <div v-if="presenceInfo.isPresent" class="alert alert-success mb-4" role="alert">
-          <div class="d-flex align-items-center">
-            <i class="fas fa-check-circle me-2 fs-5"></i>
-            <div>
-              <strong>✅ Heute anwesend</strong>
-              <div v-if="presenceInfo.busId" class="mt-1">
-                <i class="fas fa-bus me-1"></i>
-                <span>Fährt in Bus <strong>#{{ presenceInfo.busId }}</strong></span>
-              </div>
+            <strong>✅ Heute anwesend</strong>
+            <div v-if="presenceInfo.busId" class="mt-1">
+              <i class="fas fa-bus me-1"></i>
+              <span>Fährt in Bus <strong>#{{ presenceInfo.busId }}</strong></span>
             </div>
           </div>
         </div>
+      </div>
 
-        <div v-else class="alert alert-warning mb-4" role="alert">
-          <i class="fas fa-exclamation-triangle me-2"></i>
-          <strong>Heute noch nicht anwesend</strong>
-        </div>
+      <div v-else class="alert alert-warning mb-3" role="alert">
+        <i class="fas fa-exclamation-triangle me-2"></i>
+        <strong>Heute noch nicht anwesend</strong>
+      </div>
 
- 
+      <!-- Admin-only: Checkpoint-Historie fuer heute -->
+      <button
+          v-if="userStore.isAdmin"
+          class="btn btn-outline-primary w-100 mb-3 cp-checkpoints-btn"
+          @click="goToCheckpoints"
+      >
+        <font-awesome-icon :icon="['fas', 'clock-rotate-left']" class="me-2" />
+        Checkpoints anzeigen
+      </button>
 
-          <!-- Child info grid -->
-        <div class="row mb-4">
-          <div class="col-md-6 mb-3">
-            <div class="info-block">
-              <span class="info-label">🎂 Alter</span>
-              <span class="info-value">{{ child.age }} Jahre</span>
+      <!-- Delete error (in-place, does not hide the card) -->
+      <div v-if="deleteError" class="alert alert-danger mb-3" role="alert">
+        {{ deleteError }}
+      </div>
+
+      <!-- Child info grid -->
+      <div class="card mb-3">
+        <div class="card-body">
+          <div class="cp-info-grid">
+            <div class="cp-info-item">
+              <div class="cp-info-label">Alter</div>
+              <div class="cp-info-value">{{ child.age }} Jahre</div>
             </div>
-          </div>
-          <div class="col-md-6 mb-3">
-            <div class="info-block">
-              <span class="info-label">👥 Gruppe</span>
-              <span class="info-value">{{ child.group_id }}</span>
+            <div class="cp-info-item">
+              <div class="cp-info-label">Gruppe</div>
+              <div class="cp-info-value">{{ child.groupId ?? '—' }}</div>
             </div>
-          </div>
-          <div class="col-md-6 mb-3">
-            <div class="info-block">
-              <span class="info-label">🏊 Schwimmabzeichen</span>
-              <span class="info-value">
+            <div class="cp-info-item">
+              <div class="cp-info-label">Schwimmabzeichen</div>
+              <div class="cp-info-value">
                 <span class="badge" :class="Utils.getSwimBadgeClass(child.schwimmer)">
                   {{ Utils.getSwimLevel(child.schwimmer) }}
                 </span>
-              </span>
+              </div>
+            </div>
+            <div class="cp-info-item">
+              <div class="cp-info-label">Armband</div>
+              <div class="cp-info-value">{{ child.band_id || '—' }}</div>
+            </div>
+            <div class="cp-info-item cp-info-item-wide">
+              <div class="cp-info-label">Notizen</div>
+              <div class="cp-info-value">{{ child.notes || '—' }}</div>
             </div>
           </div>
-          <div class="col-md-6 mb-3">
-            <div class="info-block">
-              <span class="info-label">🏷️ Armband</span>
-              <span class="info-value">
-                <span v-if="child.band_id" class="badge bg-info">
-                  {{ child.band_id }}
-                </span>
-                <span v-else class="text-muted">
-                  Nicht zugeordnet
-                </span>
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Notes section -->
-        <div v-if="child.notes" class="mb-4">
-          <h5 class="mb-2">📝 Notizen</h5>
-          <div class="alert alert-light border">
-            {{ child.notes }}
-          </div>
-        </div>
-
-        <!-- Delete error (in-place, does not hide the card) -->
-        <div v-if="deleteError" class="alert alert-danger mb-3" role="alert">
-          {{ deleteError }}
-        </div>
-
-        <div class="d-grid gap-2 mb-3">
-          <button
-              @click="editChild"
-              class="btn btn-outline-primary btn-lg"
-          >
-            ✏️ Bearbeiten
-          </button>
-          <button
-              @click="removeChild"
-              class="btn btn-outline-danger btn-lg"
-              :disabled="isDeleting"
-          >
-            🗑️ {{ isDeleting ? 'Wird entfernt...' : 'Entfernen' }}
-          </button>
         </div>
       </div>
-    </div>
+
+      <!-- Bearbeiten: grosse Taste mit erhoehtem Innenabstand, leichter zu treffen -->
+      <button
+          @click="editChild"
+          class="btn btn-outline-primary btn-lg w-100 cp-edit-action-btn"
+      >
+        ✏️ Bearbeiten
+      </button>
+    </template>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { useArmband } from '@/composables/useArmband'
 import { useScan } from '@/composables/useScan'
 import { useChildren } from '@/composables/useChildren'
+import { useUserStore } from '@/stores/user'
 import Utils from '@/utils/utils'
 
 const router = useRouter()
 const route = useRoute()
-const armbandComposable = useArmband()
 const scanComposable = useScan()
 const childrenComposable = useChildren()
+const userStore = useUserStore()
 
 const childId = computed(() => route.params.id)
 
@@ -172,7 +156,7 @@ async function loadChildDetails() {
     isLoading.value = true
     error.value = null
 
-    const data = await armbandComposable.getChildDetails(childId.value)
+    const data = await childrenComposable.getChildById(childId.value)
 
     if (!data) {
       throw new Error('Kind nicht gefunden')
@@ -220,6 +204,15 @@ function editChild() {
 }
 
 /**
+ * Öffnet die Checkpoint-Historie des Kindes für heute (nur Admin)
+ */
+function goToCheckpoints() {
+  if (child.value?.id) {
+    router.push({ name: 'CheckpointChildCard', params: { id: child.value.id } })
+  }
+}
+
+/**
  * Entfernt das Kind nach Bestätigung und kehrt zur Gruppenliste zurück.
  */
 async function removeChild() {
@@ -235,7 +228,7 @@ async function removeChild() {
   deleteError.value = null
 
   try {
-    const groupId = child.value.group_id
+    const groupId = child.value.groupId
     await childrenComposable.deleteChild(child.value.id)
     router.push(groupId ? { name: 'GroupEdit', params: { id: groupId } } : { name: 'GroupEdit' })
   } catch (err) {
@@ -246,89 +239,98 @@ async function removeChild() {
 }
 
 /**
- * Zurück zur Hauptseite
+ * Zurück zum vorherigen Bildschirm
  */
 function goBack() {
-  router.push('/main')
+  router.back()
 }
 </script>
 
 <style scoped>
-.child-detail-container {
+.cp-child-view {
   max-width: 700px;
   margin: 0 auto;
-  padding: 2rem 1rem;
+  padding: 16px;
+  font-size: 1.05rem;
 }
 
-.card {
-  border: none;
-  border-radius: 12px;
-}
-
-.info-block {
+.cp-header-top {
   display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  padding: 1rem;
-  background-color: #f8f9fa;
+  align-items: center;
+  margin-bottom: 8px;
+  gap: 8px;
+}
+
+.cp-header-title {
+  font-size: 1.4rem;
+  font-weight: 700;
+  flex: 1;
+}
+
+.cp-back-btn {
+  border: none;
   border-radius: 8px;
+  background-color: #e9ecef;
+  color: #495057;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
 }
 
-.info-label {
-  font-size: 0.875rem;
-  color: #666;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+.cp-remove-btn {
+  margin-left: auto;
+  border: none;
+  border-radius: 8px;
+  background-color: #f8d7da;
+  color: #842029;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.info-value {
-  font-size: 1.25rem;
+.cp-checkpoints-btn {
+  padding: 0.75rem 1rem;
   font-weight: 600;
-  color: #333;
 }
 
-.btn-lg {
+.cp-info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 14px;
+}
+
+.cp-info-item-wide {
+  grid-column: 1 / -1;
+}
+
+.cp-info-label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #6c757d;
+  text-transform: uppercase;
+}
+
+.cp-info-value {
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.cp-edit-action-btn {
+  padding: 0.9rem 1.5rem;
   font-size: 1rem;
-  padding: 0.75rem 1.5rem;
+  margin-top: 0.5rem;
 }
 
 .alert {
   border-radius: 8px;
 }
 
-.alert-success {
-  background-color: #d4edda;
-  border-color: #c3e6cb;
-  color: #155724;
-}
-
-.alert-warning {
-  background-color: #fff3cd;
-  border-color: #ffeaa7;
-  color: #856404;
-}
-
 @media (max-width: 576px) {
-  .child-detail-container {
-    padding: 1rem;
-  }
-
-  .d-grid {
-    gap: 0.5rem !important;
-  }
-
-  .btn-lg {
-    padding: 0.6rem 1rem;
-    font-size: 0.95rem;
-  }
-
-  .info-block {
-    padding: 0.75rem;
-  }
-
-  .info-value {
-    font-size: 1.1rem;
+  .cp-child-view {
+    padding: 12px;
   }
 }
 </style>

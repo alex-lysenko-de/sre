@@ -193,42 +193,6 @@ export function useChildren() {
 
 
     /**
-     * Ruft Details des Kindes und die Scan-Historie ab.
-     * @param {number} childId - ID des Kindes
-     */
-    const fetchChildDetailsAndScans = async (childId) => {
-        const { data : child, error : childError } = await supabase
-            .from('children')
-            .select('*')
-            .eq('id', childId)
-            .single();
-
-        if (childError) {
-            throw new Error(`Fehler beim Abrufen der Kinderdaten: ${childError.message}`);
-        }
-
-        const { data : scans, error : scansError } = await supabase
-            .from('scans')
-            .select('*')
-            .eq('child_id', childId)
-            .order('created_at', { ascending : false })
-            .limit(50);
-
-        if (scansError) {
-            console.error('Fehler beim Abrufen der Scan-Historie:', scansError);
-        }
-
-        const scanTypeMap = { 1 : 'Präsenz', 2 : 'Bus (Einstieg)', 3 : 'Bus (Ausstieg)' };
-        const formattedScans = (scans || []).map(scan => ({
-            ...scan,
-            type_name : scanTypeMap[ scan.type ] || 'Unbekannt'
-        }));
-
-
-        return { child, scans : formattedScans };
-    };
-
-    /**
      * Löscht ein Kind anhand der ID.
      * @param {number} childId - ID des Kindes
      */
@@ -304,7 +268,6 @@ export function useChildren() {
         fetchAllChildren,
         fetchChildrenByGroup,
         fetchChildrenList,
-        fetchChildDetailsAndScans,
         saveChild,
         deleteChild,
         unbindBracelet,

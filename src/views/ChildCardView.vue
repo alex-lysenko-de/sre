@@ -1,11 +1,16 @@
 <!-- src/views/ChildCardView.vue -->
 <!-- Ticket 133 - reales Pendant zu ChildCardPrototypeView.vue (130_2,
      UX-Feedback Runde 4). Kein DebugTag/"Page N" mehr (nur fuer die
-     UX-Abstimmung des Prototyps noetig). Scan-Historie ueber
-     useChildren().fetchChildDetailsAndScans() (existierte bereits, wurde von
-     keinem Bildschirm genutzt - tickets/133/133.txt, п.10) statt
-     useScanHistoryMock.js. "Bearbeiten" fuehrt auf den bereits bestehenden
-     ChildEditView.vue (/child-edit/:id) - kein paralleler Editor. -->
+     UX-Abstimmung des Prototyps noetig).
+     Ticket 151 - auf reine Checkpoint-Historie fuer heute verschlankt:
+     Kindkarte (Alter/Gruppe/Schwimmabzeichen/Armband/Notizen) und
+     "Bearbeiten" sind jetzt alleinige Verantwortung von /child/:id
+     (ChildDetailView.vue), von wo dieser Screen per "Checkpoints
+     anzeigen" erreichbar ist (single responsibility, siehe
+     vault/02-Предметная-область/Checkpoint.md, "Prinzipien"). Scan-Quelle
+     auf useScan().getChildScansForDate() (today-scoped) umgestellt statt
+     useChildren().fetchChildDetailsAndScans() (ungefiltert, limit 50) -
+     scanTypeMap-Mapping von dort hierher uebernommen. -->
 <template>
   <div class="cp-child-view">
     <div class="cp-header">
@@ -14,10 +19,6 @@
           <font-awesome-icon :icon="['fas', 'arrow-left']" />
         </button>
         <span class="cp-header-title">{{ child?.name || 'Kind' }}</span>
-        <button v-if="child" class="btn btn-primary cp-edit-btn" @click="editChild">
-          <font-awesome-icon :icon="['fas', 'pen']" class="me-1" />
-          Bearbeiten
-        </button>
       </div>
     </div>
 
@@ -26,40 +27,11 @@
     </div>
 
     <template v-else-if="child">
-      <div class="card mb-3">
-        <div class="card-body">
-          <div class="cp-info-grid">
-            <div class="cp-info-item">
-              <div class="cp-info-label">Alter</div>
-              <div class="cp-info-value">{{ child.age }} Jahre</div>
-            </div>
-            <div class="cp-info-item">
-              <div class="cp-info-label">Gruppe</div>
-              <div class="cp-info-value"><GroupLink v-if="child.groupId != null" :group-id="child.groupId" /><span v-else class="text-muted">—</span></div>
-            </div>
-            <div class="cp-info-item">
-              <div class="cp-info-label">Schwimmabzeichen</div>
-              <div class="cp-info-value">
-                <span class="badge" :class="Utils.getSwimBadgeClass(child.schwimmer)">{{ Utils.getSwimLevel(child.schwimmer) }}</span>
-              </div>
-            </div>
-            <div class="cp-info-item">
-              <div class="cp-info-label">Armband</div>
-              <div class="cp-info-value">{{ child.band_id || '—' }}</div>
-            </div>
-            <div class="cp-info-item cp-info-item-wide">
-              <div class="cp-info-label">Notizen</div>
-              <div class="cp-info-value">{{ child.notes || '—' }}</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
       <div class="card">
         <div class="card-body">
           <h5 class="card-title">
             <font-awesome-icon :icon="['fas', 'clock-rotate-left']" class="me-2" />
-            Scan-Historie
+            Scan-Historie (heute)
           </h5>
 
           <div v-if="!history.length" class="text-muted">Noch keine Scans.</div>
@@ -89,12 +61,12 @@
 import { ref, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useChildren } from '@/composables/useChildren'
+import { useScan } from '@/composables/useScan'
 import { getBetreuerByIds } from '@/composables/useBetreuerEntity'
-import GroupLink from '@/components/checkpoints/GroupLink.vue'
 import BetreuerLink from '@/components/checkpoints/BetreuerLink.vue'
-import Utils from '@/utils/utils'
 
-const { getChildById, fetchChildDetailsAndScans } = useChildren()
+const { getChildById } = useChildren()
+const { getChildScansForDate } = useScan()
 
 const route = useRoute()
 const router = useRouter()
@@ -102,6 +74,8 @@ const router = useRouter()
 const loading = ref(true)
 const child = ref(null)
 const history = ref([])
+
+const scanTypeMap = { 1: 'Präsenz', 2: 'Bus (Einstieg)', 3: 'Bus (Ausstieg)' }
 
 function formatTime(isoString) {
   return new Date(isoString).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
@@ -113,11 +87,11 @@ async function load() {
   child.value = await getChildById(childId)
 
   if (child.value) {
-    const { scans } = await fetchChildDetailsAndScans(childId)
+    const scans = await getChildScansForDate(childId)
     const betreuerMap = await getBetreuerByIds(scans.map(s => s.user_id))
     history.value = scans.map(scan => ({
       id: scan.id,
-      resultLabel: scan.type_name,
+      resultLabel: scanTypeMap[scan.type] || 'Unbekannt',
       time: scan.created_at,
       betreuer: betreuerMap.get(scan.user_id) || null
     }))
@@ -126,12 +100,6 @@ async function load() {
   }
 
   loading.value = false
-}
-
-function editChild() {
-  if (child.value) {
-    router.push({ name: 'ChildDetailEdit', params: { id: child.value.id } })
-  }
 }
 
 function goBack() {
@@ -171,32 +139,6 @@ onMounted(load)
   width: 38px;
   height: 38px;
   flex-shrink: 0;
-}
-
-.cp-edit-btn {
-  font-weight: 700;
-}
-
-.cp-info-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 14px;
-}
-
-.cp-info-item-wide {
-  grid-column: 1 / -1;
-}
-
-.cp-info-label {
-  font-size: 0.85rem;
-  font-weight: 700;
-  color: #6c757d;
-  text-transform: uppercase;
-}
-
-.cp-info-value {
-  font-size: 1.1rem;
-  font-weight: 600;
 }
 
 .cp-history-list {
