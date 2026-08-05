@@ -54,8 +54,9 @@
                     v-model="selectedChildId"
                 >
                 <label class="form-check-label" :for="'child-' + child.id">
-                  {{ child.name }} ({{ child.age }} J)
-                  <span class="text-muted">— Armband: {{ child.band_id ?? '—' }}</span>
+                  <div class="child-name">{{ child.name }}</div>
+                  <div class="child-meta">Alter: {{ child.age }}</div>
+                  <div class="child-meta">Armband Id: {{ child.band_id ?? '—' }}</div>
                 </label>
               </div>
             </li>
@@ -248,6 +249,15 @@ function goBack() {
 
 .alert {
   border-radius: 8px;
+}
+
+.child-name {
+  font-weight: bold;
+}
+
+.child-meta {
+  color: #6c757d;
+  font-size: 0.9rem;
 }
 
 @media (max-width: 576px) {
