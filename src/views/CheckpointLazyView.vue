@@ -44,11 +44,21 @@
             <font-awesome-icon :icon="['fas', 'redo']" class="me-1" />
             Öffnen
           </button>
+          <button
+              v-if="checkpoint.status === FINISHED && resultSummary && !resultSummary.hasBaseline"
+              class="btn btn-outline-primary cp-toggle-btn"
+              @click="onSetBaseline"
+          >
+            Als Tagesreferenz festhalten
+          </button>
         </div>
 
         <div v-if="actionError" class="alert alert-danger py-2">
           <template v-if="actionError.error === 'ALREADY_OPEN'">
             Es ist bereits ein anderer Lazy-Checkpoint offen (#{{ actionError.existingId }}). Zuerst diesen schließen.
+          </template>
+          <template v-else-if="actionError.error === 'BASELINE_ALREADY_SET'">
+            Die Tagesreferenz wurde bereits von einem anderen Checkpoint festgelegt.
           </template>
         </div>
 
@@ -92,7 +102,7 @@
         </div>
       </div>
 
-      <div class="card">
+      <div v-if="resultSummary?.hasBaseline" class="card">
         <div class="card-body">
           <CountLink
               :count="progress?.notYet.length || 0"
@@ -126,6 +136,7 @@ import {
   CHECKPOINT_STATUS,
   fetchCheckpointDetail,
   finishCheckpoint,
+  setCheckpointBaseline,
   reopenCheckpoint,
   removeCheckpoint,
   summarizeCheckpoint,
@@ -138,6 +149,7 @@ import CountLink from '@/components/checkpoints/CountLink.vue'
 import ChildLink from '@/components/checkpoints/ChildLink.vue'
 
 const OPEN = CHECKPOINT_STATUS.OPEN
+const FINISHED = CHECKPOINT_STATUS.FINISHED
 
 const route = useRoute()
 const router = useRouter()
@@ -198,11 +210,25 @@ function debouncedReload() {
 
 async function onFinish() {
   actionError.value = null
+  let setBaseline = true
+  if (resultSummary.value && !resultSummary.value.hasBaseline) {
+    setBaseline = confirm('Soll die aktuelle Liste der anwesenden Kinder als Tagesreferenz festgehalten werden?')
+  }
   const issues = await checkpointHasOpenIssues(checkpoint.value)
   if (issues.hasIssues && !confirm(`${issues.message} Trotzdem schließen?`)) {
     return
   }
-  await finishCheckpoint(checkpoint.value.id)
+  await finishCheckpoint(checkpoint.value.id, setBaseline)
+  await load()
+}
+
+async function onSetBaseline() {
+  actionError.value = null
+  const result = await setCheckpointBaseline(checkpoint.value.id)
+  if (result?.error) {
+    actionError.value = result
+    return
+  }
   await load()
 }
 

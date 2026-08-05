@@ -31,6 +31,7 @@ const {
     fetchUserGroupDayAssignment,
     rpcCreateCheckpoint,
     rpcFinishCheckpoint,
+    rpcSetCheckpointBaseline,
     rpcReopenCheckpoint,
     rpcRemoveCheckpoint
 } = useSupabaseCheckpoints()
@@ -144,13 +145,24 @@ async function buildBusesForCheckpoint(checkpointId, totalBuses) {
  * "Last Packet Wins" je Gruppe (decision.md §5, GROUP ist ein Snapshot, kein
  * Akkumulator) - anders als buildBusesForCheckpoint().
  *
+ * `morning`/missingChildren beziehen sich auf das presentRoster des Tages
+ * (tickets/147/147.txt), sofern der Tag bereits eine Tagesbasis hat -
+ * ansonsten (noch keine Baseline) auf den vollen Gruppenbestand als
+ * einzigen verfuegbaren Anhaltspunkt. presentChildIds (die tatsaechlich
+ * gescannten Kind-Ids des letzten Pakets) wird zusaetzlich mitgegeben, damit
+ * getGroupChildrenBreakdown() das echte Anwesend/Fehlend nicht ueber den
+ * (jetzt presentRoster-eingeschraenkten) missingChildren-Komplement
+ * rekonstruieren muss.
+ *
  * @param {number} checkpointId
  * @param {number} totalGroups
+ * @param {string} day
  */
-async function buildGroupsForCheckpoint(checkpointId, totalGroups) {
-    const [packets, roster] = await Promise.all([
+async function buildGroupsForCheckpoint(checkpointId, totalGroups, day) {
+    const [packets, roster, presentRosterIds] = await Promise.all([
         fetchScanPacketsForCheckpoint(checkpointId),
-        fetchAllChildren()
+        fetchAllChildren(),
+        getDayPresentRosterIds(day)
     ])
     const scans = await fetchScansForPacketIds(packets.map(p => p.id))
     const authorIds = [...new Set(packets.map(p => p.author_id))]
@@ -165,18 +177,23 @@ async function buildGroupsForCheckpoint(checkpointId, totalGroups) {
         const groupPackets = packetsByGroup.get(groupId) || []
         const hasData = groupPackets.length > 0
         const groupRoster = roster.filter(c => c.group_id === groupId)
-        const morning = groupRoster.length
+        const referenceRoster = presentRosterIds
+            ? groupRoster.filter(c => presentRosterIds.has(c.id))
+            : groupRoster
+        const morning = referenceRoster.length
 
         let current = 0
         let missingChildren = []
         let betreuer = []
+        let presentChildIds = []
 
         if (hasData) {
             const latestPacket = groupPackets.reduce((latest, p) =>
                 (!latest || new Date(p.received_at) > new Date(latest.received_at)) ? p : latest, null)
             const presentIds = new Set((scansByPacket.get(latestPacket.id) || []).map(s => s.child_id))
             current = presentIds.size
-            missingChildren = groupRoster
+            presentChildIds = [...presentIds]
+            missingChildren = referenceRoster
                 .filter(c => !presentIds.has(c.id))
                 .map(c => ({ id: c.id, name: c.name }))
 
@@ -184,7 +201,7 @@ async function buildGroupsForCheckpoint(checkpointId, totalGroups) {
             betreuer = betreuerIds.map(id => usersMap.get(id)).filter(Boolean)
         }
 
-        groups.push({ groupId, hasData, morning, current, betreuer, missingChildren })
+        groups.push({ groupId, hasData, morning, current, betreuer, missingChildren, presentChildIds })
     }
     return groups
 }
@@ -194,7 +211,7 @@ async function attachTypeData(cp) {
     if (cp.type === CHECKPOINT_TYPE.BUS) {
         cp.buses = await buildBusesForCheckpoint(cp.id, totalBuses)
     } else if (cp.type === CHECKPOINT_TYPE.GROUP) {
-        cp.groups = await buildGroupsForCheckpoint(cp.id, totalGroups)
+        cp.groups = await buildGroupsForCheckpoint(cp.id, totalGroups, cp.day)
     }
     return cp
 }
@@ -250,7 +267,7 @@ function translateRpcError(error) {
     if (code === 'ALREADY_OPEN') {
         return { error: 'ALREADY_OPEN', existingId: error.details != null ? Number(error.details) : null }
     }
-    if (code === 'NOT_OPEN' || code === 'NOT_FINISHED' || code === 'NOT_FOUND' || code === 'NOT_ADMIN') {
+    if (code === 'NOT_OPEN' || code === 'NOT_FINISHED' || code === 'NOT_FOUND' || code === 'NOT_ADMIN' || code === 'BASELINE_ALREADY_SET') {
         return { error: code }
     }
     throw error
@@ -273,12 +290,34 @@ export async function createCheckpoint(type, day = todayString()) {
 
 /**
  * @param {number} id
+ * @param {boolean} [setBaseline] - presentRoster des Tages fixieren, falls
+ *   dies die erste FINISHED Checkpoint des Tages ist (tickets/147/147.txt,
+ *   Bestaetigungsdialog).
  * @returns {Promise<Object>} Aktualisierte Checkpoint oder { error: 'NOT_OPEN' }
  */
-export async function finishCheckpoint(id) {
+export async function finishCheckpoint(id, setBaseline = true) {
     let row
     try {
-        row = await rpcFinishCheckpoint(id)
+        row = await rpcFinishCheckpoint(id, setBaseline)
+    } catch (error) {
+        return translateRpcError(error)
+    }
+    return fetchCheckpointDetail(row.id)
+}
+
+/**
+ * Nachtraegliche, explizite Fixierung des presentRoster auf einer bereits
+ * geschlossenen Checkpoint (tickets/147/147.txt) - fuer den Fall, dass der
+ * Admin beim Schliessen abgelehnt hat, oder der Tag noch keine Tagesbasis
+ * hat.
+ *
+ * @param {number} id
+ * @returns {Promise<Object>} Aktualisierte Checkpoint oder { error: 'NOT_FINISHED' | 'NOT_FOUND' | 'BASELINE_ALREADY_SET' }
+ */
+export async function setCheckpointBaseline(id) {
+    let row
+    try {
+        row = await rpcSetCheckpointBaseline(id)
     } catch (error) {
         return translateRpcError(error)
     }
@@ -352,6 +391,23 @@ async function getDayBaseline(day) {
     return cp?.baseline_children_count ?? null
 }
 
+/**
+ * presentRoster eines Tages - die Kinder-Ids, die auf der Tagesbasis-
+ * Checkpoint gescannt wurden (dieselbe Auswahl, aus der auch
+ * baseline_children_count berechnet wird). null, wenn der Tag noch keine
+ * Tagesbasis hat (tickets/147/147.txt).
+ *
+ * @param {string} day
+ * @returns {Promise<Set<number>|null>}
+ */
+export async function getDayPresentRosterIds(day) {
+    const baselineCp = await getDayBaselineCheckpoint(day)
+    if (!baselineCp) return null
+    const packets = await fetchScanPacketsForCheckpoint(baselineCp.id)
+    const scans = await fetchScansForPacketIds(packets.map(p => p.id))
+    return new Set(scans.map(s => s.child_id))
+}
+
 async function getTotalChildrenCount() {
     const roster = await fetchAllChildren()
     return roster.length
@@ -418,45 +474,72 @@ export async function checkpointHasOpenIssues(cp) {
 }
 
 /**
- * Anwesend/fehlend-Aufschluesselung einer BUS-Checkpoint gegen den vollen
- * Kinder-Roster.
+ * Anwesend/fehlend-Aufschluesselung einer BUS-Checkpoint. "Anwesend" ist der
+ * tatsaechlich gescannte Bestand (unabhaengig von einer Tagesbasis).
+ * "Fehlend" ist das presentRoster des Tages minus "Anwesend" -
+ * tickets/147/147.txt: leer, solange der Tag noch keine Tagesbasis hat.
  *
  * @param {Object} cp - muss cp.buses enthalten (fetchCheckpointsForDay()/fetchCheckpointDetail())
  * @returns {Promise<{present:Array, absent:Array}>}
  */
 export async function getBusChildrenBreakdown(cp) {
     const roster = await fetchAllChildren()
+    const rosterById = new Map(roster.map(c => [c.id, c]))
     const presentIds = new Set(cp.buses.flatMap(b => b.children.map(c => c.id)))
-    const present = []
+
+    const present = roster
+        .filter(c => presentIds.has(c.id))
+        .map(c => ({ id: c.id, name: c.name, groupId: c.group_id }))
+
+    const presentRosterIds = await getDayPresentRosterIds(cp.day)
     const absent = []
-    for (const child of roster) {
-        const entry = { id: child.id, name: child.name, groupId: child.group_id }
-        if (presentIds.has(child.id)) present.push(entry)
-        else absent.push(entry)
+    if (presentRosterIds) {
+        for (const id of presentRosterIds) {
+            if (presentIds.has(id)) continue
+            const child = rosterById.get(id)
+            if (child) absent.push({ id: child.id, name: child.name, groupId: child.group_id })
+        }
     }
+
     return { present, absent }
 }
 
 /**
- * Anwesend/fehlend-Aufschluesselung einer GROUP-Checkpoint - Gruppen ohne
- * Daten zaehlen komplett als "fehlend".
+ * Anwesend/fehlend-Aufschluesselung einer GROUP-Checkpoint. "Anwesend" ist
+ * der tatsaechlich gescannte Bestand je Gruppe (group.presentChildIds).
+ * "Fehlend" ist das presentRoster des Tages minus "Anwesend" -
+ * tickets/147/147.txt: leer, solange der Tag noch keine Tagesbasis hat.
+ * Gruppen ohne Daten steuern nur ihren Anteil am presentRoster zu "Fehlend"
+ * bei, nicht ihren vollen Bestand.
  *
  * @param {Object} cp - muss cp.groups enthalten
  * @returns {Promise<{present:Array, absent:Array}>}
  */
 export async function getGroupChildrenBreakdown(cp) {
+    const roster = await fetchAllChildren()
+    const presentRosterIds = await getDayPresentRosterIds(cp.day)
     const present = []
     const absent = []
+
     for (const group of cp.groups) {
-        const roster = await getChildrenByGroup(group.groupId)
+        const groupRoster = roster
+            .filter(c => c.group_id === group.groupId)
+            .map(c => ({ id: c.id, name: c.name, groupId: c.group_id }))
+
         if (!group.hasData) {
-            absent.push(...roster)
+            if (presentRosterIds) {
+                absent.push(...groupRoster.filter(c => presentRosterIds.has(c.id)))
+            }
             continue
         }
-        const missingSet = new Set(group.missingChildren.map(c => c.id))
-        for (const child of roster) {
-            if (missingSet.has(child.id)) absent.push(child)
-            else present.push(child)
+
+        const presentIds = new Set(group.presentChildIds)
+        for (const child of groupRoster) {
+            if (presentIds.has(child.id)) {
+                present.push(child)
+            } else if (presentRosterIds && presentRosterIds.has(child.id)) {
+                absent.push(child)
+            }
         }
     }
     return { present, absent }
@@ -628,6 +711,7 @@ export default {
     fetchCheckpointDetail,
     createCheckpoint,
     finishCheckpoint,
+    setCheckpointBaseline,
     reopenCheckpoint,
     removeCheckpoint,
     isOverdue,
@@ -636,6 +720,7 @@ export default {
     getBusChildrenBreakdown,
     getGroupChildrenBreakdown,
     getDayBaselineCheckpoint,
+    getDayPresentRosterIds,
     getBusDelta,
     getGroupDelta,
     getCheckpointBetreuerList,

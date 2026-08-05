@@ -45,11 +45,21 @@
             <font-awesome-icon :icon="['fas', 'redo']" class="me-1" />
             Öffnen
           </button>
+          <button
+              v-if="checkpoint.status === FINISHED && resultSummary && !resultSummary.hasBaseline"
+              class="btn btn-outline-primary cp-toggle-btn"
+              @click="onSetBaseline"
+          >
+            Als Tagesreferenz festhalten
+          </button>
         </div>
 
         <div v-if="actionError" class="alert alert-danger py-2">
           <template v-if="actionError.error === 'ALREADY_OPEN'">
             Es ist bereits ein anderer Group-Checkpoint offen (#{{ actionError.existingId }}). Zuerst diesen schließen.
+          </template>
+          <template v-else-if="actionError.error === 'BASELINE_ALREADY_SET'">
+            Die Tagesreferenz wurde bereits von einem anderen Checkpoint festgelegt.
           </template>
         </div>
 
@@ -73,7 +83,7 @@
           <h5 class="card-title">Kinder &amp; Betreuer gesamt</h5>
           <div class="cp-aggregate-row">
             <CountLink :count="breakdownCounts.present" label="Anwesend" :icon="['fas', 'child']" variant="kinder" @click="openList({ kind: 'child', scope: 'checkpoint', filter: 'present' })" />
-            <CountLink :count="breakdownCounts.absent" label="Fehlend" :icon="['fas', 'exclamation-triangle']" variant="warning" @click="openList({ kind: 'child', scope: 'checkpoint', filter: 'absent' })" />
+            <CountLink v-if="resultSummary?.hasBaseline" :count="breakdownCounts.absent" label="Fehlend" :icon="['fas', 'exclamation-triangle']" variant="warning" @click="openList({ kind: 'child', scope: 'checkpoint', filter: 'absent' })" />
             <CountLink :count="breakdownCounts.betreuer" label="Betreuer" :icon="['fas', 'user']" variant="betreuer" @click="openList({ kind: 'betreuer', scope: 'checkpoint' })" />
           </div>
         </div>
@@ -103,14 +113,16 @@
               </template>
               <template v-else>
                 <CountLink :count="group.current" label="Kinder" variant="default" @click="openList({ kind: 'child', scope: 'group', scopeId: group.groupId, filter: 'present' })" />
-                <CountLink v-if="group.current < group.morning" :count="group.morning - group.current" label="fehlen" variant="warning" @click="openList({ kind: 'child', scope: 'group', scopeId: group.groupId, filter: 'absent' })" />
-                <span v-else-if="group.current > group.morning" class="cp-group-row-status cp-detail-extra">
-                  +{{ group.current - group.morning }} mehr
-                </span>
-                <span v-else class="cp-group-row-status cp-detail-ok">
-                  <font-awesome-icon :icon="['fas', 'check-circle']" class="me-1" />
-                  OK
-                </span>
+                <template v-if="resultSummary?.hasBaseline">
+                  <CountLink v-if="group.current < group.morning" :count="group.morning - group.current" label="fehlen" variant="warning" @click="openList({ kind: 'child', scope: 'group', scopeId: group.groupId, filter: 'absent' })" />
+                  <span v-else-if="group.current > group.morning" class="cp-group-row-status cp-detail-extra">
+                    +{{ group.current - group.morning }} mehr
+                  </span>
+                  <span v-else class="cp-group-row-status cp-detail-ok">
+                    <font-awesome-icon :icon="['fas', 'check-circle']" class="me-1" />
+                    OK
+                  </span>
+                </template>
               </template>
             </div>
           </div>
@@ -130,6 +142,7 @@ import {
   CHECKPOINT_STATUS,
   fetchCheckpointDetail,
   finishCheckpoint,
+  setCheckpointBaseline,
   reopenCheckpoint,
   removeCheckpoint,
   summarizeCheckpoint,
@@ -143,6 +156,7 @@ import CountLink from '@/components/checkpoints/CountLink.vue'
 import GroupLink from '@/components/checkpoints/GroupLink.vue'
 
 const OPEN = CHECKPOINT_STATUS.OPEN
+const FINISHED = CHECKPOINT_STATUS.FINISHED
 
 const route = useRoute()
 const router = useRouter()
@@ -201,11 +215,25 @@ function debouncedReload() {
 
 async function onFinish() {
   actionError.value = null
+  let setBaseline = true
+  if (resultSummary.value && !resultSummary.value.hasBaseline) {
+    setBaseline = confirm('Soll die aktuelle Liste der anwesenden Kinder als Tagesreferenz festgehalten werden?')
+  }
   const issues = await checkpointHasOpenIssues(checkpoint.value)
   if (issues.hasIssues && !confirm(`${issues.message} Trotzdem schließen?`)) {
     return
   }
-  await finishCheckpoint(checkpoint.value.id)
+  await finishCheckpoint(checkpoint.value.id, setBaseline)
+  await load()
+}
+
+async function onSetBaseline() {
+  actionError.value = null
+  const result = await setCheckpointBaseline(checkpoint.value.id)
+  if (result?.error) {
+    actionError.value = result
+    return
+  }
   await load()
 }
 

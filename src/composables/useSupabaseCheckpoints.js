@@ -122,11 +122,26 @@ const rpcCreateCheckpoint = async (type, day) => {
 }
 
 /**
- * RPC finish_checkpoint(p_id) - doc/db/checkpoints.sql, §4.
+ * RPC finish_checkpoint(p_id, p_set_baseline) - doc/db/checkpoints.sql, §4,
+ * erweitert um p_set_baseline in doc/db/checkpoints_baseline_confirm.sql
+ * (Ticket 147).
+ * @param {number} id
+ * @param {boolean} [setBaseline]
+ */
+const rpcFinishCheckpoint = async (id, setBaseline = true) => {
+    const { data, error } = await supabase.rpc('finish_checkpoint', { p_id: id, p_set_baseline: setBaseline })
+    if (error) throw error
+    return data
+}
+
+/**
+ * RPC set_checkpoint_baseline(p_id) - doc/db/checkpoints_baseline_confirm.sql
+ * (Ticket 147): nachtraegliche, explizite Fixierung des presentRoster auf
+ * einer bereits geschlossenen Checkpoint.
  * @param {number} id
  */
-const rpcFinishCheckpoint = async (id) => {
-    const { data, error } = await supabase.rpc('finish_checkpoint', { p_id: id })
+const rpcSetCheckpointBaseline = async (id) => {
+    const { data, error } = await supabase.rpc('set_checkpoint_baseline', { p_id: id })
     if (error) throw error
     return data
 }
@@ -183,6 +198,7 @@ export function useSupabaseCheckpoints() {
         fetchUserGroupDayAssignment,
         rpcCreateCheckpoint,
         rpcFinishCheckpoint,
+        rpcSetCheckpointBaseline,
         rpcReopenCheckpoint,
         rpcRemoveCheckpoint
     }
