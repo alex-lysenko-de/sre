@@ -26,10 +26,9 @@ CRUD-слой для карточек детей (администрирован
 - `fetchChildrenList(searchTerm)` — поиск по имени (`ilike`) **или**
   `band_id` (точное совпадение) — использовался в удалённом
   `ChildrenView.vue` (тикет 137); актуальные потребители см. ниже.
-- `fetchChildDetailsAndScans(childId)` — карточка ребёнка + последние 50
-  записей [[scans]] с человекочитаемым `type_name` (`Präsenz` / `Bus
-  (Einstieg)` / `Bus (Ausstieg)` — сопоставление только для отображения,
-  реально всегда пишется `type=1`, см. [[scans]]).
+- `getChildById(id)` — карточка ребёнка; часть полей нормализована в
+  camelCase (`groupId`/`busId` вместо `group_id`/`bus_id`), используется
+  `ChildDetailView.vue`/`ChildCardView.vue` (см. [[Карта-маршрутов]]).
 - `deleteChild(childId)` / `saveChild(childData)` — стандартный
   insert/update с очисткой `notes` (пустая строка вместо `'""'` —
   устаревшее значение по умолчанию в схеме, см. [[children]]) и
@@ -41,13 +40,23 @@ CRUD-слой для карточек детей (администрирован
 и превращает его в понятное сообщение о том, что браслет уже занят другим
 ребёнком — вместо технического текста ошибки БД.
 
-## Текущие потребители (тикет 139)
+## Текущие потребители (тикет 151)
 
 `ChildrenView.vue` удалён тикетом 137. Актуальный список (`^import`,
 проверено грепом): `GroupEditView.vue`, `ChildEditView.vue`,
 `SelectChildView.vue`, `AddEditChildModal.vue`, `ChildCardView.vue`
-(entity-экран, тикет 133), плюс [[Checkpoint]]-composables
+(тикет 133/151 — только `getChildById()` для заголовка,
+Checkpoint-история сканов через [[useScan]]),
+`ChildDetailView.vue` (с тикета 151 — тоже `getChildById()`, вместо
+прежнего [[useArmband]].`getChildDetails()`), плюс
+[[Checkpoint]]-composables
 `useCheckpoints.js`/`useLazyCheckpointProgress.js`.
+
+`fetchChildDetailsAndScans(childId)` удалена тикетом 151 (мёртвый код —
+единственным потребителем был `ChildCardView.vue`, переведённый на
+[[useScan]].`getChildScansForDate()`, today-scoped вместо ungefiltert
+limit 50; сопоставление `type` → человекочитаемый текст переехало в сам
+`ChildCardView.vue`, см. [[scans]]).
 
 ## Связанные заметки
 

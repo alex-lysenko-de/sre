@@ -21,9 +21,11 @@ create table public.scans (
 ```
 
 - `date` — дата в формате `YYYY-MM-DD` (строка, не `date`-тип).
-- `type` — зарезервировано на будущее (см. `useChildren.fetchChildDetailsAndScans()`,
-  где сопоставление `{1: 'Präsenz', 2: 'Bus (Einstieg)', 3: 'Bus (Ausstieg)'}`
-  используется только для отображения, реально записывается всегда `1`).
+- `type` — зарезервировано на будущее (см. `ChildCardView.vue`
+  (`src/views/ChildCardView.vue`), где сопоставление `{1: 'Präsenz', 2: 'Bus
+  (Einstieg)', 3: 'Bus (Ausstieg)'}` используется только для отображения,
+  реально записывается всегда `1`; до тикета 151 это сопоставление жило в
+  удалённой [[useChildren]].`fetchChildDetailsAndScans()`).
 - Каждый `INSERT` в `scans` запускает триггер `on_scan_insert` (см.
   [[Триггеры]]), который upsert'ит [[children_today]].
 
@@ -33,8 +35,10 @@ create table public.scans (
   присутствия через сканирование
 - [[useScan]] — полный набор запросов по истории сканов: `isChildPresentToday()`,
   `getChildBusForToday()`, `getChildScansForDate()`, `getChildAttendanceDays()`,
-  `getPresentChildrenForDate()`, `createScan()`
-- [[useChildren]].`fetchChildDetailsAndScans()` — последние 50 сканов ребёнка
+  `getPresentChildrenForDate()`, `createScan()`; `getChildScansForDate()` — с
+  тикета 151 источник today-scoped истории сканов ребёнка на
+  `/admin/checkpoints/child/:id` (`ChildCardView.vue`), заменил удалённую
+  [[useChildren]].`fetchChildDetailsAndScans()`
 
 ## Почему append-only + отдельная агрегатная таблица
 
