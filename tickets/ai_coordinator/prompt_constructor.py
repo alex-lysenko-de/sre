@@ -20,16 +20,28 @@ Prompt Constructor
 перегенерируется автоматически при любом изменении входных данных
 (тикет, чекбокс, переключение вкладки, Reset) — без ручного нажатия
 кнопки Generate.
+
+Версия 3: добавлена интеграция с AI-агентом (Claude Code, claude.exe).
+Поле "Рабочий каталог" + кнопка "Запустить агента" запускают
+`claude.exe` в указанном каталоге. Название активной вкладки
+передаётся как начальный промпт интерактивной сессии — именно так
+`claude.exe "текст"` открывает сессию сразу в нужном контексте
+(см. официальный CLI reference Claude Code: `claude "query"` запускает
+интерактивную сессию с начальным промптом).
 """
 
 import os
 import re
+import sys
+import subprocess
 import configparser
 import tkinter as tk
 from tkinter import ttk, messagebox
 
 CONFIG_FILE = "prompt_constructor.ini"
 TICKET_PLACEHOLDER = "{{TICKET}}"
+DEFAULT_WORKDIR = "c:\\_projects\\github\\sre\\"
+AGENT_EXECUTABLE = "claude.exe"
 
 # --------------------------------------------------------------------------
 # Разбор шаблонов
@@ -196,6 +208,7 @@ class PromptConstructorApp(tk.Tk):
         self.section_display = {}
 
         self.ticket_var = tk.StringVar()
+        self.workdir_var = tk.StringVar()
         self.status_var = tk.StringVar(value="")
         self.dirty_var = tk.StringVar(value="")
 
@@ -236,15 +249,20 @@ class PromptConstructorApp(tk.Tk):
                 pass
         self._saved_ticket = self.config_parser.get("General", "ticket", fallback="")
         self._saved_last_tab = self.config_parser.get("General", "last_tab", fallback="")
+        self._saved_workdir = self.config_parser.get(
+            "General", "workdir", fallback=DEFAULT_WORKDIR
+        )
         if self.config_parser.has_section("States"):
             self._saved_states = dict(self.config_parser["States"])
         self.ticket_var.set(self._saved_ticket)
+        self.workdir_var.set(self._saved_workdir)
 
     def _save_config(self):
         cfg = configparser.ConfigParser()
         cfg["General"] = {
             "ticket": self.ticket_var.get(),
             "last_tab": self._current_tab_filename() or "",
+            "workdir": self.workdir_var.get(),
         }
         states = {}
         for filename, data in self.files.items():
@@ -332,6 +350,18 @@ class PromptConstructorApp(tk.Tk):
         ttk.Label(
             top_bar, text="(результат обновляется автоматически)", foreground="#888888"
         ).pack(side="left", padx=10)
+
+        # --- строка запуска AI-агента (Claude Code) ---
+        agent_bar = ttk.Frame(left_frame)
+        agent_bar.pack(fill="x", pady=(0, 6))
+
+        ttk.Label(agent_bar, text="Рабочий каталог:").pack(side="left")
+        workdir_entry = ttk.Entry(agent_bar, textvariable=self.workdir_var)
+        workdir_entry.pack(side="left", padx=(4, 10), fill="x", expand=True)
+
+        ttk.Button(agent_bar, text="Запустить агента", command=self.on_launch_agent).pack(
+            side="left"
+        )
 
         # --- вкладки (Notebook), по одной на файл ---
         self.notebook = ttk.Notebook(left_frame)
@@ -561,6 +591,55 @@ class PromptConstructorApp(tk.Tk):
         self.status_var.set(f"Состояния вкладки «{filename}» сброшены.")
         # Reset тоже меняет итоговое содержимое -> автогенерация
         self.on_generate()
+
+    def on_launch_agent(self):
+        """Запускает claude.exe в указанном рабочем каталоге.
+
+        Название активной вкладки передаётся как позиционный аргумент —
+        это начальный промпт интерактивной сессии Claude Code
+        (`claude.exe "текст"` открывает интерактивную сессию сразу с этим
+        промптом), поэтому агент открывается уже в контексте выбранной роли.
+        """
+        workdir = self.workdir_var.get().strip()
+        if not workdir:
+            messagebox.showerror("Запуск агента", "Не указан рабочий каталог.")
+            return
+        if not os.path.isdir(workdir):
+            messagebox.showerror(
+                "Запуск агента", f"Рабочий каталог не найден:\n{workdir}"
+            )
+            return
+
+        tab_name = self._current_tab_filename()
+        cmd = [AGENT_EXECUTABLE]
+        if tab_name:
+            cmd.append(tab_name)
+
+        try:
+            if sys.platform.startswith("win"):
+                # Открываем отдельное консольное окно, т.к. Claude Code —
+                # интерактивное консольное приложение, а Tk-приложение
+                # само по себе не предоставляет терминал для stdin/stdout.
+                subprocess.Popen(
+                    cmd, cwd=workdir, creationflags=subprocess.CREATE_NEW_CONSOLE
+                )
+            else:
+                subprocess.Popen(cmd, cwd=workdir)
+        except FileNotFoundError:
+            messagebox.showerror(
+                "Запуск агента",
+                f"Не удалось найти «{AGENT_EXECUTABLE}». Убедитесь, что Claude "
+                "Code установлен и путь к нему добавлен в PATH.",
+            )
+        except OSError as e:
+            messagebox.showerror("Запуск агента", f"Не удалось запустить агента:\n{e}")
+        else:
+            if tab_name:
+                self.status_var.set(
+                    f"Агент запущен в «{workdir}» (контекст: {tab_name})."
+                )
+            else:
+                self.status_var.set(f"Агент запущен в «{workdir}».")
 
     def on_copy(self):
         text = self.output_text.get("1.0", "end-1c")
