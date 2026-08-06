@@ -175,6 +175,7 @@ const busDeltas = ref({})
 
 let realtimeChannel = null
 let reloadDebounceTimer = null
+let hasLoadedOnce = false
 
 function formatTime(isoString) {
   return new Date(isoString).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
@@ -192,29 +193,33 @@ function openList({ kind, scope, scopeId, filter }) {
 }
 
 async function load() {
-  loading.value = true
-  checkpoint.value = await fetchCheckpointDetail(Number(route.params.id))
-  if (!checkpoint.value) {
-    resultSummary.value = null
+  if (!hasLoadedOnce) loading.value = true
+  try {
+    checkpoint.value = await fetchCheckpointDetail(Number(route.params.id))
+    if (!checkpoint.value) {
+      resultSummary.value = null
+      hasLoadedOnce = true
+      return
+    }
+
+    const [summary, breakdown, betreuerList, deltas] = await Promise.all([
+      summarizeCheckpoint(checkpoint.value),
+      getBusChildrenBreakdown(checkpoint.value),
+      Promise.resolve(getCheckpointBetreuerList(checkpoint.value)),
+      Promise.all(checkpoint.value.buses.map(bus => getBusDelta(checkpoint.value, bus.busNumber)))
+    ])
+
+    resultSummary.value = summary
+    breakdownCounts.value = {
+      present: breakdown.present.length,
+      absent: breakdown.absent.length,
+      betreuer: betreuerList.length
+    }
+    busDeltas.value = Object.fromEntries(checkpoint.value.buses.map((bus, idx) => [bus.busNumber, deltas[idx]]))
+    hasLoadedOnce = true
+  } finally {
     loading.value = false
-    return
   }
-
-  const [summary, breakdown, betreuerList, deltas] = await Promise.all([
-    summarizeCheckpoint(checkpoint.value),
-    getBusChildrenBreakdown(checkpoint.value),
-    Promise.resolve(getCheckpointBetreuerList(checkpoint.value)),
-    Promise.all(checkpoint.value.buses.map(bus => getBusDelta(checkpoint.value, bus.busNumber)))
-  ])
-
-  resultSummary.value = summary
-  breakdownCounts.value = {
-    present: breakdown.present.length,
-    absent: breakdown.absent.length,
-    betreuer: betreuerList.length
-  }
-  busDeltas.value = Object.fromEntries(checkpoint.value.buses.map((bus, idx) => [bus.busNumber, deltas[idx]]))
-  loading.value = false
 }
 
 function debouncedReload() {

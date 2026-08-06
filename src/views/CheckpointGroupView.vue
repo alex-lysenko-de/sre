@@ -169,6 +169,7 @@ const breakdownCounts = ref({ present: 0, absent: 0, betreuer: 0 })
 
 let realtimeChannel = null
 let reloadDebounceTimer = null
+let hasLoadedOnce = false
 
 function groupCardClass(group) {
   if (!group.hasData) return 'cp-group-card-none'
@@ -185,27 +186,31 @@ function openList({ kind, scope, scopeId, filter }) {
 }
 
 async function load() {
-  loading.value = true
-  checkpoint.value = await fetchCheckpointDetail(Number(route.params.id))
-  if (!checkpoint.value) {
-    resultSummary.value = null
+  if (!hasLoadedOnce) loading.value = true
+  try {
+    checkpoint.value = await fetchCheckpointDetail(Number(route.params.id))
+    if (!checkpoint.value) {
+      resultSummary.value = null
+      hasLoadedOnce = true
+      return
+    }
+
+    const [summary, breakdown, betreuerList] = await Promise.all([
+      summarizeCheckpoint(checkpoint.value),
+      getGroupChildrenBreakdown(checkpoint.value),
+      Promise.resolve(getCheckpointBetreuerList(checkpoint.value))
+    ])
+
+    resultSummary.value = summary
+    breakdownCounts.value = {
+      present: breakdown.present.length,
+      absent: breakdown.absent.length,
+      betreuer: betreuerList.length
+    }
+    hasLoadedOnce = true
+  } finally {
     loading.value = false
-    return
   }
-
-  const [summary, breakdown, betreuerList] = await Promise.all([
-    summarizeCheckpoint(checkpoint.value),
-    getGroupChildrenBreakdown(checkpoint.value),
-    Promise.resolve(getCheckpointBetreuerList(checkpoint.value))
-  ])
-
-  resultSummary.value = summary
-  breakdownCounts.value = {
-    present: breakdown.present.length,
-    absent: breakdown.absent.length,
-    betreuer: betreuerList.length
-  }
-  loading.value = false
 }
 
 function debouncedReload() {

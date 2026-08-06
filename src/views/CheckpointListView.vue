@@ -141,6 +141,7 @@ const createError = ref(null)
 
 let realtimeChannel = null
 let reloadDebounceTimer = null
+let hasLoadedOnce = false
 
 const openTypes = computed(() =>
     checkpoints.value
@@ -169,13 +170,17 @@ function formatTime(isoString) {
 }
 
 async function load() {
-  loading.value = true
-  checkpoints.value = await fetchCheckpointsForDay(todayString())
-  const entries = await Promise.all(
-      checkpoints.value.map(async cp => [cp.id, await summarizeCheckpoint(cp)])
-  )
-  results.value = Object.fromEntries(entries)
-  loading.value = false
+  if (!hasLoadedOnce) loading.value = true
+  try {
+    checkpoints.value = await fetchCheckpointsForDay(todayString())
+    const entries = await Promise.all(
+        checkpoints.value.map(async cp => [cp.id, await summarizeCheckpoint(cp)])
+    )
+    results.value = Object.fromEntries(entries)
+    hasLoadedOnce = true
+  } finally {
+    loading.value = false
+  }
 }
 
 function debouncedReload() {

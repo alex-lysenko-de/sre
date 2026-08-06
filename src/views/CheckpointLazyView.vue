@@ -162,6 +162,7 @@ const actionError = ref(null)
 
 let realtimeChannel = null
 let reloadDebounceTimer = null
+let hasLoadedOnce = false
 
 const notYetByGroup = computed(() => {
   const byGroup = new Map()
@@ -193,14 +194,18 @@ function openList({ filter }) {
 }
 
 async function load() {
-  loading.value = true
-  const id = Number(route.params.id)
-  checkpoint.value = await fetchCheckpointDetail(id)
-  if (checkpoint.value) {
-    progress.value = await fetchLazyCheckpointProgress(id)
-    resultSummary.value = await summarizeCheckpoint(checkpoint.value)
+  if (!hasLoadedOnce) loading.value = true
+  try {
+    const id = Number(route.params.id)
+    checkpoint.value = await fetchCheckpointDetail(id)
+    if (checkpoint.value) {
+      progress.value = await fetchLazyCheckpointProgress(id)
+      resultSummary.value = await summarizeCheckpoint(checkpoint.value)
+    }
+    hasLoadedOnce = true
+  } finally {
+    loading.value = false
   }
-  loading.value = false
 }
 
 function debouncedReload() {
