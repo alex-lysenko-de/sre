@@ -58,7 +58,10 @@ tickets/{{TICKET}}/IMPLEMENTATION_REPORT.md
 # Проверки
 
 
-После завершения работы обнови файл `tickets/{{TICKET}}/state.txt`:
+После завершения работы:
+
+1. please commit all changed by you files into git repository with message "ticket {{TICKET}}"
+обнови файл `tickets/{{TICKET}}/state.txt`:
 
 * `DEVELOPMENT_DONE` — задача реализована и готова к ревью;
 * `REQUIREMENTS_CLARIFICATION` — выполнение невозможно до получения дополнительных требований;

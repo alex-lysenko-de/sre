@@ -21,13 +21,25 @@ Prompt Constructor
 (тикет, чекбокс, переключение вкладки, Reset) — без ручного нажатия
 кнопки Generate.
 
-Версия 3: добавлена интеграция с AI-агентом (Claude Code, claude.exe).
-Поле "Рабочий каталог" + кнопка "Запустить агента" запускают
-`claude.exe` в указанном каталоге. Название активной вкладки
-передаётся как начальный промпт интерактивной сессии — именно так
-`claude.exe "текст"` открывает сессию сразу в нужном контексте
-(см. официальный CLI reference Claude Code: `claude "query"` запускает
-интерактивную сессию с начальным промптом).
+Версия 3: добавлена интеграция с AI-агентом (Claude Code CLI).
+Поле "Рабочий каталог" + кнопка "Запустить агента" открывают консольное
+окно (cmd.exe на Windows, обычный shell на прочих платформах),
+переходят в указанный каталог и выполняют команду `claude`. Прямой
+запуск `claude.exe` не используется, т.к. в интерактивном сценарии
+CLI-обёртка `claude` должна быть запущена именно через shell. Название
+активной вкладки передаётся как параметр командной строки — это
+начальный промпт интерактивной сессии Claude Code (`claude "текст"`
+открывает сессию сразу с этим промптом).
+
+Версия 4: вкладки вынесены в прокручиваемый вертикальный список слева
+(вместо горизонтального ttk.Notebook), т.к. при большом числе шаблонов
+горизонтальные вкладки становятся слишком узкими и нечитаемыми.
+Названия шаблонов всегда отображаются полностью, список прокручивается
+при нехватке места по вертикали.
+
+Версия 5: файлы шаблонов (*.txt) больше не читаются из каталога со
+скриптом. Они загружаются из отдельной подпапки "prompts", лежащей
+рядом со скриптом (создаётся автоматически, если отсутствует).
 """
 
 import os
@@ -38,10 +50,16 @@ import configparser
 import tkinter as tk
 from tkinter import ttk, messagebox
 
-CONFIG_FILE = "prompt_constructor.ini"
+# Каталог, где лежит сам скрипт (а не текущий рабочий каталог процесса) —
+# от него отсчитываются каталог промптов и файл конфигурации, чтобы
+# программа работала одинаково независимо от того, откуда её запустили.
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PROMPTS_DIR = os.path.join(BASE_DIR, "prompts")
+CONFIG_FILE = os.path.join(BASE_DIR, "prompt_constructor.ini")
+
 TICKET_PLACEHOLDER = "{{TICKET}}"
 DEFAULT_WORKDIR = "c:\\_projects\\github\\sre\\"
-AGENT_EXECUTABLE = "claude.exe"
+AGENT_COMMAND = "claude"
 
 # --------------------------------------------------------------------------
 # Разбор шаблонов
@@ -280,18 +298,27 @@ class PromptConstructorApp(tk.Tk):
 
     def _load_templates(self):
         errors = []
+
+        try:
+            os.makedirs(PROMPTS_DIR, exist_ok=True)
+        except OSError as e:
+            errors.append(f"Не удалось создать каталог промптов «{PROMPTS_DIR}»: {e}")
+            return errors
+
         try:
             filenames = sorted(
-                f for f in os.listdir(".")
-                if f.lower().endswith(".txt") and os.path.isfile(f)
+                f for f in os.listdir(PROMPTS_DIR)
+                if f.lower().endswith(".txt")
+                and os.path.isfile(os.path.join(PROMPTS_DIR, f))
             )
         except OSError as e:
-            errors.append(f"Не удалось прочитать каталог: {e}")
+            errors.append(f"Не удалось прочитать каталог промптов «{PROMPTS_DIR}»: {e}")
             filenames = []
 
         for filename in filenames:
+            filepath = os.path.join(PROMPTS_DIR, filename)
             try:
-                with open(filename, "r", encoding="utf-8") as fh:
+                with open(filepath, "r", encoding="utf-8") as fh:
                     content = fh.read()
             except UnicodeDecodeError:
                 errors.append(f"{filename}: файл не в кодировке UTF-8.")
@@ -363,27 +390,78 @@ class PromptConstructorApp(tk.Tk):
             side="left"
         )
 
-        # --- вкладки (Notebook), по одной на файл ---
-        self.notebook = ttk.Notebook(left_frame)
-        self.notebook.pack(fill="both", expand=True)
+        # --- навигация по шаблонам: вертикальный прокручиваемый список ---
+        # Вместо горизонтальных вкладок ttk.Notebook (которые становятся
+        # нечитаемыми при большом количестве промптов) используется список
+        # слева (с вертикальной прокруткой) + стек панелей с содержимым
+        # справа от него. Названия шаблонов всегда отображаются полностью.
+        tabs_area = ttk.Frame(left_frame)
+        tabs_area.pack(fill="both", expand=True)
+
+        list_frame = ttk.Frame(tabs_area, width=220)
+        list_frame.pack(side="left", fill="y")
+        list_frame.pack_propagate(False)
+
+        ttk.Label(list_frame, text="Промпты:").pack(anchor="w")
+
+        list_inner = ttk.Frame(list_frame)
+        list_inner.pack(fill="both", expand=True, pady=(2, 0))
+
+        self.tab_listbox = tk.Listbox(
+            list_inner, exportselection=False, activestyle="dotbox",
+        )
+        list_scroll = ttk.Scrollbar(
+            list_inner, orient="vertical", command=self.tab_listbox.yview
+        )
+        self.tab_listbox.configure(yscrollcommand=list_scroll.set)
+        self.tab_listbox.pack(side="left", fill="both", expand=True)
+        list_scroll.pack(side="right", fill="y")
+        # прокрутка колесом мыши, даже если курсор не точно над списком
+        self.tab_listbox.bind(
+            "<MouseWheel>",
+            lambda e: self.tab_listbox.yview_scroll(int(-1 * (e.delta / 120)), "units"),
+        )
+        self.tab_listbox.bind(
+            "<Button-4>", lambda e: self.tab_listbox.yview_scroll(-1, "units")
+        )
+        self.tab_listbox.bind(
+            "<Button-5>", lambda e: self.tab_listbox.yview_scroll(1, "units")
+        )
+
+        content_stack = ttk.Frame(tabs_area)
+        content_stack.pack(side="left", fill="both", expand=True, padx=(6, 0))
+        content_stack.grid_rowconfigure(0, weight=1)
+        content_stack.grid_columnconfigure(0, weight=1)
+
+        self.tab_frames = {}   # filename -> контейнер (для tkraise)
+        self._current_filename = None
+        self._tab_order = []   # порядок имён файлов, соответствующий строкам Listbox
 
         if not self.files:
-            empty = ttk.Frame(self.notebook)
+            empty = ttk.Frame(content_stack)
             ttk.Label(
                 empty,
-                text="В текущем каталоге не найдено ни одного *.txt шаблона.",
+                text=(
+                    "В каталоге промптов не найдено ни одного *.txt шаблона:\n"
+                    f"{PROMPTS_DIR}"
+                ),
                 padding=20,
             ).pack()
-            self.notebook.add(empty, text="(пусто)")
+            empty.grid(row=0, column=0, sticky="nsew")
+            self.tab_listbox.insert("end", "(пусто)")
+            self.tab_listbox.configure(state="disabled")
         else:
             for filename in sorted(self.files):
-                tab_container, text_widget = self._make_template_tab(self.notebook)
+                tab_container, text_widget = self._make_template_tab(content_stack)
                 self.build_section_text(text_widget, self.files[filename]["nodes"], 0)
                 text_widget.configure(state="disabled")
-                self.notebook.add(tab_container, text=filename)
+                tab_container.grid(row=0, column=0, sticky="nsew")
+                self.tab_frames[filename] = tab_container
+                self.tab_listbox.insert("end", filename)
+                self._tab_order.append(filename)
 
-        # переключение вкладки -> автогенерация для новой вкладки
-        self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
+        # выбор строки в списке -> показать соответствующую панель + автогенерация
+        self.tab_listbox.bind("<<ListboxSelect>>", self._on_tab_changed)
 
         # --- правая панель: результат ---
         editor_bar = ttk.Frame(right_frame)
@@ -502,26 +580,31 @@ class PromptConstructorApp(tk.Tk):
             tw.tag_add(tag, start, end)
 
     def _restore_last_tab(self):
-        if not self._saved_last_tab or not self.files:
+        if not self._tab_order:
             return
-        for idx, filename in enumerate(sorted(self.files)):
-            if filename == self._saved_last_tab:
-                self.notebook.select(idx)
-                return
+        target = self._saved_last_tab if self._saved_last_tab in self._tab_order else None
+        if target is None:
+            target = self._tab_order[0]
+        self._select_tab(target)
+
+    def _select_tab(self, filename):
+        """Показывает панель с указанным именем файла и выделяет его в списке."""
+        if filename not in self.tab_frames:
+            return
+        idx = self._tab_order.index(filename)
+        self.tab_listbox.selection_clear(0, "end")
+        self.tab_listbox.selection_set(idx)
+        self.tab_listbox.activate(idx)
+        self.tab_listbox.see(idx)
+        self.tab_frames[filename].tkraise()
+        self._current_filename = filename
 
     # ------------------------------------------------------------ логика -
 
     def _current_tab_filename(self):
-        if not self.files:
-            return None
-        try:
-            tab_id = self.notebook.select()
-        except tk.TclError:
-            return None
-        if not tab_id:
-            return None
-        text = self.notebook.tab(tab_id, "text")
-        return text if text in self.files else None
+        if self._current_filename in self.files:
+            return self._current_filename
+        return None
 
     def on_toggle(self, section, var):
         value = var.get()
@@ -544,6 +627,13 @@ class PromptConstructorApp(tk.Tk):
         self.on_generate()
 
     def _on_tab_changed(self, _event=None):
+        selection = self.tab_listbox.curselection()
+        if selection:
+            idx = selection[0]
+            if 0 <= idx < len(self._tab_order):
+                filename = self._tab_order[idx]
+                self.tab_frames[filename].tkraise()
+                self._current_filename = filename
         if not self._ui_ready:
             return
         self.on_generate()
@@ -593,12 +683,16 @@ class PromptConstructorApp(tk.Tk):
         self.on_generate()
 
     def on_launch_agent(self):
-        """Запускает claude.exe в указанном рабочем каталоге.
+        """Открывает командную строку в указанном рабочем каталоге и
+        запускает в ней CLI-команду `claude`.
 
-        Название активной вкладки передаётся как позиционный аргумент —
-        это начальный промпт интерактивной сессии Claude Code
-        (`claude.exe "текст"` открывает интерактивную сессию сразу с этим
-        промптом), поэтому агент открывается уже в контексте выбранной роли.
+        Прямой запуск `claude.exe` не используется, т.к. в интерактивном
+        сценарии он не работает — вместо этого команда `claude` выполняется
+        внутри полноценной оболочки (cmd.exe на Windows), которая
+        предварительно переходит в рабочий каталог. Название активной
+        вкладки передаётся команде как параметр — это начальный промпт
+        интерактивной сессии Claude Code, поэтому агент открывается сразу
+        в контексте выбранного промпта.
         """
         workdir = self.workdir_var.get().strip()
         if not workdir:
@@ -611,25 +705,32 @@ class PromptConstructorApp(tk.Tk):
             return
 
         tab_name = self._current_tab_filename()
-        cmd = [AGENT_EXECUTABLE]
+        # Собираем команду `claude`, при наличии активной вкладки —
+        # с её названием как позиционным аргументом (начальный промпт).
+        agent_cmd = AGENT_COMMAND
         if tab_name:
-            cmd.append(tab_name)
+            agent_cmd += f' /rename {tab_name}'
 
         try:
             if sys.platform.startswith("win"):
-                # Открываем отдельное консольное окно, т.к. Claude Code —
-                # интерактивное консольное приложение, а Tk-приложение
-                # само по себе не предоставляет терминал для stdin/stdout.
+                # /d — переход на другой диск при необходимости;
+                # /k — оставить консольное окно открытым после выполнения,
+                # чтобы была видна интерактивная сессия Claude Code.
+                shell_cmd = f' cd /d {workdir} && {agent_cmd}'
                 subprocess.Popen(
-                    cmd, cwd=workdir, creationflags=subprocess.CREATE_NEW_CONSOLE
+                    ["cmd.exe", "/k", shell_cmd],
+                    creationflags=subprocess.CREATE_NEW_CONSOLE,
                 )
             else:
-                subprocess.Popen(cmd, cwd=workdir)
+                # На прочих платформах — обычный shell в новом терминале
+                # недоступен универсально, поэтому запускаем через shell
+                # в текущем рабочем каталоге напрямую.
+                shell_cmd = f'cd "{workdir}" && {agent_cmd}'
+                subprocess.Popen(shell_cmd, shell=True, cwd=workdir)
         except FileNotFoundError:
             messagebox.showerror(
                 "Запуск агента",
-                f"Не удалось найти «{AGENT_EXECUTABLE}». Убедитесь, что Claude "
-                "Code установлен и путь к нему добавлен в PATH.",
+                "Не удалось найти командную оболочку для запуска агента." + shell_cmd,
             )
         except OSError as e:
             messagebox.showerror("Запуск агента", f"Не удалось запустить агента:\n{e}")
